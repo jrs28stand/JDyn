@@ -198,7 +198,7 @@ end
     bottom, top = stack_bars([1.0 -1.0 NaN; 2.0 3.0 1.0; -1.0 -2.0 0.0])
     @test bottom == [0 0 0; 1 0 0; 0 -1 0] && top[:, 1:2] == [1 -1; 3 3; -1 -3]
     # tables: content of the figures, written as CSV
-    tab = decomposition_table(d)
+    tab = decomposition_table(decomposition_plot_data(dec, VL; model=m, plot_init_date=11, plot_end_date=40))
     @test length(tab) == 3 * (4 + 1) * 30 && keys(first(tab)) == (:variable, :component, :period, :value)
     file = joinpath(mktempdir(), "sd.csv")
     JDyn.write_csv(file, tab)
