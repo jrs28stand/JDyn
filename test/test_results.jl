@@ -75,7 +75,7 @@ end
     @test maximum(abs, big .- r.endo_simul) < 1e-9
     @test maximum(abs, big[1, 2:5] .- base[1, 2:5]) > 1e-3
     oo_.exo_simul .= x0
-    JDyn.perfect_foresight_solver!()                                      # acts on the current workspace
+    JDyn.perfect_foresight_solver!(ws)
     @test maximum(abs, oo_.endo_simul .- base) < 1e-6                     # Dynare's tolf = 1e-5
 
     d = _copy_dir(SS)
@@ -94,10 +94,10 @@ end
         @test maximum(abs, oo_.dr.ghx .- JDyn.ghx(sol)) < 1e-14
     end
     M_.params[m.ip["rho"]] = 0.7                                          # writing M_ directly also works
-    JDyn.stoch_simul!(["y"])
+    JDyn.stoch_simul!(ws, ["y"])
     @test JDyn.get_param(m, "rho") == 0.7 && collect(oo_.var_list) == ["y"]
     M_.Sigma_e .= 2 .* M_.Sigma_e
-    JDyn.stoch_simul!(["y"])
+    JDyn.stoch_simul!(ws, ["y"])
     @test m.Sigma_e == M_.Sigma_e
 end
 

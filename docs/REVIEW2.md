@@ -130,6 +130,8 @@ Reproduced (`rho = 1.0000005`). On the results branch `stoch_simul!` only catche
 
 ### R15 (S4, confirmed, lowered) The warning is true (moments do not use the option) and harmless: cosmetic.
 
+**Fixed (results branch):** `impulse_responses.plot_threshold` is cosmetic for the solvers (no warning).
+
 ### R16 (S3, confirmed) `irf_figures` order 1 without a warning (`stoch_simul(irf=4)`, default order 2): reproduced.
 
 ### R21 (S2, confirmed) `k_order` with an unused NaN parameter
@@ -205,6 +207,8 @@ where that changes the answer: with `x` 1 -> 1000 or 1e5 Dynare's own homotopy f
 
 ### R26 (S1) Options given to the re-run commands are stored in `options_` but not used
 
+**Fixed:** options_ is the source of truth: the commands run with `options_` flattened into the solvers' option tables (steady reads only its own keys), PF keywords map to their options_ paths (tolf -> dynatol.f), OccBin reads `options_.occbin` (keywords use the .mod names, simul_periods -> simul.periods).
+
 The docstrings say the commands solve "with the current `options_`" and that keyword options "persist". They are
 written to `options_` (`_take_options!`, :151) but the solvers read the `.mod` file's statements (`m.options`):
 
@@ -221,6 +225,8 @@ Fix: make `options_` the source of truth: before each command, translate `ws.opt
 solvers read (or pass them explicitly), and warn on options no solver acts on.
 
 ### R27 (S1) Commands run after loading, with the final calibration
+
+**Fixed:** `dynare()` runs each command where it stands through a session hook; MATLAB lines read and write `oo_` (value semantics). resA/resB match Dynare (irfs from both calibrations, irf1 read mid-file, M_.params).
 
 Documented as a prototype limitation (docs/RESULTS.md, decision 1), but `oo_`/`M_` are presented as Dynare's and differ:
 
@@ -244,6 +250,8 @@ Documented as a prototype limitation (docs/RESULTS.md, decision 1), but `oo_`/`M
 
 ### R28 (S1) `stoch_simul!` IRF rules differ from `stoch_simul.m`
 
+**Fixed:** relative_irf at order >= 2 normalises the impulse to 0.01; IRFs for cs(i,i) > 5e-7.
+
 - `relative_irf` at order >= 2: Dynare normalises the impulse to `cs(:,i)/cs(i,i)/100` (`stoch_simul.m:279-283`);
   JDyn applies `relative_irf` only at order 1 (:243). Dynare's `tests/irfs/example1_unit_std.mod` (final statement:
   order 2, `relative_irf`, stderr 0.0095): Dynare `oo_.irfs.a_e(1) = 0.01`, `dynare()` 0.0095 (5 percent off
@@ -253,6 +261,8 @@ Documented as a prototype limitation (docs/RESULTS.md, decision 1), but `oo_`/`M
 - Fix: port both rules (and divide by `cs(i,i)` at order 1 only, as Dynare).
 
 ### R29 (S2) `dynare()` aborts where Dynare continues; `oo_.dr.eigval` is wrong
+
+**Fixed:** check! warns on Blanchard-Kahn failures and goes on; eigval is the complex (real when all real) column of generalised eigenvalues, refreshed by every stoch_simul (Dynare's resol); failed perfect-foresight simulations store status = false in dynare().
 
 - `check` on a model violating Blanchard-Kahn: Dynare prints the eigenvalues and "The order condition is NOT verified"
   and the file continues (`check.m` only errors for info other than 0, 2, 3, 4); `dynare()` throws `BlanchardKahnError`
@@ -267,12 +277,16 @@ Documented as a prototype limitation (docs/RESULTS.md, decision 1), but `oo_`/`M
 
 ### R30 (S1) `stoch_simul(periods=...)` ignores `histval`
 
+**Fixed:** histval fills M_.endo_histval (unset values 0, as Dynare) and stoch_simul(periods) starts from it: 1.4e-7 against Dynare on the hv repro (Dynare's steady-state tolerance).
+
 RBC with `histval; k(0) = 0.15; a(0) = 0.02; end;` and `stoch_simul(order=1, periods=150)` with Dynare's own shocks:
 Dynare's first simulated period starts from `histval` (`a(1) = 0.8*0.02 + e(1)`); `dynare()` starts from the steady
 state (difference 0.016 in `a`, 0.018 in `c` in period 1, decaying). Cause: `M.endo_histval = zeros(0,0)` (:108) and
 `simulate(dr, ex; ...)` from the steady state (:262). Fix: fill `M_.endo_histval` from `histval` and start there.
 
 ### R31 (S3) Which workspace a no-argument command acts on
+
+**Fixed:** only @dynare sets the current workspace; M_ and the Model API sync both ways (whichever changed since the last command wins; M_ if both, with a warning).
 
 `ws = dynare(...)` (documented as "without defining globals") still sets the global `CURRENT` (:415-416). After
 `@dynare "a.mod"` and `dynare("b.mod")`, editing `M_.params` (A's) and calling `stoch_simul!()` re-solves B; A's `oo_`

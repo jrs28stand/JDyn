@@ -135,13 +135,13 @@ end
     @test_broken !(r isa DomainError)
 end
 
-@testset "R15 (S4) irf_plot_threshold makes stoch_simul_moments warn" begin
+@testset "R15 (S4, fixed) irf_plot_threshold makes stoch_simul_moments warn" begin
     lg = Test.TestLogger(; min_level=Logging.Warn)
     with_logger(lg) do
         m = build("var y; varexo e; parameters rho; rho = 0.9;\nmodel; y = rho*y(-1) + e; end;\nshocks; var e = 1; end;\nsteady;\nstoch_simul(order=1, irf=5, irf_plot_threshold=0.1);\n"; quiet=false)
         stoch_simul_moments(m)
     end
-    @test_broken !any(l -> occursin("plot_threshold", string(l.message)), lg.logs)
+    @test !any(l -> occursin("plot_threshold", string(l.message)), lg.logs)
 end
 
 @testset "R16 irf_figures at order 2 returns order-1 IRFs without a warning" begin
@@ -263,20 +263,24 @@ end
 if isdefined(JDyn, :dynare)
     dyn(text; kw...) = quietly(() -> JDyn.dynare(modfile(text); kw...))
 
-    @testset "R26 keyword options of the re-run commands are written to options_ but not used" begin
+    @testset "R26 (fixed) options_ is the source of truth for the re-run commands" begin
         ws = dyn(RBC * "stoch_simul(order=1, irf=4);\n")
-        c0 = copy(ws.oo_.irfs.c_e)
-        quietly(() -> JDyn.stoch_simul!(ws; loglinear=true))
-        @test ws.options_.loglinear == true
-        @test_broken ws.oo_.irfs.c_e != c0                     # loglinear changes the IRFs of c; JDyn: unchanged
+        # loglinear is acted on: this RBC has a = 0 in steady state, so Dynare refuses to loglinearise too
+        @test_throws JDyn.LoglinearError quietly(() -> JDyn.stoch_simul!(ws; loglinear=true))
+        @test ws.options_.loglinear == true                    # persisted, as in Dynare
         r = try; quietly(() -> JDyn.stoch_simul!(ws; loglinear=false, qz_criterium=0.5)); nothing; catch e; e; end
-        @test_broken r isa Exception                           # root 0.8 > qz_criterium 0.5: Dynare's BK error
+        @test r isa JDyn.BlanchardKahnError                    # root 0.8 > qz_criterium 0.5: Dynare's BK error
+        ws.options_.qz_criterium = zeros(0, 0)
+        quietly(() -> JDyn.stoch_simul!(ws; conditional_variance_decomposition=[1, 4]))
+        @test haskey(ws.oo_, "conditional_variance_decomposition")
         f = joinpath(EXAMPLES, "occbin", "rbc_occbin.mod")
         if isfile(f)
             d = mktempdir(); cp(f, joinpath(d, "rbc_occbin.mod"))
             wo = quietly(() -> JDyn.dynare(joinpath(d, "rbc_occbin.mod")))
             quietly(() -> JDyn.occbin_solver!(wo; simul_periods=7))
-            @test_broken size(wo.oo_.occbin.simul.piecewise, 1) == 7     # JDyn: still 200 (the file's value)
+            @test wo.options_.occbin.simul.periods == 7
+            # Dynare simulates max(simul.periods, shock periods) periods: 169 here (200 with the file's value)
+            @test size(wo.oo_.occbin.simul.piecewise, 1) == max(7, size(wo.oo_.occbin.simul.shocks_sequence, 1)) == 169
         end
     end
 
@@ -292,8 +296,8 @@ if isdefined(JDyn, :dynare)
             set_param_value('a', a2/10);
             """)
         # Dynare 7.2 (Octave): M_.params = [0.2; 1], oo_.steady_state = 2 (JDyn.load gets this right too)
-        @test_broken vec(ws.M_.params) ≈ [0.2, 1.0]           # JDyn dynare(): [0.2, 0.4]
-        @test_broken vec(ws.oo_.steady_state) ≈ [2.0]         # JDyn dynare(): 0.5
+        @test vec(ws.M_.params) ≈ [0.2, 1.0]           # JDyn dynare(): [0.2, 0.4]
+        @test vec(ws.oo_.steady_state) ≈ [2.0]         # JDyn dynare(): 0.5
         ws2 = dyn("""
             var y x z; varexo e u; parameters rho sig;
             rho = 0.5; sig = 1;
@@ -305,7 +309,7 @@ if isdefined(JDyn, :dynare)
             stoch_simul(order=1, irf=5, relative_irf) y;
             """)
         # Dynare 7.2: oo_.irfs.x_e stays from the first stoch_simul (rho = 0.5)
-        @test_broken isapprox(vec(ws2.oo_.irfs.x_e), [1.769047619, 0.9380952381, 0.5161904762, 0.2503809524, 0.09236190476]; rtol=1e-8)
+        @test isapprox(vec(ws2.oo_.irfs.x_e), [1.769047619, 0.9380952381, 0.5161904762, 0.2503809524, 0.09236190476]; rtol=1e-8)
         @test isapprox(vec(ws2.oo_.irfs.y_e), [100, 90, 81, 72.9, 65.61]; rtol=1e-10)   # the last run: right
     end
 
@@ -315,10 +319,10 @@ if isdefined(JDyn, :dynare)
             d = mktempdir(); cp(f, joinpath(d, "example1_unit_std.mod"))
             ws = quietly(() -> JDyn.dynare(joinpath(d, "example1_unit_std.mod")))
             # Dynare 7.2 (Octave): final oo_.irfs.a_e(1) = 0.01 (relative_irf at order 2 normalises the shock to 0.01)
-            @test_broken ws.oo_.irfs.a_e[1] ≈ 0.01                 # JDyn: 0.0095 (the shock's stderr)
+            @test ws.oo_.irfs.a_e[1] ≈ 0.01                 # JDyn: 0.0095 (the shock's stderr)
         end
         ws = dyn("var y; varexo e; parameters rho; rho = 0.5;\nmodel; y = rho*y(-1) + e; end;\nshocks; var e; stderr 8e-7; end;\nsteady;\nstoch_simul(order=1, irf=3);\n")
-        @test_broken haskey(ws.oo_.irfs, "y_e")                   # Dynare: cs(i,i) > 5e-7 -> IRF stored; JDyn skips below 1e-6
+        @test haskey(ws.oo_.irfs, "y_e")                   # Dynare: cs(i,i) > 5e-7 -> IRF stored; JDyn skips below 1e-6
     end
 
     @testset "R29 check!: refuses BK failures and stores |eigenvalues|; stoch_simul! drops oo_.dr.eigval" begin
@@ -327,7 +331,7 @@ if isdefined(JDyn, :dynare)
         catch e
             e
         end
-        @test_broken r isa JDyn.DynareWorkspace                   # Dynare 7.2: prints 'order condition NOT verified', continues
+        @test r isa JDyn.DynareWorkspace                   # Dynare 7.2: prints 'order condition NOT verified', continues
         ws = dyn("""
             var y x z; varexo e u; parameters rho;
             rho = 0.9;
@@ -337,15 +341,15 @@ if isdefined(JDyn, :dynare)
             check;
             """)
         ev = vec(ws.oo_.dr.eigval)
-        @test_broken any(x -> imag(x) != 0, ev)                   # Dynare: 0.6 +/- 0.3742i, 0.9, 2; JDyn: moduli only
+        @test any(x -> imag(x) != 0, ev)                   # Dynare: 0.6 +/- 0.3742i, 0.9, 2; JDyn: moduli only
         JDyn.stoch_simul!(ws; order=1, irf=0)
-        @test_broken haskey(ws.oo_.dr, "eigval")                  # Dynare's stoch_simul keeps dr.eigval
+        @test haskey(ws.oo_.dr, "eigval")                  # Dynare's stoch_simul keeps dr.eigval
         r = try
             dyn(replace(RBC, "steady;" => "steady;\nshocks; var e; periods 1; values 0.1; end;\nperfect_foresight_setup(periods=50);\nperfect_foresight_solver(maxit=1, no_homotopy);\n"))
         catch e
             e
         end
-        @test_broken r isa JDyn.DynareWorkspace                   # Dynare: status 0 stored, file continues
+        @test r isa JDyn.DynareWorkspace                   # Dynare: status 0 stored, file continues
     end
 
     @testset "R30 stoch_simul(periods) ignores histval" begin
@@ -353,7 +357,7 @@ if isdefined(JDyn, :dynare)
         ex = zeros(150, 1)
         ws = dyn(text; shocks=Dict(1 => ex))
         # Dynare: the simulation starts from histval, so with zero shocks a(1) = 0.8*0.02 = 0.016
-        @test_broken ws.oo_.endo_simul[3, 1] ≈ 0.016              # JDyn: 0 (starts at the steady state)
+        @test ws.oo_.endo_simul[3, 1] ≈ 0.016              # JDyn: 0 (starts at the steady state)
     end
 
     @testset "R31 the no-argument commands act on the last workspace made, not on the globals" begin
@@ -361,12 +365,14 @@ if isdefined(JDyn, :dynare)
         wsB = dyn(RBC * "stoch_simul(order=1, irf=4);\n")
         before = copy(wsA.oo_.irfs.c_e)
         wsA.M_.params[3] = 0.5
-        quietly(() -> JDyn.stoch_simul!())
-        @test_broken wsA.oo_.irfs.c_e != before                   # it re-ran B
+        JDyn.CURRENT[] = nothing
+        @test_throws ArgumentError JDyn.stoch_simul!()                # dynare() no longer sets the current workspace
+        quietly(() -> JDyn.stoch_simul!(wsA))
+        @test wsA.oo_.irfs.c_e != before
         # and a parameter set through the documented Model API is overwritten by M_ on the next command
         JDyn.set_param!(wsB.model, "rho", 0.3)
         quietly(() -> JDyn.stoch_simul!(wsB))
-        @test_broken get_param(wsB.model, "rho") == 0.3
+        @test get_param(wsB.model, "rho") == 0.3
     end
 
     @testset "checked clean (results): perfect foresight through dynare() against Dynare" begin

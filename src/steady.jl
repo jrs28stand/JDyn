@@ -214,7 +214,7 @@ end
 const COSMETIC = Set(["nograph", "nodisplay", "graph_format", "noprint", "nocorr", "nomoments", "nofunctions", "tex",
     "nodecomposition", "contemporaneous_correlation", "TeX", "no_graph.posterior", "no_graph.shock_decomposition",
     "nodiagnostic", "console_mode", "silent_optimizer", "debug", "plot_priors", "no_graph.plot_shock_decomposition",
-    "graph_save_formats", "sub_draws", "irf_plot_threshold", "dirname", "verbosity", "simul.debug"])
+    "graph_save_formats", "sub_draws", "irf_plot_threshold", "impulse_responses.plot_threshold", "dirname", "verbosity", "simul.debug"])
 
 "Options of the model's solution commands, later commands taking precedence as in Dynare."
 function stoch_options(m::Model)

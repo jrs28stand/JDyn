@@ -3,8 +3,10 @@
 struct BlanchardKahnError <: Exception
     msg::String
     penalty::Float64          # Dynare's info(2) (a measure of the violation), NaN if not computed; used by estimation
+    eigenvalues::Vector{ComplexF64}   # the generalised eigenvalues when the order condition failed (else empty)
 end
-BlanchardKahnError(msg::AbstractString) = BlanchardKahnError(String(msg), NaN)
+BlanchardKahnError(msg::AbstractString) = BlanchardKahnError(String(msg), NaN, ComplexF64[])
+BlanchardKahnError(msg::AbstractString, penalty::Real) = BlanchardKahnError(String(msg), Float64(penalty), ComplexF64[])
 Base.showerror(io::IO, e::BlanchardKahnError) = print(io, "BlanchardKahnError: ", e.msg)
 struct LoglinearError <: Exception
     msg::String
@@ -181,7 +183,7 @@ function solve_linear_re(fm, f0, fp, fu; qz_criterium=QZ_CRITERIUM, lag=nothing,
         nba = nd - sdim
         temp = sort(abs.(eig))
         temp = nba > nsfwrd ? temp[nd-nba+1:nd-nsfwrd] .- 1 .- qz_criterium : temp[nd-nsfwrd+1:nd-nba] .- 1 .- qz_criterium
-        throw(BlanchardKahnError("Blanchard-Kahn conditions not satisfied ($kind): $(nd - sdim) unstable roots for $nsfwrd forward-looking variables", sum(abs2, temp)))
+        throw(BlanchardKahnError("Blanchard-Kahn conditions not satisfied ($kind): $(nd - sdim) unstable roots for $nsfwrd forward-looking variables", sum(abs2, temp), ComplexF64.(eig)))
     end
     w11 = w[1:nspred, 1:nspred]; w12 = w[1:nspred, nspred+1:end]; w22 = w[nspred+1:end, nspred+1:end]
     if nsfwrd > 0

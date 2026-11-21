@@ -13,7 +13,9 @@ mutable struct HostOptions <: HostStruct
 end
 mutable struct HostOO <: HostStruct
     session::Any
+    results::Any                   # dynare(): the workspace's oo_ (an MStruct), which MATLAB lines read and write
 end
+HostOO(session) = HostOO(session, nothing)
 
 "What MATLAB code can see of a model. A live host writes through to the model."
 mutable struct Host
@@ -221,16 +223,35 @@ end
 set_field!(O::HostOptions, name, value) = (O.store[name] = value; delete!(O.unknown, name))
 
 # ---- oo_
-snapshot(::HostOO) = throw(Unsupported("oo_ (results) is not available while the model is loaded", "results"))
-restore!(::HostOO, value) = throw(Unsupported("assignment to oo_", "results"))
-has_field(::HostOO, name) = throw(Unsupported("oo_ (results) is not available while the model is loaded", "results"))
-field_names(::HostOO) = throw(Unsupported("oo_ (results) is not available while the model is loaded", "results"))
+# While loading (JDyn.load) results do not exist; under dynare() commands run in place and oo_ is the
+# workspace's struct, read and written by MATLAB lines with value semantics.
+_oo_results(O::HostOO) = O.results
+_no_oo(what) = throw(Unsupported(what, "results"))
+snapshot(O::HostOO) = O.results === nothing ? _no_oo("oo_ (results) is not available while the model is loaded") : deepcopy(O.results)
+function restore!(O::HostOO, value)
+    O.results === nothing && _no_oo("assignment to oo_")
+    value isa MStruct || merr("oo_ must be a struct")
+    r = O.results
+    empty!(r._keys); empty!(r._vals)
+    for k in keys(value)
+        r[k] = deepcopy(value[k])
+    end
+end
+has_field(O::HostOO, name) = O.results === nothing ? _no_oo("oo_ (results) is not available while the model is loaded") : haskey(O.results, name)
+field_names(O::HostOO) = O.results === nothing ? _no_oo("oo_ (results) is not available while the model is loaded") : copy(keys(O.results))
 function get_field(O::HostOO, name)
+    if O.results !== nothing && haskey(O.results, name)
+        return deepcopy(O.results[name])
+    end
     (O.session !== nothing && name in ("steady_state", "exo_steady_state")) && return oo_vector(O.session, name)
+    O.results !== nothing && merr("Reference to non-existent field '$name'.")
     throw(Unsupported("oo_.$name: results are not available while the model is loaded", "results"))
 end
-peek_field(::HostOO, name; raw=false) = throw(Unsupported("oo_.$name: results are not available while the model is loaded", "results"))
-set_field!(::HostOO, name, value) = throw(Unsupported("assignment to oo_.$name", "results"))
+function peek_field(O::HostOO, name; raw=false)
+    O.results === nothing && _no_oo("oo_.$name: results are not available while the model is loaded")
+    haskey(O.results, name) ? O.results[name] : nothing
+end
+set_field!(O::HostOO, name, value) = O.results === nothing ? _no_oo("assignment to oo_.$name") : (O.results[name] = value)
 
 # ====================================================================== .mod-file session
 struct EscapeSig <: Exception
@@ -305,6 +326,7 @@ mutable struct ModSession
     pending::Any                    # (params, oo) of a 'steady' whose result has not been needed yet
     oo_failed::Union{Nothing,String}
     statements::Vector{Any}
+    on_command::Any                 # dynare(): called after every Dynare statement, to run commands in place
 end
 
 function ModSession(model)
@@ -312,7 +334,7 @@ function ModSession(model)
     I = Interp(model.mod_dir, host)
     I.jlfuncs = Dict{String,Any}(k => v for (k, v) in model.functions if !haskey(model.matlab_functions, k))
     s = ModSession(model, host, I, I.base, Tuple{String,String,String,Int}[], Set{Tuple{String,String}}(), false,
-                   Set{String}(), nothing, 0, nothing, false, false, false, Set{String}(), nothing, nothing, Any[])
+                   Set{String}(), nothing, 0, nothing, false, false, false, Set{String}(), nothing, nothing, Any[], nothing)
     I.session = s
     I.load_hook = _mod_load
     host.oo.session = s
@@ -841,6 +863,7 @@ function exec_dyn!(s::ModSession, st)
     elseif !(kind in DECL_KINDS)
         after_compute!(s, kind, "it may have been changed by '$kind'")
     end
+    s.on_command === nothing || s.on_command(stj)
 end
 
 # ---- what 'steady' and 'stoch_simul' leave in M_ and oo_

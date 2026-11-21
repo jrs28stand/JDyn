@@ -258,7 +258,7 @@ statements (calibration, shocks, initval, ... and the MATLAB lines between them)
 take precedence over MATLAB function files next to the `.mod` file. `steady_state_fn(model, params, exo)`
 replaces a `steady_state_model` block or a `_steadystate.m` file; it returns `ys` or `(ys, params)`.
 """
-function Model(json_dir::AbstractString; functions=Dict{String,Any}(), steady_state_fn=nothing)
+function Model(json_dir::AbstractString; functions=Dict{String,Any}(), steady_state_fn=nothing, on_command=nothing)
     json_dir = abspath(json_dir)
     mod_dir = dirname(dirname(dirname(json_dir)))
     name = basename(dirname(dirname(json_dir)))
@@ -308,7 +308,7 @@ function Model(json_dir::AbstractString; functions=Dict{String,Any}(), steady_st
               String[], Dict{String,Float64}(), nothing, 0, Set{String}(),
               1 + (fns.dyn_g2 !== nothing) + (fns.dyn_g3 !== nothing),
               nothing, Dict{Symbol,Any}())
-    _run_statements!(m)
+    _run_statements!(m; on_command=on_command)
     m
 end
 
@@ -494,10 +494,11 @@ end
 
 # ---------------------------------------------------------------------- statements
 "Apply the statements of the .mod file in order, with the MATLAB lines between them."
-function _run_statements!(m::Model)
+function _run_statements!(m::Model; on_command=nothing)
     m.params = fill(NaN, length(m.param_names))
     sess = ModSession(m)
     m.session = sess
+    sess.on_command = on_command === nothing ? nothing : on_command(m)
     run!(sess, m.statements)
     m.n_surprise > 1 && @warn "several shocks(surprise) blocks: they are merged; Dynare's 'overwrite' option is not visible in the preprocessor output"
     isempty(m.unhandled_statements) || @warn "statements not handled: $(sort(unique(m.unhandled_statements)))"
