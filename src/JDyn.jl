@@ -9,6 +9,7 @@ No MATLAB or Octave is needed at run time.
 module JDyn
 
 using LinearAlgebra
+using SparseArrays
 using LinearAlgebra: lu, issuccess, schur, ordschur!, qr, UpperTriangular, opnorm, pinv
 using Printf
 using Logging
@@ -32,6 +33,7 @@ include("moments.jl")
 include("priors.jl")
 include("kalman.jl")
 include("estimation.jl")
+include("perfect_foresight.jl")
 include("plotting.jl")
 include("occbin.jl")
 
@@ -40,6 +42,7 @@ export run_preprocessor, load, Model, ModelError, steady_state, SteadyStateError
        stoch_simul_moments, theoretical_moments, k_order, KOrderError, korder_library, plot_irfs, irf_figures, irf_table, write_csv, pltorg, IRFResult, IRFFigure,
        Occbin, OccbinResult, OccbinIRF, OccbinError, OccbinPeriodicError, OccbinMaxitError, OccbinHorizonError, OccbinLoopError,
        OccbinDynareBug, error_flag, irf_occbin, occbin_graph_table, surprise_shocks, mod_options, check_constraints,
-       Estimation, EstimationError, estimate, posterior_mode, sample_posterior, log_likelihood, log_prior, log_posterior
+       Estimation, EstimationError, estimate, posterior_mode, sample_posterior, log_likelihood, log_prior, log_posterior,
+       perfect_foresight, PerfectForesightResult, PerfectForesightError, unanticipated_shocks
 
 end

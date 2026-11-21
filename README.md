@@ -8,11 +8,12 @@ same Dynare 7.2 reference results. It is an independent project, not affiliated 
 the Dynare team's own Julia implementation see [Dynare.jl](https://github.com/DynareJulia/Dynare.jl),
 which uses a Julia-flavoured syntax in `.mod` files.
 
-**Status (2026-11-21): orders 1 to 3, OccBin and first-order estimation.** Calibration, steady state,
-decision rules at orders 1 to 3, IRFs, simulation, moments (order 2 theoretical moments, plain and pruned),
-OccBin (simulation and IRFs, one and two constraints) and first-order estimation (priors, Kalman
-likelihood, posterior mode, Metropolis-Hastings) are implemented and checked against Dynare 7.2; perfect
-foresight, the Kalman smoother and shock decompositions are not yet. See [docs/STATUS.md](docs/STATUS.md).
+**Status (2026-11-21): orders 1 to 3, OccBin, perfect foresight and first-order estimation.**
+Calibration, steady state, decision rules at orders 1 to 3, IRFs, simulation, moments (order 2 theoretical
+moments, plain and pruned), OccBin (simulation and IRFs, one and two constraints), perfect foresight
+(`perfect_foresight(m)`: stacked Newton, homotopy, complementarity, expectation errors) and first-order
+estimation (priors, Kalman likelihood, posterior mode, Metropolis-Hastings) are implemented and checked
+against Dynare 7.2; the Kalman smoother and shock decompositions are not yet. See [docs/STATUS.md](docs/STATUS.md).
 
 ## How it works
 
@@ -75,6 +76,10 @@ mom = stoch_simul_moments(m)           # what stoch_simul reports (order 1)
 res = JDyn.irf_figures(m, sol)         # Dynare's IRF figures as data (shocks, variables, threshold rules)
 JDyn.write_csv("irfs.csv", JDyn.irf_table(res))   # tidy: shock,variable,period,value,order (for ggplot2)
 plot_irfs(m, sol; nograph=false)       # SVG files; PNG/PDF with `using Plots` (optional extension)
+
+res = perfect_foresight(m)             # perfect_foresight_setup + _solver of the .mod file; Dynare's oo_.endo_simul layout
+res.endo_simul, res.exo_simul, res.iterations, res.max_residual
+res["k"]                               # path of one variable (initial condition, periods, terminal condition)
 
 # parameter loops without re-running the preprocessor
 for b in 0.98:0.005:0.995

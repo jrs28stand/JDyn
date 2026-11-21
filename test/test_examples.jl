@@ -23,9 +23,8 @@ const EXPECTED = Dict(
     "heterogeneity/hank_one_asset" => "not supported",
     "optimal_policy/nk_ramsey_osr" => "not supported",
     "semistructural/pac_model" => "not supported",
-    # perfect foresight belongs to another stream
-    "perfect_foresight/perfect_foresight_rbc" => "not implemented",
-    "perfect_foresight/perfect_foresight_expectation_errors" => "not implemented",
+    "perfect_foresight/perfect_foresight_rbc" => MATCH,                         # perfect_foresight_solver (src/perfect_foresight.jl)
+    "perfect_foresight/perfect_foresight_expectation_errors" => MATCH,
 )
 
 @testset "Dynare examples" begin
