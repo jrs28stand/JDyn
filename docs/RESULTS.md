@@ -74,9 +74,51 @@ At Dynare's steady state the decision rules agree to 1e-12 (test_korder.jl).
 | stoch_simul | dr (ys, order_var, inv_order_var, state_var, gh*), irfs, endo_simul, exo_simul, var_list, mean, var, autocorr, gamma_y, variance_decomposition, skewness, kurtosis | yes (orders 1-3; moments orders 1-2) |
 | perfect_foresight_solver | endo_simul, exo_simul, deterministic_simulation.{status, iterations, error}, initial_steady_state | yes |
 | occbin_solver | oo_.occbin.simul.{piecewise, linear, shocks_sequence} | yes |
-| estimation | posterior_mode, posterior_std_at_mode, MarginalDensity, posterior.*, SmoothedVariables, ... | not yet (the results exist in `EstimationResult`) |
-| calib_smoother | SmoothedVariables, SmoothedShocks, FilteredVariables, UpdatedVariables | not yet (smoother being written) |
+| estimation | prior, posterior.optimization, posterior_mode / mle_mode (+ `_std_at_mode`), MarginalDensity, posterior_mean/median/var/hpdinf/hpdsup/deciles/density, posterior.metropolis, Smoother, SmoothedVariables, UpdatedVariables, FilteredVariables(+KStepAhead), SmoothedShocks, SmoothedMeasurementErrors, dr (order_var ... edim), steady_state | yes, see "estimation and calib_smoother" below; `estimation!(ws; ...)` re-runs it |
+| calib_smoother | the smoother fields above, prior (with an estimated_params block), dr, steady_state | yes (`calib_smoother!(ws; ...)` re-runs it) |
 | forecast, osr, identification, shock_decomposition, ... | | not supported by JDyn |
+
+## estimation and calib_smoother (what Dynare 7.2 writes, and what JDyn writes)
+
+Source: `estimation/dynare_estimation_1.m`, `dynare_estimation_init.m`, `display_estimation_results_table.m`,
+`store_smoother_results.m`, `evaluate_smoother.m` (calib_smoother), `posterior_moments.m`. Implemented in
+`src/results_estimation.jl`; `dynare()` runs both commands where they stand, and `estimation!(ws, var_list; options...)`
+and `calib_smoother!(ws, var_list; options...)` do the same from Julia (options as for `stoch_simul!`, read from `options_`).
+Names in `oo_.posterior_*` follow `display_estimation_results_table.m`: `parameters.<name>`, `shocks_std.<exo>`,
+`measurement_errors_std.<obs>`, `shocks_corr.<a>_<b>`, `measurement_errors_corr.<a>_<b>`. Values are scalars except
+`posterior_deciles` (9x1) and `posterior_density` (512x2: grid, density).
+
+| Field | Shape | Written when | JDyn |
+|---|---|---|---|
+| `oo_.prior.{mean, mode, variance, hyperparameters.first, .second}` | nx1, nx1, nxn, nx1, nx1 | estimated_params present (ML: mean/mode/variance are NaN/0/NaN) | yes |
+| `oo_.posterior.optimization.{mode, Variance, log_density}` | nx1, nxn, 1x1 | mode_compute ~= 0 | yes |
+| `oo_.posterior.optimization.optimization_info.{runtime, iterations, funcCount, exitflag, message}` | scalars, char | mode_compute ~= 0 | yes; iterations/funcCount/runtime are JDyn's own |
+| `oo_.posterior_mode` / `oo_.mle_mode`, `_std_at_mode` | named scalars | mode_compute ~= 0 (std needs cova_compute) | yes |
+| `oo_.MarginalDensity.LaplaceApproximation` | 1x1 | mode_compute ~= 0 with a Hessian | yes |
+| `oo_.MarginalDensity.ModifiedHarmonicMean` | 1x1 | mh_replic > 0 | yes |
+| `oo_.posterior_mean/median/var/hpdinf/hpdsup/deciles/density`, `oo_.posterior.metropolis.{mean, Variance}` | as above | mh_replic > 0 | yes (structure exact; values are a different chain) |
+| `oo_.Smoother.{occbin, loglinear, SteadyState, TrendCoeffs, Trend, Variance, Constant, Init_State, Init_State_Vector, State_uncertainty, Init_State_uncertainty}` | see store_smoother_results.m | smoother (or calib_smoother) | yes (State_uncertainty only with smoothed_state_uncertainty) |
+| `oo_.SmoothedVariables.<v>`, `UpdatedVariables.<v>`, `FilteredVariables.<v>` | nobs x 1 each (filtered: nobs+1 with filtered_vars) | smoother; filtered_vars or filter_step_ahead for the last two | yes, one field per endogenous variable in dr.order_var order |
+| `oo_.FilteredVariablesKStepAhead`, `...Variances` | nk x endo x (nobs+max(nk)), nk x endo x endo x ... | filter_step_ahead (variances with filter_covariance) | yes |
+| `oo_.SmoothedShocks.<e>`, `oo_.SmoothedMeasurementErrors.<y>` | nobs x 1 | smoother | yes |
+| `oo_.dr.{order_var, inv_order_var (row), restrict_var_list, restrict_columns}` | | always | yes |
+| `oo_.dr.{ys, ghx, ghu, state_var (row), sdim, edim}` | | after a solution | yes |
+| `oo_.dr.{eigval, gx, Gy}` | | after a solution | no: Dynare's come from the QZ factorisation in a different ordering than ghx's rows |
+| `oo_.steady_state` | | at the starting point (`x0`) of the estimation, or the calibration (calib_smoother) | yes |
+| `oo_.gui.ran_estimation`, `ran_calib_smoother` | logical | | yes |
+| `M_.params`, `M_.Sigma_e`, `M_.H`, `M_.Correlation_matrix` | | set to the posterior mode (mean when mh_replic > 0 and no mode) | yes (mode_compute=0: the starting values) |
+| `options_.{nobs, first_obs, varobs_id, number_of_observed_variables, mh_jscale, filtered_vars, filter_step_ahead, nk, lik_init, varlist, parameter_set}` | | | yes. `first_obs` stays 1 after a smoother-only run (mode_compute=0), as in Dynare, whose early return skips the reset to NaN |
+
+Not written, and refused where the option asks for them: `selected_variables_only`, a smoother or filter together with an
+MCMC run, `oo_.FilteredVariablesShockDecomposition`, forecasts, posterior IRFs, `bayestopt_`/`estim_params_` (JDyn keeps
+them in the `Estimation` object, not in the workspace), recursive estimation, the other samplers. `mh_replic > 0` with
+`mode_compute=0` warns and is ignored, as Dynare returns before the sampler there.
+
+Validation (Octave 8.4 running Dynare 7.2 on `test/ref_oo_estimation`, `test/test_results_estimation.jl`):
+smoother-only, calib_smoother, no-smoother and measurement-error cases match to 1e-12 or better (oo_, M_.params, Sigma_e,
+H); mode_compute=4 cases agree to the csminwel stopping point (about 1e-5 to 1e-9 on modes; layout identical); a 300-draw
+chain agrees in field names and shapes; the kernel density agrees to 2e-15. Also compared once (not in the suite, they take
+minutes): est_schorfheide with the smoother (loglinear, 1e-13) and two est_nk runs.
 
 ## Decisions for the full version
 

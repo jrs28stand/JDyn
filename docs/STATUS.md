@@ -86,6 +86,11 @@ Also run, without a Dynare reference: Dynare's `tests/occbin/model_irrcap_twocon
 keywords. `estimate()` runs it at the mode (or the start point with `mode_compute=0`) when `smoother` is set. Output follows
 Dynare's layout (`SmoothedVariables`, `SmoothedShocks`, `SmoothedMeasurementErrors`, `UpdatedVariables`, `FilteredVariables`,
 k-step arrays, `Variance`, `State_uncertainty`, `Init_State_Vector`). `check_smoother` tests the identities.
+
+`dynare()` fills `oo_` for `estimation` and `calib_smoother` exactly as Dynare 7.2 does (`src/results_estimation.jl`; field
+map and validation in docs/RESULTS.md); `estimation!(ws, var_list; options...)` and `calib_smoother!(ws, var_list; options...)`
+re-run them on a workspace. Known gaps: `oo_.dr.{eigval, gx, Gy}` are not written; `optimization_info` iterations/funcCount are JDyn's own;
+`selected_variables_only` and a smoother together with MCMC raise.
 `shock_decomposition`, `initial_condition_decomposition`, `realtime_shock_decomposition`, `group_shocks`, `squeeze_shock_decomposition`
 and `decomposition_plot_data` / `decomposition_table` (CSV through `write_csv`) give the figures' content as tables.
 
