@@ -553,6 +553,7 @@ function Estimation(m::Model; data=nothing, allow_unsupported::Bool=false, state
     end
     opts = copy(_EST_DEFAULTS)
     unsupported = String[]
+    nlraw = _est_order(raw) == 2 ? _pop_particle_options!(raw) : nothing      # order 2: the nonlinear filters (src/nonlinear_estimation.jl)
     for (k, v) in raw
         k == "mh_nblocks" && (k = "mh_nblck")
         k == "optim" && (k = "optim_opt")
@@ -577,7 +578,7 @@ function Estimation(m::Model; data=nothing, allow_unsupported::Bool=false, state
         allow_unsupported ? warn_once(m, msg) : throw(EstimationError(msg))
     end
     haskey(raw, "mode_check.status") && _est_flag(raw["mode_check.status"]) && warn_once(m, "estimation: mode_check draws plots only; no plots are made")
-    Int(opts["order"]) == 1 || throw(EstimationError("estimation is implemented for order=1 only"))
+    Int(opts["order"]) in (1, 2) || throw(EstimationError("estimation is implemented for order=1 (Kalman filter) and order=2 (nonlinear filters) only"))
     opts["loglinear"] = _est_flag(opts["loglinear"])
     opts["logdata"] = _est_flag(opts["logdata"])
     opts["rescale_prediction_error_covariance"] = _est_flag(opts["rescale_prediction_error_covariance"])
@@ -630,6 +631,7 @@ function Estimation(m::Model; data=nothing, allow_unsupported::Bool=false, state
     _setup_state_space!(est)
     _setup_trends!(est)
     _setup_data!(est, data)
+    nlraw === nothing || return _setup_nonlinear!(est, nlraw)
     _setup_occbin!(est, occbin)                  # OccBin models: piecewise Kalman or inversion filter (src/occbin_estimation.jl)
     if opts["prefilter"] != 0
         centred = try
@@ -1009,6 +1011,7 @@ function _dsge_likelihood(est::Estimation, theta::AbstractVector; bounds=(est.lb
     theta = Float64.(theta)
     est.last_info = ""
     est.last_info_code = 0
+    haskey(o, "nl") && return _nonlinear_dsge_likelihood(est, theta; bounds=bounds, with_lik=with_lik)     # order 2
     reject(info, pen, msg) = (est.last_info = msg; est.last_info_code = info; (Inf, info, pen, NaN, NaN, Float64[]))
     lb, ub = bounds
     if any(theta .< lb)
@@ -1189,6 +1192,7 @@ end
 
 "Laplace approximation of the log marginal data density."
 function laplace(est::Estimation, theta::AbstractVector, invhess::AbstractMatrix)
+    any(<=(0), diag(invhess)) && return NaN          # not a covariance matrix (a noisy Hessian, e.g. with a particle filter)
     stdh = sqrt.(diag(invhess))
     (any(!isfinite, stdh) || !_ispd(invhess)) && return NaN
     logdet_ = log(det(invhess ./ (stdh * stdh'))) + 2 * sum(log, stdh)
@@ -1298,10 +1302,11 @@ function add_hessian!(est::Estimation, mode::ModeResult)
     mode.hessian = hh
     if all(isfinite, hh) && all(>(0), diag(hh))
         mode.inv_hessian = inverse_hessian(hh)
-        is_bayesian(est.prior) && (mode.laplace = laplace(est, mode.x, mode.inv_hessian))
+        any(<=(0), diag(mode.inv_hessian)) && (mode.inv_hessian = nothing)     # not positive definite (noisy Hessians)
     else
         mode.inv_hessian = nothing
     end
+    mode.inv_hessian !== nothing && is_bayesian(est.prior) && (mode.laplace = laplace(est, mode.x, mode.inv_hessian))
     mode
 end
 
@@ -1527,6 +1532,9 @@ function estimate(m::Model; seed=nothing, rng=nothing, kw...)
     rng === nothing && (rng = dynare_rng(m))
     est = Estimation(m; kw...)
     o = est.options
+    haskey(o, "nl") && _check_nonlinear_options!(est; smoother=_est_flag(get(o, "smoother", false)),
+        filtered=_est_flag(get(o, "filtered_vars", false)) || !isempty(something(get(o, "filter_step_ahead", nothing), [])),
+        forecast=Int(something(get(o, "forecast", 0), 0)), mh=o["mh_replic"] > 0)
     initial_estimation_checks(est)
     mode = nothing
     lp = log_posterior(est, est.x0)
@@ -1582,6 +1590,7 @@ with the automatic switch to the univariate filter turned off; a singular foreca
 """
 function initial_estimation_checks(est::Estimation)
     o = est.options
+    haskey(o, "nl") && return _initial_checks_nonlinear(est)
     old = o["use_univariate_filters_if_singularity_is_detected"]
     o["use_univariate_filters_if_singularity_is_detected"] = false
     info = try

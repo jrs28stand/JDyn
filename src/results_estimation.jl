@@ -340,11 +340,14 @@ function _estimation!(ws::DynareWorkspace, st, var_list, data, seed, options)
     wants_filter = _optb(ws, "filtered_vars", false) || !isempty(fsa)
     first_obs0 = let v = _optf(ws, "first_obs", NaN); v isa Real ? Float64(v) : NaN end
     # dynare_estimation_1.m returns before it resets first_obs to NaN when only the smoother runs (mode_compute=0, order 1)
-    early_return = _optf(ws, "mode_compute", 4.0) == 0 && isempty(string(_optf(ws, "mode_file", ""))) && _opti(ws, "order", 1) == 1
+    early_return = (_optf(ws, "mode_compute", 4.0) == 0 && isempty(string(_optf(ws, "mode_file", ""))) && _opti(ws, "order", 1) == 1) ||
+                   _opti(ws, "order", 1) > 1        # with a particle filter dynare_estimation_1.m returns before the reset too
     result = _with_options(ws, _SOLVE_KINDS) do
         kw = _estimation_kwargs(ws, keys(options))
         est = Estimation(m; data=data, statement=0, kw...)
         o = est.options
+        haskey(o, "nl") && _check_nonlinear_options!(est; smoother=smoother_flag, filtered=wants_filter,
+                                                     forecast=_opti(ws, "forecast", 0), mh=o["mh_replic"] > 0)
         bayes = is_bayesian(est.prior)
         mc0 = o["mode_compute"] == 0
         mcmc_wanted = !mc0 && o["mh_replic"] > 0 && bayes
@@ -417,7 +420,7 @@ function _estimation!(ws::DynareWorkspace, st, var_list, data, seed, options)
                 theta = Float64[post[nm].mean for nm in est.names]       # Dynare then sets M_ to the posterior mean
             end
             # the frequentist smoother runs at the mode / posterior mean unless a Bayesian smoother was asked for
-            _optb(ws, "frequentist_smoother", true) && (smooth_at = theta)
+            _optb(ws, "frequentist_smoother", true) && !haskey(o, "nl") && (smooth_at = theta)     # no smoother with a particle filter
         end
         res = nothing
         if smooth_at !== nothing

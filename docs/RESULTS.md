@@ -81,6 +81,15 @@ Metropolis-Hastings chains are seeded from the model's seed, `Xoshiro(seed * 791
 To compare simulations with Dynare use its `oo_.exo_simul` (`dynare(file; shocks=Dict(1 => exo))`), not the seed.
 `rand`/`randn` lines in a .mod file are still refused by the interpreter.
 
+### Octave's generators for the particle filters
+
+Dynare reseeds its particle filters with the 'default' seed (0) before every likelihood evaluation, so the likelihood is a
+deterministic function of the parameters. JDyn does the same; the generator is chosen per model: `JDyn.set_rng_kind!(m, :octave)`,
+`dynare(file; particle_rng=:octave)` or `Estimation(m; particle_rng=:octave)` give Octave's own Mersenne-twister/ziggurat numbers
+(`JDyn.OctaveRNG`, bit for bit; `particle_seed=` changes the seed), so `estimation(order=2, ...)` reproduces Dynare-under-Octave
+likelihoods; the default `:julia` uses Xoshiro with the same seeding. Everything else (`stoch_simul` shocks, GIRFs, MH chains)
+keeps using the model's Xoshiro stream. There is no smoother or forecast with a particle filter (Dynare has none).
+
 ## Performance notes
 
 * Filtered theoretical moments (`hp_filter`, `bandpass_filter` with theoretical moments) transform the spectral

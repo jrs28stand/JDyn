@@ -567,7 +567,7 @@ otherwise shocks are drawn from the workspace's random stream (`seed=n` seeds it
 seed 0 like Dynare's 'default'; `set_dynare_seed(...)` lines of the file act as in Dynare; an explicit `rng` replaces
 the stream). The draws are Julia's, reproducible run to run but not MATLAB's: see docs/RESULTS.md, "Random draws".
 """
-function dynare(modfile::AbstractString; output=nothing, shocks=Dict{Int,Any}(), rng=nothing, seed=nothing, _json_dir=nothing, kw...)
+function dynare(modfile::AbstractString; output=nothing, shocks=Dict{Int,Any}(), rng=nothing, seed=nothing, particle_rng=nothing, _json_dir=nothing, kw...)
     if output === nothing
         # derivatives up to the highest order a stoch_simul statement asks for (Dynare's default is 2)
         output = occursin(r"order\s*=\s*3", read(modfile, String)) ? "third" : "second"
@@ -576,6 +576,7 @@ function dynare(modfile::AbstractString; output=nothing, shocks=Dict{Int,Any}(),
     nss = Ref(0)
     factory = function (m)
         set_dynare_seed!(m, seed === nothing ? "default" : seed)     # Dynare seeds its stream with 'default' at start-up
+        particle_rng === nothing || set_rng_kind!(m, particle_rng)   # :octave = Octave's numbers in the particle filters (src/octave_rng.jl)
         ws = DynareWorkspace(m, build_M(m), build_options(m), MStruct(), Dict{String,Any}())
         ws.oo_.exo_det_steady_state = zeros(0, 0)
         ws.oo_.dynare_version = "7.2"
