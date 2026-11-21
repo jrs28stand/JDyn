@@ -565,7 +565,12 @@ function _exec_statement!(m::Model, st)
     elseif kind == "homotopy" && !isempty(get_or(st, "values", [])) &&
            all(d -> haskey(m.ip, d["name"]) || haskey(m.ix, d["name"]), st["values"])
         m.homotopy = st["values"]
-    elseif kind in ("steady", "check", "occbin_setup", "occbin_graph", "rplot")
+    elseif kind in ("occbin_setup", "occbin_solver")
+        # Dynare applies every occbin_setup / occbin_solver statement to options_.occbin in order: merge them
+        o = get_or(st, "options", Dict{String,Any}())
+        m.options[kind] = merge(get(m.options, kind, Dict{String,Any}()), o)
+        m.options["occbin_options"] = merge(get(m.options, "occbin_options", Dict{String,Any}()), o)
+    elseif kind in ("steady", "check", "occbin_graph", "rplot")
         haskey(m.options, kind) || (m.options[kind] = get_or(st, "options", Dict{String,Any}()))
         if kind == "steady" && get(get_or(st, "options", Dict()), "homotopy_mode", nothing) !== nothing && m.homotopy !== nothing
             # Dynare's steady moves these parameters and exogenous variables to their final values

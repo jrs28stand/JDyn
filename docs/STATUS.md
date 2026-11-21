@@ -2,7 +2,7 @@
 
 Reference: Dynare 7.2 under GNU Octave 8.4 (the same reference results as pydyn). All figures below are
 from `test/runtests.jl` (1,739 checks pass, 0 fail; 3 skipped: perfect foresight, and references
-without IRFs).
+without IRFs). The OccBin tests (test_occbin.jl, test_occbin_options.jl) add 493 checks, 0 failing, run separately.
 
 ## Implemented and checked against Dynare
 
@@ -16,6 +16,8 @@ without IRFs).
 | Shipped examples (first order) | gali_2015, schorfheide_2000, bkk_1992, rbc_occbin, aguiar_gopinath_2007_trend, nk_baseline, collard_* | 1e-14 to 4e-10 |
 | Moments (order 1) | theoretical (plain, HP, band-pass, unit roots), variance decompositions (incl. correlated shocks, conditional, measurement error), simulated moments on Dynare's draws | 3e-13 (theoretical), 2e-10 (simulated skewness) |
 | Auxiliary and model-local variables, `loglinear` | against Dynare | 3e-14, 5e-13 |
+| OccBin: piecewise-linear simulation (one and two constraints), `simul_*` options, error flags 310-313, periodic solutions, `error_bind`/`error_relax` | rbc_occbin (169 shock periods, 2 constraints), borrcon_sim/curb, occ_borrcon (two shocks; maxit sweeps, curb_retrench, endo_init, exo_pos, max/reset check-ahead, init_regime, init_binding_indicator), occ_rbc_cyc/occ_rbc1/occ_rbc_err (52 + 24 cycling cases): paths, regime histories and error flags | 3e-15 (paths), regime histories and flags identical |
+| OccBin IRFs (`occbin.irf`: both signs, all shocks, `shocksize`, `check_ahead_periods`, `maxit`) | occ_borrcon (2 shocks), occ_rbc_cyc (2 constraints) | 9e-16 |
 
 Speed of one `set_param!` + steady state + first-order solve: 0.04-0.08 ms (15 variables), 0.4 ms
 (28 variables, Julia steady-state function), 1.4 ms (42 variables, numerical steady state), 4 to 6 times
@@ -25,12 +27,44 @@ faster than pydyn on the same machine. An interpreted `_steadystate.m` costs abo
 
 - Orders 2 and 3 (plan: Dynare's C++ k-order library through `ccall`, fed with the preprocessor's
   G1-G3; the preprocessor output and `simulate` at orders 2-3 are already in place).
-- OccBin, perfect foresight, Kalman filter and smoother, shock decompositions, estimation.
+- Perfect foresight, Kalman filter and smoother, shock decompositions, estimation.
+- OccBin estimation, smoothing, forecasts, shock decompositions and `occbin_write_regimes`: not implemented (the
+  `smoother_*`, `likelihood_*`, `filter_*` options of `occbin_setup`/`occbin_solver` give a warning; `occbin_write_regimes`
+  is reported as an unhandled statement). OccBin figures themselves are not drawn: the plotted content is
+  available as tables (see below).
 - Plotting beyond first-order IRFs (OccBin, smoother, decompositions, ...). First-order IRF figures are
   done: Dynare's content rules, tidy CSV export, SVG built in, PNG/PDF through an optional Plots.jl
   extension (see docs/plotting.md).
 - Optimal policy (Ramsey, OSR), heterogeneous agents, PAC/VAR models, `dseries`: refused with an error.
 - Theoretical moments at order 2 (refused with an error).
+
+## OccBin
+
+`Occbin(m)` builds the piecewise-linear solver from a model with an `occbin_constraints` block (reference regime:
+all `occbin_X_bind` parameters at 0; it uses the parameters at construction time). `simulate(ob)` runs the file's
+`shocks(surprise)` blocks with the options of its `occbin_setup` / `occbin_solver` statements (applied in statement
+order, as Dynare does); `simulate(ob, shocks; kw...)` takes shocks and every `simul_*` option as keywords;
+`irf_occbin(ob)` is `occbin.irf`; `irf(ob, impulse)` is impulse-minus-baseline. Failures throw `OccbinPeriodicError` (310),
+`OccbinMaxitError` (311), `OccbinHorizonError` (312) or `OccbinLoopError` (313); `error_flag(e)` gives Dynare's code.
+Plotted content: `irf_table(irf_occbin(ob))` (columns `shock, sign, variable, period, solution, value`, `solution` =
+`piecewise` or `linear`), `irf_table(simulate(ob))` and `occbin_graph_table(ob, res)` (the variables and `noconstant`
+option of the file's `occbin_graph`; shocks as `solution = "shock"`), written with `write_csv`.
+
+Dynare 7.2 defects (see pydyn's docs/GAPS.md), corrected by default as pydyn does, reproduced with
+`replicate_dynare_bugs=true` (throws `OccbinDynareBug`):
+- `simul_check_ahead_periods` above `simul_max_check_ahead_periods`: Dynare's `solver.m` prints a message that uses an
+  undefined variable (`simul`) and fails; JDyn lowers `check_ahead_periods` to the maximum, as the message says.
+- `occbin.irf` on a model with several shocks when `shocks(surprise)` covers fewer of them: `occbin_setup` leaves
+  `exo_pos` at the shocked variables while `irf` passes one column per shock, and Dynare fails (the reference run
+  stores that failure). JDyn computes the responses for all shocks.
+
+Differences from pydyn: `simulate(ob)` keeps only the non-zero shock columns of `shocks(surprise)` and their
+positions (`exo_pos`) as Dynare's `setup.m` does (pydyn used all columns; same paths); several `occbin_setup` /
+`occbin_solver` statements are merged in order (pydyn kept the first `occbin_setup`); `smoother_*`-type options warn
+(pydyn ignored them silently); leads and lags of variables in a bind/relax condition are refused with an error, as in pydyn.
+The constraint expressions are evaluated period by period from the preprocessor's JSON text (not vectorised MATLAB code).
+Also run, without a Dynare reference: Dynare's `tests/occbin/model_irrcap_twoconstraints/dynrbc.mod` (lower-case
+`steady_state`, model-local variables, `simul_periodic_solution`, `curb_retrench`, 71 iterations in one period) agrees with pydyn to 4e-16.
 
 ## Behaviour to know
 
