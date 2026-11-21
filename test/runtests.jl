@@ -2,7 +2,7 @@
 #   julia --project=. test/runtests.jl [file ...]      (or Pkg.test())
 const ALL_TESTS = ["test_matlab.jl", "test_first_order.jl", "test_examples.jl", "test_loop.jl", "test_moments.jl",
                         "test_auxiliary.jl", "test_loglinear.jl", "test_review.jl", "test_plotting.jl", "test_korder.jl", "test_moments_order2.jl",
-                   "test_occbin.jl", "test_occbin_options.jl"]
+                   "test_occbin.jl", "test_occbin_options.jl", "test_estimation.jl"]
 failed = String[]
 for f in (isempty(ARGS) ? ALL_TESTS : ARGS)
     println("=== ", f)

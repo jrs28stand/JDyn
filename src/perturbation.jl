@@ -2,7 +2,9 @@
 
 struct BlanchardKahnError <: Exception
     msg::String
+    penalty::Float64          # Dynare's info(2) (a measure of the violation), NaN if not computed; used by estimation
 end
+BlanchardKahnError(msg::AbstractString) = BlanchardKahnError(String(msg), NaN)
 Base.showerror(io::IO, e::BlanchardKahnError) = print(io, "BlanchardKahnError: ", e.msg)
 struct LoglinearError <: Exception
     msg::String
@@ -175,13 +177,17 @@ function solve_linear_re(fm, f0, fp, fu; qz_criterium=QZ_CRITERIUM, lag=nothing,
     end
     if sdim != nspred
         kind = sdim > nspred ? "indeterminacy" : "no stable solution"
-        throw(BlanchardKahnError("Blanchard-Kahn conditions not satisfied ($kind): $(nd - sdim) unstable roots for $nsfwrd forward-looking variables"))
+        # Dynare's info(2): squared distance of the roots in the wrong group from the criterion
+        nba = nd - sdim
+        temp = sort(abs.(eig))
+        temp = nba > nsfwrd ? temp[nd-nba+1:nd-nsfwrd] .- 1 .- qz_criterium : temp[nd-nsfwrd+1:nd-nba] .- 1 .- qz_criterium
+        throw(BlanchardKahnError("Blanchard-Kahn conditions not satisfied ($kind): $(nd - sdim) unstable roots for $nsfwrd forward-looking variables", sum(abs2, temp)))
     end
     w11 = w[1:nspred, 1:nspred]; w12 = w[1:nspred, nspred+1:end]; w22 = w[nspred+1:end, nspred+1:end]
     if nsfwrd > 0
         Fw = lu(permutedims(w22); check=false)
         rc = issuccess(Fw) ? LinearAlgebra.LAPACK.gecon!('1', copy(Fw.factors), opnorm(permutedims(w22), 1)) : 0.0
-        rc < 1e-9 && throw(BlanchardKahnError("rank condition not satisfied"))
+        rc < 1e-9 && throw(BlanchardKahnError("rank condition not satisfied", -log(rc)))
         gx = -(Fw \ permutedims(w12))                 # jumpers on states
     else
         gx = zeros(0, nspred)

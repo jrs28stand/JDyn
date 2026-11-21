@@ -972,7 +972,7 @@ function eval_value(s::ModSession, text::AbstractString, locals=nothing)
         for n in walk(body[1].e)
             n isa Id || continue
             name = n.name
-            if haskey(m.ip, name)
+            if haskey(m.ip, name) && !(locals !== nothing && haskey(locals, name))
                 m.ip[name] in h.tainted && throw(Unsupported("the value of parameter $name is unknown ($(h.taint_why))", "tainted"))
                 sc.vars[name] = m.params[m.ip[name]]
             end

@@ -29,6 +29,9 @@ include("perturbation.jl")
 include("simulate.jl")
 include("korder.jl")
 include("moments.jl")
+include("priors.jl")
+include("kalman.jl")
+include("estimation.jl")
 include("plotting.jl")
 include("occbin.jl")
 
@@ -36,6 +39,7 @@ export run_preprocessor, load, Model, ModelError, steady_state, SteadyStateError
        BlanchardKahnError, ghx, ghu, irf, simulate, set_param!, set_params!, get_param, set_shock_stderr!,
        stoch_simul_moments, theoretical_moments, k_order, KOrderError, korder_library, plot_irfs, irf_figures, irf_table, write_csv, pltorg, IRFResult, IRFFigure,
        Occbin, OccbinResult, OccbinIRF, OccbinError, OccbinPeriodicError, OccbinMaxitError, OccbinHorizonError, OccbinLoopError,
-       OccbinDynareBug, error_flag, irf_occbin, occbin_graph_table, surprise_shocks, mod_options, check_constraints
+       OccbinDynareBug, error_flag, irf_occbin, occbin_graph_table, surprise_shocks, mod_options, check_constraints,
+       Estimation, EstimationError, estimate, posterior_mode, sample_posterior, log_likelihood, log_prior, log_posterior
 
 end

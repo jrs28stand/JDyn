@@ -23,6 +23,7 @@ warning without it.
 | Auxiliary and model-local variables, `loglinear` | against Dynare | 3e-14, 5e-13 |
 | OccBin: piecewise-linear simulation (one and two constraints), `simul_*` options, error flags 310-313, periodic solutions, `error_bind`/`error_relax` | rbc_occbin (169 shock periods, 2 constraints), borrcon_sim/curb, occ_borrcon (two shocks; maxit sweeps, curb_retrench, endo_init, exo_pos, max/reset check-ahead, init_regime, init_binding_indicator), occ_rbc_cyc/occ_rbc1/occ_rbc_err (52 + 24 cycling cases): paths, regime histories and error flags | 3e-15 (paths), regime histories and flags identical |
 | OccBin IRFs (`occbin.irf`: both signs, all shocks, `shocksize`, `check_ahead_periods`, `maxit`) | occ_borrcon (2 shocks), occ_rbc_cyc (2 constraints) | 9e-16 |
+| Estimation, first order (`src/priors.jl`, `kalman.jl`, `estimation.jl`) | prior log density on all families (est_priors); log likelihood and log prior at 13 reference files (est_schorfheide, est_nk v0-v9, est_ur v0-v6: missing data, measurement errors incl. correlated, first_obs/presample, prefilter, lik_init 1-3, diffuse and univariate filters, trends); Hessian, Laplace approximation, csminwel modes, log posterior at Dynare's 40 stored draws | 1.4e-11 (log likelihood), 6e-13 (log prior), 3.6e-10 (log posterior at the draws), 6e-6 (Hessian, relative), 2e-8 (mode value), 5e-5 std (mode location) |
 
 Speed of one `set_param!` + steady state + first-order solve: 0.04-0.08 ms (15 variables), 0.4 ms
 (28 variables, Julia steady-state function), 1.4 ms (42 variables, numerical steady state), 4 to 6 times
@@ -32,7 +33,7 @@ faster than pydyn on the same machine. An interpreted `_steadystate.m` costs abo
 
 - Theoretical moments at order 3 and filtered (HP, band-pass) theoretical moments at order 2 (refused, as in Dynare);
   loglinear models above order 1 (refused, as in Dynare); unit roots with pruning at order 2 (refused, as Dynare).
-- Perfect foresight, Kalman filter and smoother, shock decompositions, estimation.
+- Perfect foresight, Kalman smoother, shock decompositions, estimation beyond first order.
 - OccBin estimation, smoothing, forecasts, shock decompositions and `occbin_write_regimes`: not implemented (the
   `smoother_*`, `likelihood_*`, `filter_*` options of `occbin_setup`/`occbin_solver` give a warning; `occbin_write_regimes`
   is reported as an unhandled statement). OccBin figures themselves are not drawn: the plotted content is
@@ -69,6 +70,25 @@ positions (`exo_pos`) as Dynare's `setup.m` does (pydyn used all columns; same p
 The constraint expressions are evaluated period by period from the preprocessor's JSON text (not vectorised MATLAB code).
 Also run, without a Dynare reference: Dynare's `tests/occbin/model_irrcap_twoconstraints/dynrbc.mod` (lower-case
 `steady_state`, model-local variables, `simul_periodic_solution`, `curb_retrench`, 71 iterations in one period) agrees with pydyn to 4e-16.
+
+## Estimation: scope and limits
+
+- Supported: `varobs`, one `estimated_params` block (plus `estimated_params_init`, `_bounds`, `use_calibration`),
+  `observation_trends`, data from `.m`/`.csv`/`.mat`/matrix, `first_obs`, `nobs`, `presample`, `prefilter`,
+  `loglinear`/`logdata`, `lik_init` 1-3, `diffuse_filter`, `kalman_algo` 0-4, `qz_criterium`, `riccati_tol`,
+  `mode_compute` 0 and 4 (csminwel, ported from Dynare), `mh_replic`/`mh_nblck`/`mh_jscale`/`mh_drop`
+  (random-walk Metropolis-Hastings), Laplace and modified-harmonic-mean marginal densities, posterior moments.
+  `estimate(m)` runs what the `.mod` file's `estimation` statement asks. Unsupported options raise an
+  `EstimationError` (or warn once with `allow_unsupported=true`); other `mode_compute` values are replaced by csminwel with a warning.
+- Not implemented: smoother, forecasts, posterior IRFs, recursive estimation, other samplers, orders above 1,
+  particle filters, more than one `estimated_params` block.
+- The sampler is checked against Dynare's target density (40 stored draws) and statistically (2 x 4000 draws:
+  means within 0.17 posterior std of Dynare's 2 x 20000, modified harmonic mean within 0.19); it is not
+  draw-for-draw because Octave's random numbers cannot be reproduced.
+- Differences from pydyn: csminwel instead of scipy optimisers; correlated measurement errors in the univariate
+  filter (pydyn refuses them); Blanchard-Kahn failures carry Dynare's penalty.
+- Known difference: a root within rounding of `qz_criterium` (Schorfheide with rho = 0.999999, Dynare info 3) is
+  classified as stable by JDyn's QZ; marked as broken in the tests.
 
 ## Behaviour to know
 

@@ -8,10 +8,11 @@ same Dynare 7.2 reference results. It is an independent project, not affiliated 
 the Dynare team's own Julia implementation see [Dynare.jl](https://github.com/DynareJulia/Dynare.jl),
 which uses a Julia-flavoured syntax in `.mod` files.
 
-**Status (2026-11-21): orders 1 to 3 and OccBin.** Calibration, steady state, decision rules at orders 1
-to 3, IRFs, simulation, moments (order 2 theoretical moments, plain and pruned) and OccBin (simulation and
-IRFs, one and two constraints) are implemented and match Dynare 7.2; perfect foresight, filtering and
-estimation are not yet. See [docs/STATUS.md](docs/STATUS.md).
+**Status (2026-11-21): orders 1 to 3, OccBin and first-order estimation.** Calibration, steady state,
+decision rules at orders 1 to 3, IRFs, simulation, moments (order 2 theoretical moments, plain and pruned),
+OccBin (simulation and IRFs, one and two constraints) and first-order estimation (priors, Kalman
+likelihood, posterior mode, Metropolis-Hastings) are implemented and checked against Dynare 7.2; perfect
+foresight, the Kalman smoother and shock decompositions are not yet. See [docs/STATUS.md](docs/STATUS.md).
 
 ## How it works
 
