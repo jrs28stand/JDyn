@@ -21,7 +21,7 @@ const EXPECTED = Dict(
     "stochastic_simulations/nk_baseline" => MATCH,                              # uses its _steadystate.m file
     "stochastic_simulations/schorfheide_2000_nonstationary" => MATCH2,
     "heterogeneity/hank_one_asset" => "not supported",
-    "optimal_policy/nk_ramsey_osr" => "not supported",
+    "optimal_policy/nk_ramsey_osr" => "load failed",                            # Ramsey: refused at load with a ModelError naming it
     "semistructural/pac_model" => "not supported",
     "perfect_foresight/perfect_foresight_rbc" => MATCH,                         # perfect_foresight_solver (src/perfect_foresight.jl)
     "perfect_foresight/perfect_foresight_expectation_errors" => MATCH,
@@ -33,6 +33,7 @@ const EXPECTED = Dict(
         out = check_shipped_example(group, name)
         println(rpad(ex, 60), " | ", rpad(out["status"], 38), " | ", out["detail"])
         @test out["status"] == EXPECTED[ex]
+        EXPECTED[ex] == "load failed" && @test occursin("not supported by JDyn", out["detail"])   # a clear refusal, not a crash
         if EXPECTED[ex] in (MATCH, MATCH1)
             @test isfile(joinpath(EXAMPLE_REFS, "$(group)__$(name).mat"))
         end

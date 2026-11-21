@@ -77,13 +77,17 @@ end
     ref = _seed_run(; seed=11)
     JDyn.set_dynare_seed!(ws, 11)
     JDyn.stoch_simul!(ws; order=2, irf=5, periods=200, nomoments=true)
-    @test ws.oo_.irfs.z_e == ref.oo_.irfs.z_e
+    # the draws repeat exactly; the order-2 solution itself may differ by a few ulps between solves (threaded BLAS
+    # summation order once other tests have warmed it up: ghxx differed by 4e-16 with identical inputs), so the
+    # simulated paths are compared to 1e-12
+    @test isapprox(ws.oo_.irfs.z_e, ref.oo_.irfs.z_e; atol=1e-12)
     JDyn.set_dynare_seed!(ws, 11)
     JDyn.stoch_simul!(ws; order=2, irf=5, periods=200, nomoments=true)
-    again = copy(ws.oo_.endo_simul)
+    again = copy(ws.oo_.endo_simul); again_exo = copy(ws.oo_.exo_simul)
     JDyn.set_dynare_seed!(ws, 11)
     JDyn.stoch_simul!(ws; order=2, irf=5, periods=200, nomoments=true)
-    @test ws.oo_.endo_simul == again
+    @test ws.oo_.exo_simul == again_exo
+    @test isapprox(ws.oo_.endo_simul, again; atol=1e-12)
     # continuing without re-seeding gives new draws
     JDyn.stoch_simul!(ws; order=2, irf=5, periods=200, nomoments=true)
     @test ws.oo_.endo_simul != again
