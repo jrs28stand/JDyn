@@ -507,3 +507,248 @@ r = 0; try, r = double(sprintf('%d', -Inf)); catch, r = -1; end
 r = 0; try, r = double(sprintf('%d %s', 1, 'ab', 2, 'cd')); catch, r = -1; end
 %%
 r = 0; try, r = double(sprintf('x%sy', '')); catch, r = -1; end
+
+%%
+l = [true false true]; l(2) = 5; r = [double(islogical(l)) double(l)];
+%%
+l = [true false true]; l(end) = []; r = [double(islogical(l)) double(l)];
+%%
+l = [true false true]; l(2) = 0; r = [double(islogical(l)) double(l)];
+%%
+l = [true false true]; l(5) = 1; r = [double(islogical(l)) double(l)];
+%%
+l = [true false true]; l(2) = 2.5; r = [double(islogical(l)) double(l)];
+%%
+l = true(2,2); l(:,3) = 7; r = [double(islogical(l)) size(l) double(l(:))'];
+%%
+l = true(2,2); l(1,:) = []; r = [double(islogical(l)) size(l)];
+%%
+l = [true false true]; try, l(2) = NaN; r = 0; catch, r = 1; end
+%%
+l = false(1,3); l(2) = 1; a = [10 20 30]; r = a(l);
+%%
+l = false; l(2) = 3; r = [double(islogical(l)) double(l)];
+%%
+clear x; x(3) = true; r = [double(islogical(x)) double(x)];
+%%
+x = []; x(3) = true; r = [double(islogical(x)) double(x)];
+%%
+l = [1 2 3]; l(2) = true; r = [double(islogical(l)) l];
+%%
+A = [1 2 3; 4 5 6]; r = A(logical([1 0 1])); r = [size(r) r];
+%%
+A = [1 2 3; 4 5 6]; r = A(logical([1;0;1])); r = [size(r) r(:)'];
+%%
+A = [1 2 3; 4 5 6]; r = A(logical([1 0;0 1])); r = [size(r) r(:)'];
+%%
+A = [1 2 3; 4 5 6]; r = A(logical([0 0 0])); r = size(r);
+%%
+A = [1 2 3; 4 5 6]; r = A(A>2); r = [size(r) r(:)'];
+%%
+a = [1 2 3]; r = a(logical([1;0;1])); r = [size(r) r];
+%%
+a = [1 2 3]'; r = a(logical([1 0 1])); r = [size(r) r(:)'];
+%%
+a = [1 2 3]'; r = a(false(1,3)); r = size(r);
+%%
+a = [1 2 3]; r = a(false(3,1)); r = size(r);
+%%
+x = 5; r = size(x(false));
+%%
+x = 5; r = x(true);
+%%
+r = zeros(0,3); r(:,10) = 5; r = size(r);
+%%
+r = zeros(3,0); r(2,:) = 1; r = size(r);
+%%
+r = zeros(0,3); r(2,:) = 5; r = [size(r) r(:)'];
+%%
+r = zeros(0,3); r(end+1,:) = 7; r = [size(r) r(:)'];
+%%
+r = zeros(0,3); r(end+1,:) = [1 2 3]; r = [size(r) r(:)'];
+%%
+r = zeros(0,3); r(1:2,:) = [1 2 3; 4 5 6]; r = [size(r) r(:)'];
+%%
+r = zeros(0,3); r(3,2) = 1; r = [size(r) r(:)'];
+%%
+r = zeros(0,3); r(:,2) = 4; r = size(r);
+%%
+r = zeros(3,0); r(:,2) = [1;2;3]; r = [size(r) r(:)'];
+%%
+r = zeros(1,0); r(:,3) = 4; r = [size(r) r(:)'];
+%%
+r = zeros(0,1); r(2,:) = 4; r = [size(r) r(:)'];
+%%
+r = []; r(end+1,:) = [1 2 3]; r(end+1,:) = 4; r = [size(r) r(:)'];
+%%
+r = []; r(:,1) = [1;2;3]; r = [size(r) r(:)'];
+%%
+r = []; r(:,1) = 5; r = [size(r) r(:)'];
+%%
+r = []; r(2,:) = 5; r = [size(r) r(:)'];
+%%
+r = []; r(2,:) = [1 2]; r = [size(r) r(:)'];
+%%
+r = zeros(2,2); r(:,3) = [1;2]; r = [size(r) r(:)'];
+%%
+r = zeros(2,3); r(:,2) = [1 2]; r = [size(r) r(:)'];
+%%
+a = [3 1 4]; r = zeros(0,3); r(a>2,:) = true; r = [size(r) r(:)'];
+%%
+r = [1 2 3]; r(:,:) = []; r = size(r);
+%%
+r = [1;2;3]; r(:,:) = []; r = size(r);
+%%
+r = [1 2 3; 4 5 6]; r(:,:) = []; r = size(r);
+%%
+r = [1 2 3; 4 5 6]; r(2:end,[]) = []; r = [size(r) r(:)'];
+%%
+r = [1 2 3; 4 5 6]; r([],2) = []; r = [size(r) r(:)'];
+%%
+r = [1 2 3; 4 5 6]; r(:) = []; r = size(r);
+%%
+r = [1 2 3]; r(:) = []; r = size(r);
+%%
+r = [1 2 3; 4 5 6]; r([]) = []; r = [size(r) r(:)'];
+%%
+r = [1 2 3; 4 5 6]; r(1) = []; r = [size(r) r(:)'];
+%%
+r = [1 2 3 4]'; r([1 3]) = []; r = [size(r) r(:)'];
+%%
+r = [1 2 3 4]; r(logical([1 0 1 0])) = []; r = [size(r) r];
+%%
+r = 5; r(1) = []; r = size(r);
+%%
+r = 5; r(:,:) = []; r = size(r);
+%%
+r = zeros(0,3); r(:,:) = []; r = size(r);
+%%
+r = [1 2;3 4]; r(3,:) = []; r = 1;
+%%
+r = 0; try, x = [1 2 3, zeros(2,0)]; r = 1; catch, r = 2; end
+%%
+r = 0; try, x = [1 2 3; zeros(0,2)]; r = 1; catch, r = 2; end
+%%
+r = 0; try, x = [zeros(0,3), 1]; r = 1; catch, r = 2; end
+%%
+r = 0; try, x = [zeros(2,0); 1 2]; r = 1; catch, r = 2; end
+%%
+r = 0; try, x = [zeros(0,2); zeros(0,3)]; r = 1; catch, r = 2; end
+%%
+r = [zeros(1,0), 5]; r = [size(r) r];
+%%
+r = [zeros(1,0), zeros(1,0)]; r = size(r);
+%%
+r = [zeros(0,3); 1 2 3]; r = [size(r) r];
+%%
+r = [zeros(1,0); 1 2 3]; r = [size(r) r];
+%%
+r = [zeros(3,0), [1;2;3]]; r = [size(r) r(:)'];
+%%
+r = [zeros(2,0); zeros(1,0)]; r = size(r);
+%%
+r = [zeros(0,2), zeros(0,3)]; r = size(r);
+%%
+r = [zeros(2,0), zeros(2,0)]; r = size(r);
+%%
+r = [zeros(2,0), zeros(1,0)]; r = size(r);
+%%
+r = [[], zeros(1,0)]; r = size(r);
+%%
+r = [zeros(0,3), zeros(0,3)]; r = size(r);
+%%
+r = [1 2; 3 4; zeros(0,2)]; r = size(r);
+%%
+r = double(any([NaN 1]));
+%%
+r = double(any(NaN));
+%%
+r = double(all(NaN));
+%%
+r = double(all([NaN 0]));
+%%
+r = double(any([NaN 0]));
+%%
+r = double(all([NaN 1]));
+%%
+r = double(any([NaN 0; 0 0]));
+%%
+r = double(all([NaN 1; 1 1]));
+%%
+r = double(any([NaN 0; 1 0], 2));
+%%
+r = double(all([NaN 0; 1 1], 1));
+%%
+if any([NaN 1]), r = 1; else, r = 0; end
+%%
+r = unique([3 NaN 1 NaN]);
+%%
+r = unique([NaN NaN]);
+%%
+r = unique([NaN; 1; NaN; 1]);
+%%
+r = unique([Inf -Inf NaN Inf]);
+%%
+r = unique([3 1 2 1 3]');
+%%
+r = unique([3 1; 2 1]);
+%%
+r = size(unique([]));
+%%
+r = size(unique(zeros(1,0)));
+%%
+r = double(islogical(unique([true false true])));
+%%
+r = 2^[1 2;3 4];
+%%
+r = 0.5^[1 2;3 4];
+%%
+r = 2^[1 2; 2 1];
+%%
+r = 3.5^[2 0; 0 1];
+%%
+r = 10^[1 0; 0 -1];
+%%
+r = 2^[0 0; 0 0];
+%%
+r = size(2^zeros(0,0));
+%%
+r = 0; try, x = 2^[1 2 3]; r = 1; catch, r = 2; end
+%%
+r = 0; try, x = 2^[1 2;3 4;5 6]; r = 1; catch, r = 2; end
+%%
+r = double(sprintf('%d|', 'ab'));
+%%
+r = double(sprintf('%d', 'abc'));
+%%
+r = double(sprintf('%g', 'Hello'));
+%%
+r = double(sprintf('%u', '1e3'));
+%%
+r = double(sprintf('%ld', 5));
+%%
+r = double(sprintf('%-4.3g|', 'ab'));
+%%
+r = double(sprintf('%c|', 'ab'));
+%%
+r = double(sprintf('%s|', 'ab'));
+%%
+r = double(sprintf('%d %s', 5, 'abc'));
+%%
+r = double(sprintf('%s=%d;', 'ab', 5));
+%%
+r = double(sprintf('%d,', 'a', 5, 'bc'));
+%%
+r = double(sprintf('%x', 'a'));
+%%
+r = double(sprintf('%5.1f|', 'a'));
+%%
+r = double(sprintf('%c|', [72 105]));
+%%
+r = double(sprintf('%e', 'a'));
+%%
+r = double(sprintf('%f %f', 'ab'));
+%%
+r = double(sprintf('%d%%', 'ab'));
+%%
+r = double(sprintf('%li|%i', 5, 6));

@@ -107,6 +107,20 @@ All reproduced with new snippets against Octave 8.4 (my differential run of 209 
   non-integers), so that is right.
 - Fix suggestions as in REVIEW.md; for R08 wrap every builtin call in `try ... catch e; e isa MatlabError || merr(...)`.
 
+**Fixed (branch `fix-interp`).** R02 (logical stays logical on assignment and deletion; NaN into a logical is an error;
+an undefined variable takes the class of the right-hand side), R03 (a logical subscript gives `find(mask)`'s orientation:
+a vector source keeps its own), R05/R19 (a colon takes the extent of the array, only a 0x0 array takes it from the
+right-hand side, as Octave's `zero_dims_inquire`), R20 (`unique` keeps every NaN, at the end; `-0 == 0`; logical in,
+logical out; `unique([])` is 0x0), R04 (`any`/`all` ignore NaN as non-zero/zero tests: `any(NaN)` false, `all(NaN)` true),
+R06 (two colons delete every row, empty subscripts delete nothing, a subscript spanning its dimension counts as a colon;
+`A(i) = []` on a matrix gives a row; Octave refuses `A(1:2,2) = []`, JDyn follows MATLAB there), R10 (`s^A` = `expm(log(s)*A)` for
+`s > 0`; `s < 0` is refused as complex, `0^A` as unsupported), R07 (Octave's `dim_vector::hvcat` rule: 0x0 skipped, 1x0 and
+0x1 skipped when they do not fit, anything else is a dimension error), R08 (builtins and `try` turn Julia exceptions such as
+`DimensionMismatch`, `InexactError`, `BoundsError` into MATLAB errors), R09 (a char array met by a numeric or `%c`
+conversion is used one character at a time; `%ld`, `%lu`, `%hd`, ... accepted; `%c` of a non-integer prints `%e` as `%s` does).
+Tests: test/matlab_extra_cases.txt cases 255-376 (Octave 8.4 reference regenerated), test/test_matlab.jl "interpreter fixes",
+the flipped `@test_broken` in test/test_review2_findings.jl.
+
 ### R11 (S1, confirmed) `set_shock_stderr!` zeroes the covariances
 
 `shocks; var e = 1; var u = 4; corr e,u = 0.5; end;` then `set_shock_stderr!(m, "u", 3.0)`: JDyn `[1 0; 0 9]`.
@@ -122,6 +136,8 @@ document it (optionally `keep_correlation=true`).
 `steady_state_model; y = exit(7); end;` then `steady_state(m)` in a child process: the process exits with code 7, no
 output. See R22 for the silently-wrong side of the same cause. Severity stays S3 (denial of service; the reachable
 functions take numbers only).
+
+**Fixed (branch `fix-interp`)** with R22 (bare module; the child process in the test now prints `ALIVE`).
 
 ### R14 (S3, confirmed) `DomainError` from moments near a unit root
 
@@ -156,6 +172,14 @@ Cause: the preprocessor's Julia `steady_state!` is evaluated in `Module(gensym(.
 `src/model.jl:169-170`) and used whenever it runs without `UndefVarError`/`MethodError` (`src/steady.jl:21-34`).
 Fix (also closes R13): evaluate it in a bare module (`Module(name, false)`) that defines only the functions with MATLAB
 semantics (`round` half away from zero, `mod`, `rem`, `fix`, `max`/`min`, ...); anything else goes to the interpreter.
+
+**Fixed (branch `fix-interp`), R22 and R13.** `steady_state_module` (src/model.jl) builds a bare module (no Base, no
+`eval`/`include`) with the operators of the generated text and a table of MATLAB functions (`SSM_NAMES`); the 7.2 text
+of `SteadyState2.jl` is included there, not in the model module. Compiled and interpreted results agree with Octave for
+a 70-expression sweep (`round`, `mod`, `rem`, `sign`, `fix`, `floor`, `ceil`, `max`, `min`, powers, `gamma`, `atan2`, ...);
+`exit`, `sleep` and any other name not in the table are an `UndefVarError`, which sends the block to the interpreter
+(unknown function there). A user-supplied helper with the same name as one of the module's names forces the interpreter.
+`steady_state_model` evaluation time: 0.55 us per call before, 0.57 us after (est_schorfheide, 20000 calls).
 
 ### R23 (S1) The load API keeps only the last `stoch_simul` statement's options
 
@@ -198,6 +222,9 @@ where that changes the answer: with `x` 1 -> 1000 or 1e5 Dynare's own homotopy f
 
 ### R32 (S4) Non-ASCII characters become `?`
 `double('é')` is 63 in JDyn (MATLAB 233; Octave the UTF-8 bytes 195 169). Affects labels and `long_name`s only.
+
+**Fixed (branch `fix-interp`).** String literals keep their characters (`double('é')` is 233, MATLAB's UTF-16 code unit;
+Octave counts UTF-8 bytes). Only string literals are changed: the rest of a line is still read as ASCII for tokenizing.
 
 ---
 

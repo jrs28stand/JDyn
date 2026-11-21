@@ -737,6 +737,64 @@ function mutators(src)
 end
 
 if section("review")
+@testset "interpreter fixes of the second review (REVIEW2 R02-R10, R19, R20, R22, R32)" begin
+    # classes and shapes that the double-valued Octave reference of matlab_extra_cases.txt does not show
+    @test run_m("l = [true false true]; l(2) = 5; r = l;")["r"] isa Matrix{Bool}
+    @test run_m("l = [true false true]; l(end) = []; r = l;")["r"] == Bool[1 0]
+    @test run_m("l = false(1,3); l(2) = 1; r = ([10 20 30])(l);")["r"] == 20.0
+    @test run_m("clear x; x(3) = true; r = x;")["r"] isa Matrix{Bool}
+    @test run_m("x = []; x(3) = true; r = x;")["r"] isa Matrix{Float64}
+    @test_throws MatlabError run_m("l = [true false]; l(1) = NaN;")
+    @test run_m("r = [1 2 3; 4 5 6](logical([1 0 1]));")["r"] == [1.0 2.0]
+    @test run_m("r = unique([true false true]);")["r"] isa Matrix{Bool}
+    @test run_m("r = any([NaN 0]);")["r"] === false && run_m("r = all(NaN);")["r"] === true
+    # R08: Julia exceptions are MATLAB errors (they can be caught), outside a try they are MatlabErrors
+    @test run_m("try, x = trace(ones(2,3)); r = 1; catch, r = 2; end")["r"] == 2.0
+    @test_throws MatlabError run_m("x = trace(ones(2,3));")
+    @test run_m("try, x = trace(ones(2,3)); catch err, r = ischar(err.message); end")["r"] === true
+    # R09
+    @test run_m("r = sprintf('%d|', 'ab');")["r"] == "97|98|"
+    @test run_m("r = sprintf('%ld', 5);")["r"] == "5"
+    @test run_m("r = sprintf('%c', 65.5);")["r"] isa AbstractString
+    @test run_m("r = sprintf('%s=%d;', 'ab', 5);")["r"] == "ab=5;"
+    # R32: non-ASCII characters in string literals (MATLAB: UTF-16 code units; the comment is skipped)
+    @test run_m("r = double('é');")["r"] == 233.0
+    @test run_m("r = double('aé日'); % é")["r"] == [97.0 233.0 26085.0]
+    @test run_m("r = sprintf('é%d', 1);")["r"] == "é1"
+    @test run_m("r = strrep('aéa', 'é', 'x');")["r"] == "axa"
+end
+
+@testset "steady_state_model runs with MATLAB semantics in a bare module (REVIEW2 R22, R13)" begin
+    function ssm(expr; a=2.5, extra="", files=Dict{String,String}())
+        m = build("var y; varexo e; parameters a b; a = $a; b = 0;\nmodel; y = 0.5*y(-1) + e; end;\nsteady_state_model; y = $expr; end;\n" * extra;
+                  files=files)
+        m
+    end
+    ys(m) = steady_state(m; check=false)[1][1]
+    @test ys(ssm("round(a)")) == 3.0 && ys(ssm("round(a)"; a=-2.5)) == -3.0 && ys(ssm("round(a)"; a=0.49999999999999994)) == 0.0
+    @test ys(ssm("mod(a, b)")) == 2.5 && ys(ssm("mod(-7.5, 4)")) == 0.5 && ys(ssm("mod(7.5, -4)")) == -0.5
+    @test ys(ssm("rem(-7.5, 4)")) == -3.5
+    @test throws_match(() -> ys(ssm("rem(a, b)")), SteadyStateError, "non-finite")      # rem(x, 0) is NaN
+    @test ys(ssm("sign(-a) + 10*sign(b)")) == -1.0 && ys(ssm("fix(-a)")) == -2.0 && ys(ssm("floor(-a)")) == -3.0
+    @test ys(ssm("max(a, b)")) == 2.5 && ys(ssm("min(a, -a)")) == -2.5
+    @test ys(ssm("a^b + b^b")) == 2.0                                  # 0^0 = 1
+    # the compiled path is kept for functions both languages have, and used for these
+    m = ssm("round(a) + mod(a, 2) + sqrt(a)")
+    @test m.fns.steady_state !== nothing && ys(m) ≈ 3 + 0.5 + sqrt(2.5)
+    @test m.ssm_compiled_ok
+    # names Julia has and MATLAB (or the interpreter) does not: nothing of Base is visible
+    @test throws_match(() -> ys(ssm("exit(3)")), Union{SteadyStateError,Unsupported,MatlabError})
+    @test throws_match(() -> ys(ssm("sleep(0)")), Union{SteadyStateError,Unsupported,MatlabError})
+    # a complex result is refused as before (the compiled path raises DomainError, the interpreter refuses)
+    @test throws_match(() -> ys(ssm("(-a)^0.5")), Union{SteadyStateError,Unsupported,MatlabError})
+    # a Julia function given by the user takes precedence over the compiled module's own names
+    m = build("var y; varexo e; parameters a; a = 2.5;\nmodel; y = 0.5*y(-1) + e; end;\nsteady_state_model; y = round(a); end;\n";
+              functions=Dict("round" => (x...) -> 42.0))
+    @test ys(m) == 42.0
+end
+end
+
+if section("review")
 @testset "mutator list is complete for the Dynare tree" begin
     # review E: every Dynare function that writes the calibration through `global M_` (or returns a changed M_)
     # is in JDyn's refusal lists
