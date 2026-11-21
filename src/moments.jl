@@ -142,6 +142,7 @@ const _MOM_DEFAULTS = Dict{String,Any}("order" => 1, "ar" => 5, "hp_filter" => 0
     "nodecomposition" => false, "nocorr" => false, "pruning" => false, "periods" => 0, "drop" => 100,
     "conditional_variance_decomposition" => Int[], "contemporaneous_correlation" => false,
     "qz_criterium" => QZ_CRITERIUM, "schur_vec_tol" => 1e-11, "lyapunov_complex_threshold" => 1e-15,
+    "lyapunov_doubling_tol" => 1e-16,
     "add_tiny_number_to_cholesky" => 1e-14)
 const _MOM_FROM_MOD = Dict("bandpass.indicator" => "bandpass", "bandpass.passband" => "passband")
 
@@ -214,6 +215,11 @@ struct Rules
     nstatic::Int
     inv_order_var::Vector{Int}
     index_states::Vector{Int}
+    has2::Bool                       # second-order terms present
+    ghxx::Matrix{Float64}
+    ghxu::Matrix{Float64}
+    ghuu::Matrix{Float64}
+    ghs2::Vector{Float64}
 end
 function Rules(m, dr)
     dr = _as_dr(dr)
@@ -222,8 +228,12 @@ function Rules(m, dr)
     _, _, cnt = dr_ordering(m.lead_lag_incidence)
     cnt.npred + cnt.nboth == size(ghx_, 2) || throw(ArgumentError("decision rule does not match the model"))
     inv = zeros(Int, length(ov)); inv[ov] .= 1:length(ov)
+    has2 = all(k -> haskey(dr, k), ("ghxx", "ghxu", "ghuu", "ghs2"))
+    z = zeros(0, 0)
     Rules(Float64.(dr["ys"]), ghx_, ghu_, ov, Int.(dr["state_var"]), length(ov), size(ghx_, 2), size(ghu_, 2),
-          cnt.nstatic, inv, collect(cnt.nstatic+1:cnt.nstatic+size(ghx_, 2)))
+          cnt.nstatic, inv, collect(cnt.nstatic+1:cnt.nstatic+size(ghx_, 2)), has2,
+          has2 ? Matrix{Float64}(dr["ghxx"]) : z, has2 ? Matrix{Float64}(dr["ghxu"]) : z,
+          has2 ? Matrix{Float64}(dr["ghuu"]) : z, has2 ? vec(Float64.(dr["ghs2"])) : Float64[])
 end
 
 function _measurement_errors(m)
@@ -258,6 +268,8 @@ Base.@kwdef mutable struct Moments
     conditional_variance_decomposition::Union{Nothing,Array{Float64,3}} = nothing
     conditional_variance_decomposition_me::Union{Nothing,Array{Float64,3}} = nothing
     me_var_names::Vector{String} = String[]
+    pruning::Bool = false                                                   # pruned state space moments (order 2)
+    mean_correction::Union{Nothing,Vector{Float64}} = nothing               # order 2 without pruning: mean minus steady state
 end
 
 function _intersect_stable(a, b)
@@ -348,6 +360,9 @@ end
 function _th_autocovariances(R::Rules, Sigma, ivar, o)
     nar = o["ar"]
     filtered = o["hp_filter"] != 0 || o["bandpass"]
+    local_order = o["order"]
+    local_order >= 3 && throw(ArgumentError("Theoretical moments not implemented above 2nd order"))
+    local_order > 1 && filtered && throw(ArgumentError("Theoretical filtered moments not implemented above 1st order"))
     nvar = length(ivar)
     ns = R.nspred
     ghx_, ghu_ = R.ghx, R.ghu
@@ -364,6 +379,25 @@ function _th_autocovariances(R::Rules, Sigma, ivar, o)
             x = abs.(ghx_ * u)
             stationary = findall(vec(all(x[inv[ivar], :] .< o["schur_vec_tol"]; dims=2)))
             idx_stat = inv[ivar[stationary]]
+        end
+    end
+    mean_corr = nothing
+    if local_order == 2
+        R.has2 || throw(ArgumentError("second-order decision rules (ghxx, ghxu, ghuu, ghs2) are needed"))
+        sig = vec(Sigma)
+        mean_corr = fill(NaN, nvar)
+        if ns > 0
+            ist = R.index_states
+            Ex = (R.ghs2[ist] .+ R.ghxx[ist, :] * vec(Vx) .+ R.ghuu[ist, :] * sig) ./ 2.0
+            Ex = try
+                (Matrix{Float64}(I, ns, ns) - ghx_[ist, :]) \ Ex
+            catch e
+                e isa LinearAlgebra.SingularException ? fill(NaN, ns) : rethrow()   # unit root among the states
+            end
+            mean_corr[stationary] .= ghx_[idx_stat, :] * Ex .+ (R.ghs2[idx_stat] .+ R.ghxx[idx_stat, :] * vec(Vx) .+
+                                                                R.ghuu[idx_stat, :] * sig) ./ 2.0
+        else
+            mean_corr[stationary] .= (R.ghs2[idx_stat] .+ R.ghuu[idx_stat, :] * sig) ./ 2.0
         end
     end
     aa = ghx_[idx_stat, :]
@@ -449,7 +483,119 @@ function _th_autocovariances(R::Rules, Sigma, ivar, o)
             end
         end
     end
+    mean_corr === nothing || push!(gamma, mean_corr)          # gamma[nar+3], as Dynare's Gamma_y{nar+3}
     gamma, stationary
+end
+
+"Doubling algorithm of Dynare's disclyap_fast MEX file: (x, errorflag)."
+function disclyap_fast(g, v; tol=1e-16, max_iter=2000)
+    P0, A0 = Matrix{Float64}(v), Matrix{Float64}(g)
+    matd, it = 1.0, 1
+    while matd > tol && it < max_iter
+        P1 = P0 + A0 * P0 * A0'
+        A1 = A0 * A0
+        matd = maximum(abs, P1 - P0)
+        P0, A0 = P1, A1
+        it += 1
+    end
+    (it == max_iter || isnan(matd)) && return fill(NaN, size(P0)), true
+    (P0 + P0') ./ 2, false
+end
+
+"K with K kron(a, b) = kron(b, a) for a, b in R^n."
+function _commutation(n)
+    K = zeros(n * n, n * n)
+    for i in 0:n-1, j in 0:n-1
+        K[j*n+i+1, i*n+j+1] = 1.0
+    end
+    K
+end
+
+"""
+Order-2 pruned-state-space moments (Dynare's pruned_state_space_system.m with order 2; port of pydyn's
+`_pruned_order2`). Returns `(E_y, Var_y, Corr_y, Corr_yi)` for the variables `ivar`.
+"""
+function _pruned_order2(R::Rules, Sigma, ivar, o)
+    nar = o["ar"]
+    R.has2 || throw(ArgumentError("second-order decision rules (ghxx, ghxu, ghuu, ghs2) are needed"))
+    x, u = R.nspred, R.nexo
+    indx = R.index_states
+    indy = R.inv_order_var[ivar]
+    Yss = R.ys[R.order_var]
+    hx, gx = R.ghx[indx, :], R.ghx[indy, :]
+    hu, gu = R.ghu[indx, :], R.ghu[indy, :]
+    hxx, gxx = R.ghxx[indx, :], R.ghxx[indy, :]
+    hxu, gxu = R.ghxu[indx, :], R.ghxu[indy, :]
+    huu, guu = R.ghuu[indx, :], R.ghuu[indy, :]
+    hss, gss = R.ghs2[indx], R.ghs2[indy]
+    E_uu = Matrix{Float64}(Sigma)
+    Var_z1, Schur_u = lyapunov_symm(hx, hu * E_uu * hu'; qz_criterium=o["qz_criterium"], complex_threshold=o["lyapunov_complex_threshold"])
+    size(Schur_u, 2) > 0 && error("pruned_state_space_system: the pruned state space currently does not support unit roots at higher order.")
+    E_xfxf = Var_z1
+    vS = vec(E_uu)
+    hx_hx, hx_hu, hu_hu = kron(hx, hx), kron(hx, hu), kron(hu, hu)
+    I_xx = Matrix{Float64}(I, x * x, x * x)
+    K_xx = _commutation(x)
+    invIx_hx = inv(Matrix{Float64}(I, x, x) - hx)
+    # fourth moments of the Gaussian shocks (Isserlis); rows/columns indexed like kron(u, u)
+    V22 = zeros(u * u, u * u)
+    for i in 1:u, j in 1:u, k in 1:u, l in 1:u
+        V22[(i-1)*u+j, (k-1)*u+l] = E_uu[i, j] * E_uu[k, l] + E_uu[i, k] * E_uu[j, l] + E_uu[i, l] * E_uu[j, k]
+    end
+    V22 .-= vS * vS'
+    E_xfxf_uu = kron(E_xfxf, E_uu')
+    nz = 2x + x * x
+    ni = u + u * u + x * u
+    id1, id2, id3 = 1:x, x+1:2x, 2x+1:nz
+    j1, j2, j3 = 1:u, u+1:u+u*u, u+u*u+1:ni
+    A = zeros(nz, nz)
+    A[id1, id1] = hx
+    A[id2, id2] = hx
+    A[id2, id3] = 0.5 .* hxx
+    A[id3, id3] = hx_hx
+    B = zeros(nz, ni)
+    B[id1, j1] = hu
+    B[id2, j2] = 0.5 .* huu
+    B[id2, j3] = hxu
+    B[id3, j2] = hu_hu
+    B[id3, j3] = (I_xx + K_xx) * hx_hu
+    c2 = 0.5 .* hss .+ 0.5 .* (huu * vS)
+    C = zeros(length(indy), nz)
+    C[:, id1] = gx
+    C[:, id2] = gx
+    C[:, id3] = 0.5 .* gxx
+    D = zeros(length(indy), ni)
+    D[:, j1] = gu
+    D[:, j2] = 0.5 .* guu
+    D[:, j3] = gxu
+    d = 0.5 .* gss .+ 0.5 .* (guu * vS)
+    Varinov = zeros(ni, ni)
+    Varinov[j1, j1] = E_uu
+    Varinov[j2, j2] = V22
+    Varinov[j3, j3] = E_xfxf_uu
+    E_xs = invIx_hx * (0.5 .* (hxx * vec(E_xfxf)) .+ c2)
+    Om_z = B * Varinov * B'
+    Var_z, err = disclyap_fast(A, Om_z; tol=o["lyapunov_doubling_tol"])
+    if err
+        println("PRUNED_STATE_SPACE_SYSTEM: error flag in disclyap_fast at order=2, use lyapunov_symm")
+        Var_z, _ = lyapunov_symm(A, Om_z; qz_criterium=1.0, complex_threshold=o["lyapunov_complex_threshold"])
+    end
+    Var_z[id1, id2] .= 0; Var_z[id1, id3] .= 0; Var_z[id2, id1] .= 0; Var_z[id3, id1] .= 0
+    Var_y = C * Var_z * C' + D * Varinov * D'
+    Var_y[abs.(Var_y) .< 1e-12] .= 0.0
+    sd = sqrt.(diag(Var_y))
+    sy = sd * sd'
+    Corr_y = Var_y ./ sy
+    tmp = A * Var_z * C' + B * Varinov * D'
+    Ai = Matrix{Float64}(I, nz, nz)
+    Corr_yi = Matrix{Float64}[]
+    for _ in 1:nar
+        push!(Corr_yi, (C * Ai * tmp) ./ sy)
+        Ai = Ai * A
+    end
+    E_z = vcat(zeros(x), E_xs, vec(E_xfxf))
+    E_y = Yss[indy] .+ C * E_z .+ d
+    E_y, Var_y, Corr_y, Corr_yi
 end
 
 function _me_vd(vd_percent, var, isub, iobs, Hd, nexo)
@@ -461,15 +607,20 @@ end
 """
     theoretical_moments(m, dr=nothing; var_list=nothing, Sigma_e=nothing, H=nothing, options...) -> Moments
 
-Theoretical first-order moments as Dynare's `disp_th_moments` computes them, with the options of the
+Theoretical moments (order 1; order 2 plain or pruned) as Dynare's `disp_th_moments` computes them, with the options of the
 `.mod` file's `stoch_simul` (`ar`, `hp_filter`, `bandpass_filter`, `nodecomposition`, `nocorr`,
 `conditional_variance_decomposition`, ...) unless overridden by keywords.
 """
 function theoretical_moments(m::Model, dr=nothing; var_list=nothing, Sigma_e=nothing, H=nothing, options...)
     o = _mom_options(m, Dict(string(k) => v for (k, v) in options))
     o["one_sided_hp_filter"] != 0 && throw(ArgumentError("theoretical moments incompatible with one-sided HP filter. Use simulated moments instead"))
-    o["order"] >= 2 && throw(ArgumentError("JDyn computes theoretical moments at first order only for now (the .mod file or the call asks for order=$(o["order"]); pass order=1)"))
-    dr === nothing && (dr = first_order(m))
+    order = o["order"]
+    order >= 3 && throw(ArgumentError("Theoretical moments are implemented up to second order"))
+    if order == 2 && m.max_deriv_order < 2
+        @warn "using order = 1 because Hessian is equal to zero"
+        order = o["order"] = 1
+    end
+    dr === nothing && (dr = solve_dr(m, order))
     R = Rules(m, dr)
     Sigma = Sigma_e === nothing ? m.Sigma_e : Sigma_e
     ivar = _var_indices(m, var_list)
@@ -483,40 +634,77 @@ function theoretical_moments(m::Model, dr=nothing; var_list=nothing, Sigma_e=not
         obs_pos, isub, iobs = _intersect_stable(ivar, vid)
         me_present = !isempty(obs_pos)
     end
-    res = Moments(kind="theoretical", order=1, filter=_filter_name(o),
+    pruned = order == 2 && o["pruning"] == true
+    pruned && (o["hp_filter"] != 0 || o["bandpass"]) &&
+        throw(ArgumentError("theoretical moments incompatible with filtering at order 2. Use simulated moments instead"))
+    res = Moments(kind=pruned ? "pruned" : "theoretical", order=order, pruning=pruned, filter=_filter_name(o),
                   filter_param=o["hp_filter"] != 0 ? o["hp_filter"] : o["bandpass"] ? o["passband"] : nothing,
                   var_names=[m.endo_names[i] for i in ivar], var_index=ivar, exo_names=copy(m.exo_names),
                   stationary=trues(nvar), ar=nar)
-    gamma, stat = _th_autocovariances(R, Sigma, ivar, o)
-    res.stationary = [i in stat for i in 1:nvar]
-    res.gamma_y = gamma
-    mean = R.ys[ivar]
-    mean[.!res.stationary] .= NaN
-    var = gamma[1]
-    s2 = diag(var)
-    sd = [x >= 0 ? sqrt(x) : NaN for x in s2]
-    res.mean, res.var, res.variance, res.std = mean, var, s2, sd
-    if !isempty(stat) && !(o["nodecomposition"] == true)
-        res.variance_decomposition = 100 .* gamma[nar+2]
-        me_present && (res.variance_decomposition_me = _me_vd(res.variance_decomposition, var, isub, iobs, Hd, R.nexo))
-    end
-    if !isempty(steps)
-        res.conditional_steps = steps
-        res.conditional_variance_decomposition, res.conditional_variance_decomposition_me =
-            conditional_variance_decomposition(m, R, steps; var_list=ivar, Sigma_e=Sigma, H=Hd, varobs_id=vid)
-    end
-    i1 = findall(x -> abs(x) > 1e-12, s2)
-    if !isempty(i1)
-        if !(o["nocorr"] == true) && !isempty(stat)
-            corr = fill(NaN, size(var))
-            corr[i1, i1] .= var[i1, i1] ./ (sd[i1] * sd[i1]')
-            res.corr = corr
+    if pruned
+        E_y, Var_y, Corr_y, Corr_yi = _pruned_order2(R, Sigma, ivar, o)
+        s2 = diag(Var_y)
+        sd = sqrt.(s2)
+        res.mean, res.var, res.variance, res.std = E_y, Var_y, s2, sd
+        res.gamma_y = Any[Var_y, Corr_yi...]
+        i1 = findall(x -> abs(x) > 1e-12, s2)
+        if !isempty(i1)
+            o["nocorr"] == true || (res.corr = Corr_y)
+            res.autocorr = Corr_yi
         end
-        (nar > 0 && !isempty(stat)) && (res.autocorr = [gamma[i+1] for i in 1:nar])
+        if !(o["nodecomposition"] == true) && R.nexo > 1
+            ghu_s = R.ghu[R.index_states, :]
+            A = R.ghx[R.index_states, :]
+            idx = R.inv_order_var[ivar]
+            vd = _compute_variance_decomposition(R, Sigma, o, A, R.ghx[idx, :], ghu_s, collect(1:nvar), idx, nvar, s2)
+            push!(res.gamma_y, vd)
+            res.variance_decomposition = 100 .* vd
+            me_present && (res.variance_decomposition_me = _me_vd(res.variance_decomposition, res.var, isub, iobs, Hd, R.nexo))
+            if !isempty(steps)
+                res.conditional_steps = steps
+                res.conditional_variance_decomposition, res.conditional_variance_decomposition_me =
+                    conditional_variance_decomposition(m, R, steps; var_list=ivar, Sigma_e=Sigma, H=Hd, varobs_id=vid)
+            end
+        end
+    else
+        gamma, stat = _th_autocovariances(R, Sigma, ivar, o)
+        res.stationary = [i in stat for i in 1:nvar]
+        res.gamma_y = gamma
+        mean = R.ys[ivar]
+        mean[.!res.stationary] .= NaN
+        var = gamma[1]
+        s2 = diag(var)
+        sd = [x >= 0 ? sqrt(x) : NaN for x in s2]
+        if order == 2
+            res.mean_correction = gamma[nar+3]
+            mean = mean .+ gamma[nar+3]
+        end
+        res.mean, res.var, res.variance, res.std = mean, var, s2, sd
+        if !isempty(stat) && !(o["nodecomposition"] == true)
+            res.variance_decomposition = 100 .* gamma[nar+2]
+            me_present && (res.variance_decomposition_me = _me_vd(res.variance_decomposition, var, isub, iobs, Hd, R.nexo))
+        end
+        if !isempty(steps)
+            res.conditional_steps = steps
+            res.conditional_variance_decomposition, res.conditional_variance_decomposition_me =
+                conditional_variance_decomposition(m, R, steps; var_list=ivar, Sigma_e=Sigma, H=Hd, varobs_id=vid)
+        end
+        i1 = findall(x -> abs(x) > 1e-12, s2)
+        if !isempty(i1)
+            if !(o["nocorr"] == true) && !isempty(stat)
+                corr = fill(NaN, size(var))
+                corr[i1, i1] .= var[i1, i1] ./ (sd[i1] * sd[i1]')
+                res.corr = corr
+            end
+            (nar > 0 && !isempty(stat)) && (res.autocorr = [gamma[i+1] for i in 1:nar])
+        end
     end
     me_present && (res.me_var_names = [m.endo_names[i] for i in obs_pos])
     res
 end
+
+"Decision rules at `order` (1 to 3) as a Dict: `first_order` at order 1, Dynare's k-order library above."
+solve_dr(m::Model, order::Integer) = order == 1 ? as_dr(first_order(m)) : k_order(m; order=order)
 
 "get_filtered_time_series.m, plus the removal of the band-pass edge rows."
 function get_filtered_time_series(y, mean, o)
@@ -615,8 +803,8 @@ function stoch_simul_moments(m::Model; var_list=nothing, dr=nothing, shocks=noth
     warn_unused(m, "stoch_simul", union(Set(keys(_MOM_DEFAULTS)), Set(keys(_MOM_FROM_MOD)), _MOM_NEUTRAL), "stoch_simul_moments")
     o = _mom_options(m, Dict(string(k) => v for (k, v) in options))
     o["periods"] == 0 && return theoretical_moments(m, dr; var_list=var_list, H=H, options...)
-    o["order"] >= 2 && throw(ArgumentError("JDyn simulates at first order only for now (order=$(o["order"]) requested; pass order=1)"))
-    dr === nothing && (dr = first_order(m))
+    order = o["order"]
+    dr === nothing && (dr = solve_dr(m, order))
     ivar = _var_indices(m, var_list)
     periods = Int(o["periods"])
     periods <= o["drop"] && throw(ArgumentError("STOCH_SIMUL error: The horizon of simulation is shorter than the number of observations to be dropped. Either increase periods or decrease drop."))
@@ -627,7 +815,7 @@ function stoch_simul_moments(m::Model; var_list=nothing, dr=nothing, shocks=noth
         shocks = zeros(periods, size(Sigma, 1))
         shocks[:, iv] .= randn(rng, periods, length(iv)) * Matrix(cholesky(Symmetric(Sigma[iv, iv])).L)'
     end
-    y = simulate(_as_dr(dr), shocks; order=1)
+    y = simulate(_as_dr(dr), shocks; order=order, pruning=o["pruning"] == true)
     keys_ = Dict(k => v for (k, v) in options if haskey(_MOM_DEFAULTS, string(k)) || string(k) in ("bandpass_filter", "steps"))
     simulated_moments(y; ivar=ivar, shocks=shocks, dr=dr, model=m, keys_...)
 end

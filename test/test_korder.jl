@@ -59,6 +59,22 @@ if _HAVE_LIB
         @test_throws JDyn.KOrderError JDyn.k_order(m; order=2, loglinear=true)
         @test_throws JDyn.KOrderError JDyn.k_order(m; order=2, library="/nonexistent/lib.so")
     end
+    @testset "order 2 with auxiliary variables (aux_a)" begin
+        m = _load(joinpath(REF, "aux_a.mod"); output="second")
+        r = refmat("clean_aux_a.mat")
+        dr = JDyn.k_order(m; order=2)
+        for nm in ("ghx", "ghu", "ghxx", "ghxu", "ghuu", "ghs2")
+            want = reshape(Float64.(r[nm]), size(dr[nm]))
+            record!("rules order 2, aux_a", maxabs(dr[nm], want))
+            @test close(dr[nm], want; rtol=1e-8, atol=1e-10)
+        end
+        y1 = simulate(dr, Float64.(r["ex"]); order=1)
+        y2 = simulate(dr, Float64.(r["ex"]); order=2, pruning=true)
+        record!("simulation aux_a order 1", maxabs(y1, Float64.(r["y1"])[2:end, :]))
+        record!("simulation aux_a order 2 pruned", maxabs(y2, Float64.(r["y2_pruned"])[2:end, :]))
+        @test close(y1, Float64.(r["y1"])[2:end, :]; rtol=1e-9, atol=1e-11)
+        @test close(y2, Float64.(r["y2_pruned"])[2:end, :]; rtol=1e-9, atol=1e-11)
+    end
     @testset "linear model: no second-order terms" begin
         m = build("var c k; varexo e; parameters a; a=0.5;\nmodel; c = a*c(-1) + 0.1*c(+1) + e + k; k = 0.5*k(-1)+e; end;\n" *
                   "shocks; var e; stderr 1; end;\nstoch_simul(order=2, irf=0);")
