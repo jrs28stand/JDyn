@@ -924,13 +924,20 @@ const PLOT_FUNCS = split("figure plot subplot title legend xlabel ylabel zlabel 
     "plot3 surf mesh colorbar suptitle sgtitle xlim ylim annotation text orient hgsave savefig fill area " *
     "scatter stairs semilogy semilogx loglog clf set get gca gcf colormap shading dyn_saveas dyn_figure " *
     "errorbar patch contour quiver fplot ezplot rplot")
-_plot(I, argnodes, sc, nout) = throw(Unsupported("plotting", "plot"))
+function _plot(I, argnodes, sc, nout)
+    ALLOW_RANDOM[] || throw(Unsupported("plotting", "plot"))
+    # run by dynare() (as with the `nograph` option): drawing is skipped, the arguments are still evaluated
+    for a in argnodes
+        (a isa Str || a isa Num || a isa ColonAll) || ev_multi(I, a, sc, 1)
+    end
+    nout > 0 ? Any[1.0] : Any[]
+end
 lazy!(_plot, PLOT_FUNCS...)
 
 const FILE_FUNCS = split("save fopen fread fwrite fgetl fgets fscanf textscan importdata xlsread xlswrite csvread csvwrite " *
-    "dlmread dlmwrite readtable writetable readmatrix writematrix delete copyfile movefile mkdir rmdir " *
-    "addpath rmpath cd pwd dir ls system unix dos isfile isfolder isdir fileparts fullfile exist_file " *
-    "datatomfile matfile which websave urlread unzip zip tempdir tempname getenv setenv " *
+    "dlmread dlmwrite readtable writetable readmatrix writematrix delete copyfile movefile rmdir " *
+    "addpath rmpath cd dir ls system unix dos exist_file " *
+    "datatomfile matfile which websave urlread unzip zip tempdir tempname setenv " *
     "open winopen edit type input keyboard dbstack mfilename genpath path userpath")
 _file(I, argnodes, sc, nout) = throw(Unsupported("file-system, shell or interactive functions are not available", "file"))
 lazy!(_file, FILE_FUNCS...)

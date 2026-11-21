@@ -16,7 +16,9 @@ function worker_main(o)
         todo = [t for t in e.tests if !(("$(e.id)|$t") in done)]
         isempty(todo) && continue
         base = joinpath(scratch_root, replace(e.id, '/' => '_'), "tests")
-        isdir(base) || begin
+        mkpath(base)
+        isfile(joinpath(base, ".copied")) || begin
+            touch(joinpath(base, ".copied"))
             for f in vcat(e.tests, e.extras)
                 src = normpath(joinpath(o["tests"], f)); dst = normpath(joinpath(base, f))
                 isfile(src) || continue
@@ -81,7 +83,7 @@ clean(s) = replace(first(replace(String(s), r"\s+" => " "), 400), TAB => " ")
 function classify(e, JD)
     if e isa JD.MatlabError
         return e.user ? ("CHECK_FAILED", "MatlabError", e.msg) : ("ERROR", "MatlabError", e.msg)
-    elseif e isa JD.ModelError && e.cause isa JD.MatlabError && e.cause.user
+    elseif e isa JD.ModelError && hasfield(JD.ModelError, :cause) && e.cause isa JD.MatlabError && e.cause.user
         # the session wraps the MatlabError of the file's own error()/assert() in a ModelError
         return ("CHECK_FAILED", "MatlabError", e.cause.msg)
     elseif e isa JD.ModelError || e isa JD.Unsupported

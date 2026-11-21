@@ -273,3 +273,74 @@ bi!("varlist_indices") do I, a, nout
     out = shp[1] == 1 ? reshape(Float64.(uniq), 1, :) : reshape(Float64.(uniq), :, 1)
     Any[ret(out), Float64(length(uniq)), ret(reshape(Float64.(first_pos), :, 1))]
 end
+
+# ---------------------------------------------------------------------- files (only when the file is run by dynare())
+_need_exec(what) = ALLOW_RANDOM[] || throw(Unsupported("$what: file-system access is only available when the file is run by dynare()", "file"))
+_mat_value(v::Bool) = v
+_mat_value(v::Real) = Float64(v)
+_mat_value(v::AbstractString) = String(v)
+_mat_value(v::AbstractMatrix{<:Real}) = v isa AbstractMatrix{Bool} ? ret(Matrix{Bool}(v)) : ret(Matrix{Float64}(v))
+_mat_value(v::AbstractVector{<:Real}) = ret(reshape(Float64.(v), :, 1))
+function _mat_value(v::AbstractDict)
+    s = MStruct()
+    for k in sort(collect(keys(v)))
+        s[String(k)] = _mat_value(v[k])
+    end
+    s
+end
+_mat_value(v::AbstractArray) = Cell(Any[_mat_value(x) for x in v], ndims(v) == 1 ? (length(v), 1) : size(v))
+_mat_value(v) = throw(Unsupported("load: a value of class $(typeof(v)) in the MAT-file", "file"))
+
+"`s = load(file)`: the variables of a MAT-file (or an ASCII matrix file) as a struct."
+function _load_to_struct(I, a)
+    name = String(a[1])
+    cands = isabspath(name) ? [name, name * ".mat"] : [joinpath(I.dir === nothing ? pwd() : I.dir, name), joinpath(I.dir === nothing ? pwd() : I.dir, name * ".mat"), name, name * ".mat"]
+    path = findfirst(isfile, cands)
+    path === nothing && merr("load: unable to find file $name")
+    p = cands[path]
+    data = try
+        MAT.matread(p)
+    catch
+        throw(Unsupported("load: $(basename(p)) is not a MAT-file that can be read", "file"))
+    end
+    names = String[x for x in a[2:end]]
+    s = MStruct()
+    for k in sort(collect(keys(data)))
+        (isempty(names) || k in names) && (s[String(k)] = _mat_value(data[k]))
+    end
+    s
+end
+
+bi!("fullfile") do I, a, nout
+    all(x -> x isa AbstractString, a) || merr("fullfile: all arguments must be strings")
+    parts = [x for x in a if !isempty(x)]
+    isempty(parts) && return ""
+    r = parts[1]
+    for x in parts[2:end]
+        r = (endswith(r, "/") ? r : r * "/") * lstrip(x, '/')
+    end
+    String(r)
+end
+bi!("fileparts") do I, a, nout
+    _nargs(a, 1, 1, "fileparts")
+    a[1] isa AbstractString || merr("fileparts: FILENAME must be a single string")
+    f = String(a[1])
+    i = findlast('/', f); dir = i === nothing ? "" : (i == 1 ? "/" : f[1:i-1]); rest = i === nothing ? f : f[i+1:end]
+    j = findlast('.', rest)
+    (j === nothing) ? Any[dir, rest, ""] : Any[dir, rest[1:j-1], rest[j:end]]
+end
+bi!("pwd") do I, a, nout
+    _need_exec("pwd"); pwd()
+end
+bi!("isfile") do I, a, nout
+    _need_exec("isfile"); a[1] isa AbstractString || merr("isfile: argument must be a string"); isfile(a[1])
+end
+bi!("isfolder", "isdir") do I, a, nout
+    _need_exec("isfolder"); a[1] isa AbstractString || merr("isfolder: argument must be a string"); isdir(a[1])
+end
+bi!("getenv") do I, a, nout
+    _need_exec("getenv"); a[1] isa AbstractString || merr("getenv: argument must be a string"); String(get(ENV, a[1], ""))
+end
+bi!("mkdir") do I, a, nout
+    _need_exec("mkdir"); mkpath(String(a[end])); nout > 0 ? Any[true, "", ""] : Any[]
+end

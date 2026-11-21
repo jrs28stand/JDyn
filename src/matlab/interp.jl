@@ -803,6 +803,9 @@ bi!("clear", "clearvars") do I, a, nout
     r === nothing ? Any[] : r
 end
 bi!("load") do I, a, nout
+    if nout > 0 && !isempty(a) && all(x -> x isa AbstractString, a)
+        return _load_to_struct(I, a)
+    end
     (nout > 0 || isempty(a) || !all(x -> x isa AbstractString, a)) && throw(Unsupported("load with an output or computed arguments", "file"))
     r = load_file(I, collect(String, a), I.scope_stack[end])
     r === nothing ? Any[] : r

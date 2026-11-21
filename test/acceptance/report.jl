@@ -22,6 +22,8 @@ function read_rows(dir=HERE)
         for l in eachline(f)
             p = split(l, TAB; keepempty=true)
             length(p) < 7 && continue
+            # sweeps made before ModelError carried its cause report the file's own error() as a refusal
+            (p[3] == "REFUSED" && occursin(r"^MATLAB error in the \.mod file at \"(error|assert)\(", p[7])) && (p[3] = "CHECK_FAILED")
             push!(rows, Row(p[1], p[2], p[3], something(tryparse(Float64, p[4]), 0.0), something(tryparse(Int, p[5]), 0), p[6], p[7], length(p) >= 8 ? p[8] : ""))
         end
     end
@@ -32,7 +34,10 @@ end
 function cause_key(r::Row)
     r.cat == "CHECK_FAILED" && return "check: " * first(r.msg, 80)
     m = r.cat == "OK_WARN" ? first(split(r.warns, " || ")) : r.msg
-    r.cat == "OK_WARN" && occursin("not executed (", m) && (m = replace(m, r"^MATLAB code in the \.mod file: \d+ statement\(s\) not executed " => "MATLAB lines not executed "); m = first(split(m, ". In them"))
+    if r.cat == "OK_WARN" && occursin("not executed (", m)
+        m = replace(m, r"^MATLAB code in the \.mod file: \d+ statement\(s\) not executed " => "MATLAB lines not executed ")
+        m = String(first(split(m, ". In them")))
+    end
     m = replace(m, r"/[\w./+-]+" => "<path>")
     m = replace(m, r"\d+(\.\d+)?(e[-+]?\d+)?" => "N")
     m = replace(m, r"'[^']*'" => "'_'")
