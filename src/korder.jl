@@ -70,7 +70,7 @@ the folded tensors `g_0` ... `g_k` (`pruning_g_i` with pruning), `ys`, `order_va
 `order`, `pruning`, `params`. The Dict goes straight into `simulate` and `irf`.
 """
 function k_order(m::Model; order=nothing, ys=nothing, params=nothing, pruning=nothing, threads=1, library=nothing,
-                 qz_criterium=nothing, loglinear=nothing)
+                 qz_criterium=nothing, loglinear=nothing, Sigma_e=nothing)
     so = stoch_options(m)
     order === nothing && (order = Int(get(so, "order", 2)))
     pruning === nothing && (pruning = get(so, "pruning", false) == true)
@@ -89,7 +89,8 @@ function k_order(m::Model; order=nothing, ys=nothing, params=nothing, pruning=no
     ys = Vector{Float64}(ys)
     # As in Dynare, only what the derivatives depend on matters: a parameter that was never set (NaN) but appears in no
     # equation is harmless; one that does appear is caught by the derivative check below.
-    (all(isfinite, ys) && all(isfinite, m.Sigma_e)) ||
+    sigma = Matrix{Float64}(Sigma_e === nothing ? m.Sigma_e : Sigma_e)      # `Sigma_e`: the shock covariance to use instead of the model's (estimation)
+    (all(isfinite, ys) && all(isfinite, sigma)) ||
         throw(KOrderError("steady state or Sigma_e contain NaN or Inf"))
     n, nx = m.n_endo, m.n_exo
     order_var, state_var, cnt = dr_ordering(m.lead_lag_incidence)
@@ -113,7 +114,6 @@ function k_order(m::Model; order=nothing, ys=nothing, params=nothing, pruning=no
                           (isempty(bad) ? "" : " (parameters without a value: $(join(bad, ", ")))")))
     end
     params_c = replace(params, NaN => 0.0, Inf => 0.0, -Inf => 0.0)       # not used by the solver itself
-    sigma = Matrix{Float64}(m.Sigma_e)
     dr = Int32.(order_var .- 1)
     h = lock(_korder_lock) do
         ccall(_ksym(:jdyn_korder_solve), Ptr{Cvoid},
