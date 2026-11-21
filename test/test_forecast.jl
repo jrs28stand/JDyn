@@ -151,6 +151,16 @@ end
         @test maximum(abs.(mid - fc.Mean["piobs"])) < 1e-12              # corrected: the interval is centred on the mean
         @test maximum(abs.((dyn.HPDinf["piobs"] + dyn.HPDsup["piobs"]) / 2 - fc.Mean["piobs"])) > 1e-3
         @test_throws ArgumentError forecast(res.smoother, m; periods=6, var_list=["robs", "y"], replicate_dynare_bugs=true)
+        # dynare(): the estimation statement's forecast lands in oo_.forecast, as the Julia API's
+        d2 = mktempdir()
+        cp(joinpath(FCDIR, "est_fc_nk.mod"), joinpath(d2, "est_fc_nk.mod")); cp(joinpath(REF, "est_nk_data.m"), joinpath(d2, "est_nk_data.m"))
+        ws = with_logger(NullLogger()) do
+            JDyn.dynare(joinpath(d2, "est_fc_nk.mod"))
+        end
+        @test hasproperty(ws.oo_, :forecast)
+        for v in ("robs", "yobs", "piobs", "y"), f in ("Mean", "HPDinf", "HPDsup")
+            @test maximum(abs.(vec(ws.oo_.forecast[f][v]) .- vec(getfield(fc, Symbol(f))[v]))) < 1e-12
+        end
     end
     if isfile(joinpath(FCDIR, "est_fc_ur.mat"))
         @testset "unit root with observation trends (diffuse filter): forecast, conditional forecast at the prior mean" begin
