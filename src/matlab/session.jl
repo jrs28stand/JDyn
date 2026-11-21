@@ -341,7 +341,7 @@ function ModSession(model)
     s
 end
 
-session_error(s::ModSession, msg) = ModelError(msg)
+session_error(s::ModSession, msg, cause=nothing) = ModelError(String(msg), cause)
 
 function record!(s::ModSession, text, kind, why, n=1)
     key = (first(join(split(string(text)), " "), 120), string(kind))
@@ -637,9 +637,9 @@ function run!(s::ModSession, statements)
                 record!(s, "(rest of the file after a conditional return)", "block", e.u, info.count)
                 break
             elseif e isa Unsupported
-                throw(session_error(s, "MATLAB code in the .mod file cannot be interpreted at $(_where(s)): $(e.msg)"))
+                throw(session_error(s, "MATLAB code in the .mod file cannot be interpreted at $(_where(s)): $(e.msg)", e))
             elseif e isa MatlabError
-                throw(session_error(s, "MATLAB error in the .mod file at $(_where(s)): $(e.msg)"))
+                throw(session_error(s, "MATLAB error in the .mod file at $(_where(s)): $(e.msg)", e))
             else
                 rethrow()
             end

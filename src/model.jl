@@ -3,7 +3,9 @@
 
 struct ModelError <: Exception
     msg::String
+    cause::Any          # the exception (e.g. a MatlabError raised by the file's own error()) this wraps, or nothing
 end
+ModelError(msg::AbstractString) = ModelError(String(msg), nothing)
 Base.showerror(io::IO, e::ModelError) = print(io, "ModelError: ", e.msg)
 
 "Locate the Dynare 7.2 preprocessor: explicit path, \$DYNARE_PREPROCESSOR, or `dynare-preprocessor` on the PATH."
