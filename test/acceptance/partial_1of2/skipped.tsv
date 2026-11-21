@@ -1,8 +1,3 @@
-particle/first_spec_hssmc.mod	results	simulation results are not available while the model is loaded	send_endogenous_variables_to_workspace;
-particle/first_spec_hssmc.mod	file	file-system, shell or interactive functions are not available	save('my_data.mat','q','ca');
-particle/first_spec_hssmc.mod	block	unknown variable, package or object 'matlab'	if matlab.internal.parallel.isPCTInstalled
-particle/first_spec_MCMC.mod	results	simulation results are not available while the model is loaded	send_endogenous_variables_to_workspace;
-particle/first_spec_MCMC.mod	file	file-system, shell or interactive functions are not available	save('my_data_MCMC.mat','ca','b');
 lmmcp/rbcii.mod	results	simulation results are not available while the model is loaded	send_endogenous_variables_to_workspace;
 lmmcp/rbcii.mod	function	unknown function or variable 'A'	subplot(3,2,1); plot(1:n,A(1:n)); title('A');
 lmmcp/rbcii.mod	function	unknown function or variable 'y'	subplot(3,2,2); plot(2:n,y(2:n)); title('y');
@@ -42,13 +37,13 @@ measurement_errors/fs2000_corr_me_ml_mcmc/fs2000_corr_ME.mod	results	options_.pe
 measurement_errors/fs2000_corr_me_ml_mcmc/fs2000_corr_ME.mod	tainted	'exo_simul' is unknown: "exo_simul = randn(2,options_.periods)'*chol([0.005 0.25*sqrt" was not executed	temp=temp'+exo_simul;
 measurement_errors/fs2000_corr_me_ml_mcmc/fs2000_corr_ME.mod	tainted	'temp' is unknown: "temp=temp'+exo_simul;" was not executed	gy_obs=temp(:,1);
 measurement_errors/fs2000_corr_me_ml_mcmc/fs2000_corr_ME.mod	tainted	'temp' is unknown: "temp=temp'+exo_simul;" was not executed	gp_obs=temp(:,2);
-measurement_errors/fs2000_corr_me_ml_mcmc/fs2000_corr_ME.mod	file	file-system, shell or interactive functions are not available	save('fsdat_simul_corr.mat','gy_obs','gp_obs')
+measurement_errors/fs2000_corr_me_ml_mcmc/fs2000_corr_ME.mod	file	save of a double value	save('fsdat_simul_corr.mat','gy_obs','gp_obs')
 gsa/ls2003.mod	function	unknown function or variable 'collect_latex_files'	collect_latex_files;
 gsa/ls2003.mod	file	file-system, shell or interactive functions are not available	[status, cmdout]=system(['pdflatex -halt-on-error -interaction=nonstopmode ' M_.fname '_TeX_binder.tex']);
 gsa/ls2003.mod	block	'status' is unknown: "[status, cmdout]=system(['pdflatex -halt-on-error -interacti" was not executed	if status
 estimation/fs2000_MCMC_jumping_covariance.mod	file	load with options or a path	load('fs2000_MCMC_jumping_covariance/Output/fs2000_MCMC_jumping_covariance_mode','hh');
 estimation/fs2000_MCMC_jumping_covariance.mod	function	unknown function or variable 'hh'	jumping_covariance=diag(diag(hh));
-estimation/fs2000_MCMC_jumping_covariance.mod	file	file-system, shell or interactive functions are not available	save('test_matrix.mat','jumping_covariance');
+estimation/fs2000_MCMC_jumping_covariance.mod	file	save of a double value	save('test_matrix.mat','jumping_covariance');
 exogenous-observed-variables/preprocessor.mod	results	options_.varobs has not been set in the .mod file (Dynare's defaults are not known to JDyn)	assert(length(options_.varobs)==1);
 exogenous-observed-variables/preprocessor.mod	results	options_.varexobs has not been set in the .mod file (Dynare's defaults are not known to JDyn)	assert(length(options_.varexobs)==1);
 exogenous-observed-variables/preprocessor.mod	results	options_.varobs_id has not been set in the .mod file (Dynare's defaults are not known to JDyn)	assert(length(options_.varobs_id)==1);
@@ -63,9 +58,8 @@ estimation/fs2000_estimated_params_remove.mod	block	unknown variable, package or
 estimation/heteroskedastic_shocks/fs2000_het_dates.mod	syntax	cannot parse: bad number or date literal "1901Y);"	ts = dseries('../fsdat_simul.m', 1901Y)
 estimation/method_of_moments/RBC/RBC_MoM_Andreasen.mod	block	M_.matched_moments is not available in JDyn	if ~isequal(M_.matched_moments,matched_moments_)
 estimation/method_of_moments/RBC/RBC_MoM_prefilter.mod	results	simulation results are not available while the model is loaded	send_endogenous_variables_to_workspace;
-estimation/method_of_moments/RBC/RBC_MoM_prefilter.mod	file	file-system, shell or interactive functions are not available	save('RBC_MoM_data_2.mat', options_.varobs{:} );
+estimation/method_of_moments/RBC/RBC_MoM_prefilter.mod	results	options_.varobs has not been set in the .mod file (Dynare's defaults are not known to JDyn)	save('RBC_MoM_data_2.mat', options_.varobs{:} );
 estimation/method_of_moments/RBC/RBC_MoM_prefilter.mod	block	M_.matched_moments is not available in JDyn	if ~isequal(M_.matched_moments,matched_moments_)
-estimation/method_of_moments/RBC/RBC_MoM_prefilter.mod	file	file-system, shell or interactive functions are not available	save('test_matrix.mat','weighting_matrix')
 estimation/method_of_moments/AFVRR/AFVRR_M0.mod	feature	vertical concatenation of cell rows	AndreasenEtAl.moments1 =[ {[ 1]} {'Ex' } {'Gr_C '} {' ' } {'0.024388' } {'0.023764' } {[ 2]} {'Ex' } {'Gr_I '} {' ' } {'
 estimation/method_of_moments/AFVRR/AFVRR_M0.mod	tainted	value depends on a statement that was not executed: "AndreasenEtAl.moments1 =[ {[ 1]} {'Ex' } {'Gr_C '} {' ' } {'" was not executed	AndreasenEtAl.Q2 = 65.8269;
 estimation/method_of_moments/AFVRR/AFVRR_M0.mod	feature	vertical concatenation of cell rows	AndreasenEtAl.moments2 =[ {[ 1]} {'Ex' } {'Gr_C '} {' ' } {'0.024388' } {'0.023764' } {[ 2]} {'Ex' } {'Gr_I '} {' ' } {'
@@ -105,7 +99,6 @@ histval_initval_file/ramst_data_generate.mod	tainted	'fh' is unknown: "fh = fope
 histval_initval_file/ramst_data_generate.mod	tainted	'fh' is unknown: "fh = fopen('ramst_data.m', 'w');" was not executed	fprintf(fh, 'x = [');
 histval_initval_file/ramst_data_generate.mod	tainted	'fh' is unknown: "fh = fopen('ramst_data.m', 'w');" was not executed	fprintf(fh, '%f ', oo_.exo_simul);
 histval_initval_file/ramst_data_generate.mod	tainted	'fh' is unknown: "fh = fopen('ramst_data.m', 'w');" was not executed	fclose(fh);
-histval_initval_file/ramst_data_generate.mod	file	file-system, shell or interactive functions are not available	save('ramst_data.mat', 'INIT__', 'NAMES__', ... 'TEX__', 'c', 'k', 'x');
 histval_initval_file/ramst_data_generate.mod	file	file-system, shell or interactive functions are not available	fh = fopen('ramst_data.csv', 'w');
 histval_initval_file/ramst_data_generate.mod	tainted	'fh' is unknown: "fh = fopen('ramst_data.csv', 'w');" was not executed	fprintf(fh, 'c,k,x\n');
 histval_initval_file/ramst_data_generate.mod	tainted	'fh' is unknown: "fh = fopen('ramst_data.csv', 'w');" was not executed	fprintf(fh, '%f, ', oo_.endo_simul(1:M_.orig_endo_nbr, i));
@@ -140,8 +133,6 @@ identification/correlated_errors/fs2000_corr.mod	function	unknown function or va
 identification/correlated_errors/fs2000_corr.mod	file	file-system, shell or interactive functions are not available	[status, cmdout]=system(['pdflatex -halt-on-error -interaction=nonstopmode ' M_.fname '_TeX_binder.tex']);
 identification/correlated_errors/fs2000_corr.mod	block	'status' is unknown: "[status, cmdout]=system(['pdflatex -halt-on-error -interacti" was not executed	if status
 kalman/lyapunov/fs2000_lyap.mod	block	the value depends on the MATLAB installation or the clock	if (isoctave && user_has_octave_package('control')) || (~isoctave && user_has_matlab_license('control_toolbox'))
-kalman_filter_smoother/test_compute_Pinf_Pstar_data.mod	results	simulation results are not available while the model is loaded	send_endogenous_variables_to_workspace;
-kalman_filter_smoother/test_compute_Pinf_Pstar_data.mod	file	file-system, shell or interactive functions are not available	save data_Pinf_Pstar.mat v1 v2 v3;
 kalman_filter_smoother/test_compute_Pinf_Pstar.mod	function	unknown variable, package or object 'bayestopt_'	mf = bayestopt_.smoother_var_list(bayestopt_.smoother_mf);
 kalman_filter_smoother/test_compute_Pinf_Pstar.mod	function	dynare_resolve is not run while loading	[T,R,SteadyState,info,oo_.dr,M_.params] = dynare_resolve(M_,options_,oo_.dr,oo_.steady_state,oo_.exo_steady_state,oo_.ex
 kalman_filter_smoother/test_compute_Pinf_Pstar.mod	tainted	'mf' is unknown: "mf = bayestopt_.smoother_var_list(bayestopt_.smoother_mf);" was not executed	[Pstar,Pinf] = compute_Pinf_Pstar(mf,T,R,Q,options_.qz_criterium);
@@ -172,6 +163,17 @@ deterministic_simulations/multiple_lead_lags/AR2_forward.mod	block	options_.peri
 deterministic_simulations/multiple_lead_lags/AR2_forward.mod	block	'junk' is unknown: block "for ii=3:options_.periods+M_.maximum_lag+M_.maximu" was not executed	if max(abs(junk(M_.maximum_lag+1:end)-oo_.endo_simul(strmatch('y_backward',M_.endo_names,'exact'),1:end-M_.maximum_lead)
 deterministic_simulations/lbj/rbc.mod	block	options_.dynatol has not been set in the .mod file (Dynare's defaults are not known to JDyn)	if max(max(abs(oo0.endo_simul-oo1.endo_simul)))>options_.dynatol.x
 deterministic_simulations/lbj/rbc.mod	block	options_.dynatol has not been set in the .mod file (Dynare's defaults are not known to JDyn)	if max(max(abs(oo0.endo_simul-oo6.endo_simul)))>options_.dynatol.x
+lmmcp/sw_newton.mod	results	options_.periods was changed by a Dynare command; its value is not known to JDyn	newton_resid = perfect_foresight_problem(reshape(oo_.endo_simul(:, 2:end-1),[],1), oo_.endo_simul(:, 1), oo_.endo_simul(
+lmmcp/sw_newton.mod	tainted	'newton_resid' is unknown: "newton_resid = perfect_foresight_problem(reshape(oo_.endo_si" was not executed	newton_solution_is_wrong = max(abs(newton_resid)) > options_.dynatol.f;
+lmmcp/sw_newton.mod	results	options_.periods was changed by a Dynare command; its value is not known to JDyn	lmmcp_resid = perfect_foresight_problem(reshape(lmmcp.oo_.endo_simul(:, 2:end-1),[],1), lmmcp.oo_.endo_simul(:, 1), lmmc
+lmmcp/sw_newton.mod	tainted	'lmmcp_resid' is unknown: "lmmcp_resid = perfect_foresight_problem(reshape(lmmcp.oo_.en" was not executed	lmmcp_solution_is_wrong = max(abs(lmmcp_resid)) > options_.dynatol.f;
+lmmcp/sw_newton.mod	results	options_.dynatol has not been set in the .mod file (Dynare's defaults are not known to JDyn)	solutions_are_different = max(max(abs(lmmcp.oo_.endo_simul-oo_.endo_simul)))>options_.dynatol.x;
+lmmcp/sw_newton.mod	block	'newton_solution_is_wrong' is unknown: "newton_solution_is_wrong = max(abs(newton_resid)) > options_" was not executed	if newton_solution_is_wrong
+lmmcp/sw_newton.mod	block	'solutions_are_different' is unknown: "solutions_are_different = max(max(abs(lmmcp.oo_.endo_simul-o" was not executed	if solutions_are_different && ~lmmcp_solution_is_wrong
+lmmcp/sw_newton.mod	block	'lmmcp_solution_is_wrong' is unknown: "lmmcp_solution_is_wrong = max(abs(lmmcp_resid)) > options_.d" was not executed	if lmmcp_solution_is_wrong
+decision_rules/example1.mod	file	load: a value of class ComplexF64 in the MAT-file	dyn_432_results=load('example1_results_dyn_432.mat');
+decision_rules/example1.mod	block	'dyn_432_results' is unknown: "dyn_432_results=load('example1_results_dyn_432.mat');" was not executed	if max(max(abs(oo_.dr.ghx-dyn_432_results.oo_.dr.ghx)))>1e-6 || max(max(abs(oo_.dr.ghu-dyn_432_results.oo_.dr.ghu))) >1e
+decision_rules/example1.mod	block	'dyn_432_results' is unknown: "dyn_432_results=load('example1_results_dyn_432.mat');" was not executed	if max(max(abs(oo_.dr.ghxx-dyn_432_results.oo_.dr.ghxx)))>1e-6 || max(max(abs(oo_.dr.ghuu-dyn_432_results.oo_.dr.ghuu)))
 shock_decomposition/fs2000_forecasts.mod	function	unknown function or variable 'collect_latex_files'	collect_latex_files;
 shock_decomposition/fs2000_forecasts.mod	file	file-system, shell or interactive functions are not available	[status, cmdout]=system(['pdflatex -halt-on-error -interaction=nonstopmode ' M_.fname '_TeX_binder.tex']);
 shock_decomposition/fs2000_forecasts.mod	block	'status' is unknown: "[status, cmdout]=system(['pdflatex -halt-on-error -interacti" was not executed	if status
@@ -317,7 +319,7 @@ model-inversion/bk-diff-4/varmodel.mod	block	'SimulatedData' is unknown: "Simula
 model-inversion/bk-diff-4/varmodel.mod	block	'SimulatedData' is unknown: "SimulatedData = copy(TrueData);" was not executed	if max(abs(SimulatedData(subsample).y3.data-endogenousvariables(subsample).y3.data))>1e-12
 model-inversion/bk-diff-4/varmodel.mod	block	'exogenousvariables' is unknown: "[endogenousvariables, exogenousvariables] = model_inversion(" was not executed	if max(abs(exogenousvariables(subsample).e1.data-SimulatedData(subsample).e1.data))>1e-12
 model-inversion/nk-1/simulate.mod	function	unknown function or variable 'Simulated_time_series'	data = [Simulated_time_series dseries(oo_.exo_simul, '2Y', {'e_y', 'e_pi', 'e_i'})];
-model-inversion/nk-1/simulate.mod	file	file-system, shell or interactive functions are not available	save(data,'truedata', 'mat');
+model-inversion/nk-1/simulate.mod	tainted	'data' is unknown: "data = [Simulated_time_series dseries(oo_.exo_simul, '2Y', {" was not executed	save(data,'truedata', 'mat');
 model-inversion/nk-1/invert.mod	syntax	cannot parse: bad number or date literal "2Y:1"	subsample = 2Y:100Y
 model-inversion/nk-1/invert.mod	function	unknown function or variable 'dseries'	SimulatedData = dseries('truedata.mat');
 model-inversion/nk-1/invert.mod	tainted	'SimulatedData' is unknown: "SimulatedData = dseries('truedata.mat');" was not executed	constrainedpaths = SimulatedData{'y','pi','i'}(subsample);
@@ -393,8 +395,6 @@ ecb/contribution-plots/contrib2.mod	tainted	'ds1' is unknown: "ds1 = dseries(ran
 ecb/contribution-plots/contrib2.mod	tainted	'ds1' is unknown: "ds1 = dseries(randn(30, 3), 1990Q1, {'ffr', 'unrate', 'cpi'}" was not executed	ds1 = [ds1, ffr_lag_1, ffr_lag_2, ffr_lag_3, unrate_lag_1, cpi_lag_4];
 ecb/contribution-plots/contrib2.mod	syntax	cannot parse: bad number or date literal "1990Q1,"	ds0 = dseries(zeros(30, 8), 1990Q1, {'ffr', 'unrate', 'cpi', 'ffr_lag_1', 'ffr_lag_2', 'ffr_lag_3', 'unrate_lag_1', 'cpi
 ecb/contribution-plots/contrib2.mod	syntax	cannot parse: unexpected "ffr"	plot_contributions ffr ds1 ds0
-particle/first_spec_xfail_1.mod	results	simulation results are not available while the model is loaded	send_endogenous_variables_to_workspace;
-particle/first_spec_xfail_1.mod	file	file-system, shell or interactive functions are not available	save('my_data.mat','q','ca');
 ../examples/reporting/collard_2001_reporting.mod	results	simulation results are not available while the model is loaded	send_irfs_to_workspace;
 ../examples/reporting/collard_2001_reporting.mod	function	unknown function or variable 'dseries'	shocke = dseries();
 ../examples/reporting/collard_2001_reporting.mod	function	unknown function or variable 'dseries'	shocku = dseries();
