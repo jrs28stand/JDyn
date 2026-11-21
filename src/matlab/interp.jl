@@ -131,7 +131,7 @@ need_host(I::Interp, what) = I.host === nothing ? throw(Unsupported("$what needs
 
 function tick(I::Interp)
     I.steps += 1
-    I.steps > MAX_STEPS && _unsup("step limit exceeded (endless loop?)")
+    I.steps > MAX_STEPS[] && _unsup("step limit exceeded (endless loop?)")
 end
 
 # ---- variables

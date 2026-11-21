@@ -41,10 +41,12 @@ _mgamma(x::Float64) = (x <= 0 && x == round(x)) ? (x == 0 ? Inf : NaN) : Special
 _mgammaln(x::Float64) = x < 0 ? _cplx() : (x == 0 ? Inf : SpecialFunctions.loggamma(x))
 _ndtri(p::Float64) = (p < 0 || p > 1) ? NaN : sqrt(2.0) * SpecialFunctions.erfinv(2p - 1)
 _msign(x::Float64) = isnan(x) ? NaN : Float64(sign(x))
+"Julia's sin/cos/tan throw a DomainError at ±Inf; MATLAB returns NaN (a real result, not a complex one)."
+_periodic(f) = x -> isinf(x) ? NaN : f(x)
 
 for (n, f) in Dict("exp" => exp, "log" => log, "log2" => log2, "log10" => log10, "sqrt" => sqrt, "abs" => abs,
                    "sign" => _msign, "floor" => floor, "ceil" => ceil, "fix" => trunc, "round" => _mround,
-                   "sin" => sin, "cos" => cos, "tan" => tan, "asin" => asin, "acos" => acos, "atan" => atan,
+                   "sin" => _periodic(sin), "cos" => _periodic(cos), "tan" => _periodic(tan), "asin" => asin, "acos" => acos, "atan" => atan,
                    "sinh" => sinh, "cosh" => cosh, "tanh" => tanh, "asinh" => asinh, "acosh" => acosh,
                    "atanh" => atanh, "gamma" => _mgamma, "gammaln" => _mgammaln,
                    "erf" => SpecialFunctions.erf, "erfc" => SpecialFunctions.erfc,

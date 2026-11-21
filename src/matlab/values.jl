@@ -25,7 +25,8 @@ Base.showerror(io::IO, e::ParseError) = print(io, "ParseError: ", e.msg)
 "Struct-like views of the model (M_, options_, oo_) provided by the Dynare session."
 abstract type HostStruct end
 
-const MAX_STEPS = 20_000_000
+"Evaluation steps allowed per interpreter (endless-loop guard); a Ref so that tests can lower it."
+const MAX_STEPS = Ref(20_000_000)
 const MAX_ELEMENTS = 20_000_000
 
 _cplx() = throw(Unsupported("the result is a complex number in MATLAB; complex numbers are not supported", "complex"))

@@ -1087,3 +1087,15 @@ function helper_functions(mod_dir, names_used, taken)
     end
     out
 end
+
+"""
+    workspace(m) -> Dict{String,Float64}
+
+Scalar numeric MATLAB variables of the .mod file's base workspace at the end of loading (variables
+whose value JDyn could not compute are left out).
+"""
+function workspace(m)
+    s = m.session
+    s === nothing && return Dict{String,Float64}()
+    Dict{String,Float64}(k => Float64(v) for (k, v) in s.sc.vars if v isa Real)
+end
