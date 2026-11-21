@@ -1,8 +1,11 @@
-# Dynare 7.2's shipped examples, unedited, against Dynare's results at first order
+# Dynare 7.2's shipped examples, unedited, against Dynare's results at first order (and at order 2 where the .mod file asks for it)
 # (port of pydyn tests/test_examples.py; the comparison is in sweep_examples.jl).
 using Test
 include("common.jl")
 include("sweep_examples.jl")
+
+# examples run at order 2 are compared at order 2 as well when the k-order library is built
+const MATCH2 = JDyn.korder_available() ? MATCH : MATCH1
 
 const EXPECTED = Dict(
     "estimation/gali_2015" => MATCH,
@@ -10,13 +13,13 @@ const EXPECTED = Dict(
     "estimation/schorfheide_2000" => MATCH,
     "macroprocessor/bkk_1992" => MATCH,
     "occbin/rbc_occbin" => MATCH,
-    "reporting/collard_2001_reporting" => MATCH1,                  # order=2 in the .mod file
+    "reporting/collard_2001_reporting" => MATCH2,                  # order=2 in the .mod file
     "stochastic_simulations/aguiar_gopinath_2007_trend" => MATCH,
-    "stochastic_simulations/collard_2001_analytical_steady_state" => MATCH1,   # uses its .m helper function
-    "stochastic_simulations/collard_2001_simulated_moments" => MATCH1,
-    "stochastic_simulations/collard_2001_theoretical_moments" => MATCH1,
+    "stochastic_simulations/collard_2001_analytical_steady_state" => MATCH2,   # uses its .m helper function
+    "stochastic_simulations/collard_2001_simulated_moments" => MATCH2,
+    "stochastic_simulations/collard_2001_theoretical_moments" => MATCH2,
     "stochastic_simulations/nk_baseline" => MATCH,                              # uses its _steadystate.m file
-    "stochastic_simulations/schorfheide_2000_nonstationary" => MATCH1,
+    "stochastic_simulations/schorfheide_2000_nonstationary" => MATCH2,
     "heterogeneity/hank_one_asset" => "not supported",
     "optimal_policy/nk_ramsey_osr" => "not supported",
     "semistructural/pac_model" => "not supported",

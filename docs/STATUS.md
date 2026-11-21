@@ -2,7 +2,8 @@
 
 Reference: Dynare 7.2 under GNU Octave 8.4 (the same reference results as pydyn). All figures below are
 from `test/runtests.jl` (1,739 checks pass, 0 fail; 3 skipped: perfect foresight, and references
-without IRFs).
+without IRFs). `test_korder.jl` (56 checks) and `test_moments_order2.jl` (308 checks) were added on the `korder` branch;
+they skip with a warning when the k-order library is not built.
 
 ## Implemented and checked against Dynare
 
@@ -15,6 +16,10 @@ without IRFs).
 | IRFs, parameter loops | schorfheide IRFs; 6 parameter sets in one load; nk_baseline with Julia or `.m` steady state | 5e-16 (IRFs), 4e-14 (rules), 3e-9 (nk_baseline) |
 | Shipped examples (first order) | gali_2015, schorfheide_2000, bkk_1992, rbc_occbin, aguiar_gopinath_2007_trend, nk_baseline, collard_* | 1e-14 to 4e-10 |
 | Moments (order 1) | theoretical (plain, HP, band-pass, unit roots), variance decompositions (incl. correlated shocks, conditional, measurement error), simulated moments on Dynare's draws | 3e-13 (theoretical), 2e-10 (simulated skewness) |
+| Higher-order decision rules (Dynare's k-order library through `ccall`) | collard (order 2 and 3), aux_a (order 2): `ghx ghu ghxx ghxu ghuu ghs2 ghxxx ghxxu ghxuu ghuuu ghxss ghuss`, folded tensors | 1e-13 (order 3), 7e-13 (aux_a) |
+| Simulation at orders 2 and 3, with and without pruning; generalised IRFs on Dynare's draws | collard at order 2 and 3, aux_a at order 2; irf.m of Dynare with fixed seed | 5e-15 (paths), 1.3e-15 (IRFs) |
+| Moments at order 2 | theoretical (plain: mean correction; pruned state space) incl. variance and conditional decompositions with measurement error; simulated moments of order-2 paths | 6e-13 (theoretical), 2e-10 (simulated skewness) |
+| Shipped examples at order 2 | the five examples whose `.mod` asks for order 2: `ghxx ghxu ghuu ghs2` | 7e-14 |
 | Auxiliary and model-local variables, `loglinear` | against Dynare | 3e-14, 5e-13 |
 
 Speed of one `set_param!` + steady state + first-order solve: 0.04-0.08 ms (15 variables), 0.4 ms
@@ -23,16 +28,19 @@ faster than pydyn on the same machine. An interpreted `_steadystate.m` costs abo
 
 ## Not implemented yet
 
-- Orders 2 and 3 (plan: Dynare's C++ k-order library through `ccall`, fed with the preprocessor's
-  G1-G3; the preprocessor output and `simulate` at orders 2-3 are already in place).
+- Theoretical moments at order 3 and filtered (HP, band-pass) theoretical moments at order 2 (refused, as in Dynare);
+  loglinear models above order 1 (refused, as in Dynare); unit roots with pruning at order 2 (refused, as Dynare).
 - OccBin, perfect foresight, Kalman filter and smoother, shock decompositions, estimation.
 - Plotting beyond first-order IRFs (OccBin, smoother, decompositions, ...). First-order IRF figures are
   done: Dynare's content rules, tidy CSV export, SVG built in, PNG/PDF through an optional Plots.jl
   extension (see docs/plotting.md).
 - Optimal policy (Ramsey, OSR), heterogeneous agents, PAC/VAR models, `dseries`: refused with an error.
-- Theoretical moments at order 2 (refused with an error).
 
 ## Behaviour to know
+
+- Orders 2 and 3 need `deps/korder/libjdyn_korder.so` (see README; `JDYN_KORDER_LIB` overrides the path); `k_order`
+  raises `KOrderError` if it is missing or if the loaded model has fewer derivative orders than asked for
+  (`JDyn.load(file; output="third")`). The library keeps process-wide state: calls are serialised with a lock.
 
 - `.mod` files: MATLAB code that could change the model and cannot be followed makes loading fail; code
   that cannot change it is skipped with one warning (`model.matlab_skipped` lists it).
