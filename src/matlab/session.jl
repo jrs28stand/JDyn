@@ -76,14 +76,14 @@ const _M_NAMES = ["param_names", "endo_names", "exo_names"]
 field_names(M::HostM) = vcat(["params", "Sigma_e", "fname", "dname"], _M_SCALARS, _M_NAMES)
 function snapshot(M::HostM)
     s = MStruct()
-    s.kind = "M_"
+    s._kind = "M_"
     for f in field_names(M)
         s[f] = get_field(M, f)
     end
     s
 end
 function restore!(M::HostM, value)
-    (value isa MStruct && value.kind == "M_") || _unsup("replacing M_ by something that is not a copy of M_")
+    (value isa MStruct && value._kind == "M_") || _unsup("replacing M_ by something that is not a copy of M_")
     cur = Dict(f => peek_field(M, f; raw=true) for f in field_names(M) if !(f in ("params", "Sigma_e")))
     for f in keys(value)
         f in ("params", "Sigma_e") && continue
@@ -184,18 +184,18 @@ const OPTION_DEFAULTS = Dict{String,Any}("order" => 2.0, "irf" => 40.0, "periods
     "ar" => 5.0, "solve_algo" => 4.0, "solve_tolf" => eps(Float64)^(1 / 3), "solve_tolx" => eps(Float64)^(2 / 3),
     "hp_filter" => 0.0, "pruning" => false, "loglinear" => false, "linear" => false, "nocorr" => false,
     "nomoments" => false, "k_order_solver" => false)
-field_names(O::HostOptions) = copy(O.store.keys)
+field_names(O::HostOptions) = copy(O.store._keys)
 function snapshot(O::HostOptions)
     s = MStruct()
-    for k in O.store.keys
+    for k in O.store._keys
         k in O.unknown || (s[k] = O.store[k])
     end
-    s.kind = "options_"
+    s._kind = "options_"
     s
 end
 function restore!(O::HostOptions, value)
-    (value isa MStruct && value.kind == "options_") || _unsup("replacing options_ by something that is not a copy of options_")
-    empty!(O.store.keys); empty!(O.store.vals)
+    (value isa MStruct && value._kind == "options_") || _unsup("replacing options_ by something that is not a copy of options_")
+    empty!(O.store._keys); empty!(O.store._vals)
     for k in keys(value); O.store[k] = value[k]; end
     empty!(O.unknown)
 end

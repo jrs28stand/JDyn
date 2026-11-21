@@ -295,7 +295,7 @@ function getfield_(I::Interp, v, name)
     v isa HostStruct && return get_field(v, name)
     if v isa MStruct
         if !haskey(v, name)
-            v.kind !== nothing && _has_field(v, name)
+            v._kind !== nothing && _has_field(v, name)
             merr("reference to non-existent field '$name'")
         end
         return v[name]

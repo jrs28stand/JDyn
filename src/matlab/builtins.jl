@@ -845,15 +845,15 @@ bi!("struct") do I, a, nout
 end
 bi!("fieldnames") do I, a, nout
     v = a[1]
-    names = v isa HostStruct ? field_names(v) : v isa MStruct ? (v.kind === nothing ? copy(v.keys) : _snapshot_field_names(v)) : merr("fieldnames: a struct is required")
+    names = v isa HostStruct ? field_names(v) : v isa MStruct ? (v._kind === nothing ? copy(v._keys) : _snapshot_field_names(v)) : merr("fieldnames: a struct is required")
     Cell(Any[names...], (length(names), 1))
 end
-_snapshot_field_names(v::MStruct) = throw(Unsupported("the complete list of fields of $(v.kind) is not known to JDyn", "results"))
+_snapshot_field_names(v::MStruct) = throw(Unsupported("the complete list of fields of $(v._kind) is not known to JDyn", "results"))
 function _has_field(s, name)
     s isa HostStruct && return has_field(s, name)
     if s isa MStruct && name isa AbstractString
         haskey(s, name) && return true
-        s.kind !== nothing && throw(Unsupported("JDyn does not know whether $(s.kind) has a field '$name'", "results"))
+        s._kind !== nothing && throw(Unsupported("JDyn does not know whether $(s._kind) has a field '$name'", "results"))
         return false
     end
     false

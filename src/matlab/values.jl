@@ -44,9 +44,9 @@ Cell(items::AbstractVector) = Cell(collect(Any, items), isempty(items) ? (0, 0) 
 
 "A scalar struct with ordered fields. `kind` is set for snapshots of M_/options_ (see `has_field`)."
 mutable struct MStruct
-    keys::Vector{String}
-    vals::Dict{String,Any}
-    kind::Union{Nothing,String}
+    _keys::Vector{String}
+    _vals::Dict{String,Any}
+    _kind::Union{Nothing,String}
 end
 MStruct() = MStruct(String[], Dict{String,Any}(), nothing)
 function MStruct(pairs::AbstractVector)
@@ -56,23 +56,64 @@ function MStruct(pairs::AbstractVector)
     end
     s
 end
-Base.haskey(s::MStruct, k::AbstractString) = haskey(s.vals, k)
-Base.getindex(s::MStruct, k::AbstractString) = s.vals[k]
-Base.get(s::MStruct, k::AbstractString, d) = get(s.vals, k, d)
+Base.haskey(s::MStruct, k::AbstractString) = haskey(s._vals, k)
+Base.getindex(s::MStruct, k::AbstractString) = s._vals[k]
+Base.get(s::MStruct, k::AbstractString, d) = get(s._vals, k, d)
 function Base.setindex!(s::MStruct, v, k::AbstractString)
-    haskey(s.vals, k) || push!(s.keys, String(k))
-    s.vals[String(k)] = v
+    haskey(s._vals, k) || push!(s._keys, String(k))
+    s._vals[String(k)] = v
 end
 function Base.delete!(s::MStruct, k::AbstractString)
-    if haskey(s.vals, k)
-        delete!(s.vals, k)
-        filter!(!=(k), s.keys)
+    if haskey(s._vals, k)
+        delete!(s._vals, k)
+        filter!(!=(k), s._keys)
     end
     s
 end
-Base.keys(s::MStruct) = s.keys
-Base.length(s::MStruct) = length(s.keys)
-clone(s::MStruct) = MStruct(copy(s.keys), copy(s.vals), s.kind)
+Base.keys(s::MStruct) = s._keys
+Base.length(s::MStruct) = length(s._keys)
+clone(s::MStruct) = MStruct(copy(s._keys), copy(s._vals), s._kind)
+
+# Julia code reads and writes MATLAB structs with MATLAB's syntax: oo_.dr.ghx, M_.params, s.f = 1.
+# (MATLAB field names start with a letter, so they cannot collide with the internal _keys/_vals/_kind.)
+@inline function Base.getproperty(s::MStruct, f::Symbol)
+    (f === :_keys || f === :_vals || f === :_kind) && return getfield(s, f)
+    v = get(getfield(s, :_vals), String(f), _NOFIELD)
+    v === _NOFIELD && throw(ArgumentError("reference to non-existent field '$f'"))
+    v
+end
+function Base.setproperty!(s::MStruct, f::Symbol, v)
+    (f === :_keys || f === :_vals || f === :_kind) && return setfield!(s, f, v)
+    s[String(f)] = v
+end
+Base.propertynames(s::MStruct, private::Bool=false) = Tuple(Symbol.(getfield(s, :_keys)))
+Base.hasproperty(s::MStruct, f::Symbol) = haskey(getfield(s, :_vals), String(f))
+Base.getindex(s::MStruct, f::Symbol) = getproperty(s, f)
+struct _NoField end
+const _NOFIELD = _NoField()
+function Base.show(io::IO, ::MIME"text/plain", s::MStruct)
+    ks = getfield(s, :_keys)
+    print(io, "struct with ", length(ks), " field", length(ks) == 1 ? "" : "s")
+    isempty(ks) || print(io, ":")
+    w = isempty(ks) ? 0 : maximum(length, ks)
+    for k in ks
+        v = getfield(s, :_vals)[k]
+        d = v isa AbstractMatrix ? "$(size(v, 1))x$(size(v, 2)) $(eltype(v) == Bool ? "logical" : "double")" :
+            v isa MStruct ? "[1x1 struct]" : v isa Cell ? "{$(v.shape[1])x$(v.shape[2]) cell}" :
+            v isa AbstractString ? repr(v) : sprint(show, v)
+        print(io, "\n  ", lpad(k, w), ": ", d)
+    end
+end
+Base.show(io::IO, s::MStruct) = print(io, "struct(", join(getfield(s, :_keys), ", "), ")")
+
+# cells index and iterate like Julia vectors (column-major), e.g. M_.endo_names[1]
+Base.getindex(c::Cell, i::Integer) = c.items[i]
+Base.getindex(c::Cell, i::Integer, j::Integer) = c.items[(j - 1) * c.shape[1] + i]
+Base.length(c::Cell) = length(c.items)
+Base.iterate(c::Cell, st=1) = st > length(c.items) ? nothing : (c.items[st], st + 1)
+Base.size(c::Cell) = c.shape
+Base.collect(c::Cell) = copy(c.items)
+Base.show(io::IO, c::Cell) = print(io, "{", join(map(x -> x isa AbstractString ? repr(x) : sprint(show, x), c.items), ", "), "}")
 
 "A function handle: anonymous (`params`/`body`/`env`) or named (`name`)."
 struct Handle
