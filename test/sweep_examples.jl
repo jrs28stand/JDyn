@@ -4,7 +4,8 @@
 #   julia --project=. test/sweep_examples.jl            # prints a table for every example
 #
 # References: pydyn's reference/examples/<group>__<name>.mat (Dynare 7.2 under Octave).
-# Order-2 rules are not compared here: examples run at order 2 report "order 1 matches (order 2 not compared)".
+# Examples run at order 2 are compared at order 2 too (ghxx, ghxu, ghuu, ghs2 from Dynare's k-order library through
+# JDyn.k_order); without the library (deps/korder/build.sh) they report "order 1 matches (order 2 not compared)".
 isdefined(@__MODULE__, :REF) || include("common.jl")
 using Logging, Printf
 
@@ -112,8 +113,22 @@ function check_example(mod::AbstractString; ref_file=nothing, label=nothing)
         ok = d < 1e-6
     end
     order = Int(get(get(m.options, "stoch_simul", Dict()), "order", 1))
-    out["status"] = ok === nothing ? "solved, no reference" : !ok ? "MISMATCH" :
-                    (order >= 2 && haskey(ref, "ghxx")) ? MATCH1 : MATCH
+    compare2 = order >= 2 && haskey(ref, "ghxx") && m.max_deriv_order >= 2
+    if compare2 && ok !== false && JDyn.korder_available()
+        try
+            dr = with_logger(lg) do
+                JDyn.k_order(m; order=2, ys=ys, params=p, loglinear=false)
+            end
+            d2 = maximum(maximum(abs, dr[k] .- _mat(ref[k], size(dr[k]))) for k in ("ghxx", "ghxu", "ghuu", "ghs2"))
+            push!(notes, @sprintf("order 2 %.1e", d2))
+            ok = ok === true && d2 < 1e-6
+            compare2 = false                                   # compared
+        catch e
+            push!(notes, "order 2 failed: " * first(_short(e), 60))
+            ok = false
+        end
+    end
+    out["status"] = ok === nothing ? "solved, no reference" : !ok ? "MISMATCH" : compare2 ? MATCH1 : MATCH
     out["detail"] = join(notes, ", ")
     out
 end

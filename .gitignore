@@ -2,3 +2,5 @@ Manifest.toml
 *.jl.cov
 *.jl.mem
 /test/work/
+deps/korder/build/
+deps/korder/*.so

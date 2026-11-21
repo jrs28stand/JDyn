@@ -8,9 +8,9 @@ same Dynare 7.2 reference results. It is an independent project, not affiliated 
 the Dynare team's own Julia implementation see [Dynare.jl](https://github.com/DynareJulia/Dynare.jl),
 which uses a Julia-flavoured syntax in `.mod` files.
 
-**Status (2026-11-21): first order.** Calibration, steady state, first-order decision rules, IRFs,
-simulation and moments are implemented and match Dynare 7.2; higher order, OccBin, perfect foresight,
-filtering and estimation are not yet. See [docs/STATUS.md](docs/STATUS.md).
+**Status (2026-11-21): orders 1 to 3.** Calibration, steady state, decision rules at orders 1 to 3, IRFs,
+simulation and moments (order 2 theoretical moments, plain and pruned) are implemented and match Dynare 7.2;
+OccBin, perfect foresight, filtering and estimation are not yet. See [docs/STATUS.md](docs/STATUS.md).
 
 ## How it works
 
@@ -21,7 +21,7 @@ filtering and estimation are not yet. See [docs/STATUS.md](docs/STATUS.md).
    MATLAB-subset interpreter. Code it cannot follow is refused with an error when it could change the
    model, and skipped with a warning otherwise; it never silently gives a different calibration.
 3. The numerical work (steady state, QZ-based first-order solution as Dynare's `dyn_first_order_solver`,
-   Lyapunov-based moments) is in Julia.
+   Lyapunov-based moments) is in Julia. Orders 2 and 3 use Dynare's own C++ k-order library (see below).
 
 ## Requirements
 
@@ -36,6 +36,28 @@ export DYNARE_PREPROCESSOR=$PWD/../../pp/src/dynare-preprocessor
 ```
 
 (build dependencies on Ubuntu: `g++ meson ninja-build flex libfl-dev bison libboost-dev`).
+
+### Higher order (optional): Dynare's k-order library
+
+Decision rules at orders 2 and 3 are computed by Dynare's own C++ library (`libkorder`, the code behind
+`k_order_solver`), through a small C API in `deps/korder/` that is called with `ccall`. Build it once from the
+Dynare 7.2 source tree (the same one as for the preprocessor), without MATLAB or Octave:
+
+```sh
+deps/korder/build.sh /path/to/dynare-7.2      # needs g++ >= 13 (C++20, OpenMP), BLAS and LAPACK; about 1-2 minutes
+```
+
+This writes `deps/korder/libjdyn_korder.so`. JDyn looks for it there, or at the path in the environment
+variable `JDYN_KORDER_LIB` (or the `library=` keyword of `k_order`), and raises a `KOrderError` with these
+instructions if it is missing. Order 1 needs no library.
+
+```julia
+m = JDyn.load("model.mod"; output="third")     # derivatives up to order 3 (the .mod file's `order` is used otherwise)
+dr = k_order(m; order=3)                        # Dict of oo_.dr fields: ghx ghu ghxx ghxu ghuu ghs2 ghxxx ghxxu ghxuu ghuuu ghxss ghuss
+y = simulate(dr, shocks; order=3, pruning=true)
+irf(dr, impulse; Sigma_e=m.Sigma_e, periods=40, order=2, pruning=true)    # generalised IRF (Dynare's irf.m)
+stoch_simul_moments(m)                          # at the .mod file's order (Dynare's default is 2), solving as needed
+```
 
 ## Use
 
