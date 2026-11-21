@@ -23,11 +23,13 @@ function _from_steady_state_model(m::Model, params::Vector{Float64}, x::Vector{F
             Base.invokelatest(m.fns.steady_state, y, copy(x), params)
             return y, params
         catch e
-            if e isa UndefVarError || e isa MethodError
-                m.ssm_compiled_ok = false            # e.g. a MATLAB helper with several outputs: interpreted
+            if e isa UndefVarError || e isa MethodError || e isa TypeError
+                # a name the bare steady-state module does not have (a MATLAB helper with several outputs, a function
+                # JDyn does not know, exit(...)): interpreted, where it is resolved or refused
+                m.ssm_compiled_ok = false
                 y = _initval_vector(m)
-            elseif e isa DomainError
-                y = _initval_vector(m)               # complex value in MATLAB: let the interpreter decide
+            elseif e isa DomainError || e isa Unsupported || e isa MatlabError
+                y = _initval_vector(m)               # complex value or unsupported case: let the interpreter decide
             else
                 rethrow()
             end

@@ -161,7 +161,7 @@ end
             """
         out = IOBuffer()
         proc = run(pipeline(ignorestatus(`$(Base.julia_cmd()) --project=$(dirname(@__DIR__)) -e $script`); stdout=out, stderr=devnull))
-        @test_broken occursin("SURVIVED", String(take!(out)))
+        @test occursin("SURVIVED", String(take!(out)))
     end
 
     # ------------------------------------------------------------------ R14 raw Julia exception from stoch_simul_moments

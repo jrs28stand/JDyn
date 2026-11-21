@@ -68,34 +68,34 @@ w = [NaN; NaN; -1.02068155763; 0.981111876598; 0.840076435146; 1.88292275402; 2.
 end
 
 @testset "R02 R03 R05 R19 R20 interpreter: silently wrong values (Octave 8.4 ground truth)" begin
-    @test_broken val("l = [true false true]; l(2) = 5; r = l;") isa AbstractArray{Bool}
-    @test_broken val("l = false(1,3); l(3) = 1; a = [10 20 30]; r = a(l);") == 30.0
-    @test_broken size(val("A = [1 2 3; 4 5 6]; r = A(logical([1 0 1]));")) == (1, 2)
+    @test val("l = [true false true]; l(2) = 5; r = l;") isa AbstractArray{Bool}
+    @test val("l = false(1,3); l(3) = 1; a = [10 20 30]; r = a(l);") == 30.0
+    @test size(val("A = [1 2 3; 4 5 6]; r = A(logical([1 0 1]));")) == (1, 2)
     @test size(val("A = [1 2 3; 4 5 6]; r = A(logical([1;0;1]));")) == (2, 1)     # column mask: right
-    @test_broken size(val("r = zeros(0,3); r(:,10) = 5;")) == (0, 10)
-    @test_broken val("r = zeros(0,3); r(2,:) = 5;") == [0.0 0 0; 5 5 5]
+    @test size(val("r = zeros(0,3); r(:,10) = 5;")) == (0, 10)
+    @test val("r = zeros(0,3); r(2,:) = 5;") == [0.0 0 0; 5 5 5]
     @test val("r = []; r(end+1,:) = [1 2 3]; r(end+1,:) = 4;") == [1.0 2 3; 4 4 4]  # growth from 0x0: right
-    @test_broken length(val("r = unique([3 NaN 1 NaN]);")) == 4
+    @test length(val("r = unique([3 NaN 1 NaN]);")) == 4
 end
 
 @testset "R04 R06 R10 interpreter: refusals of valid MATLAB" begin
-    @test_broken val("if any([NaN 1]), r = 1; else, r = 0; end") == 1.0
-    @test_broken val("r = all(NaN);") === true
-    @test_broken (x = val("r = [1;2;3]; r(:,:) = [];"); x isa AbstractMatrix && size(x) == (0, 1))
-    @test_broken val("r = 2 ^ [1 2; 3 4];") isa AbstractMatrix
+    @test val("if any([NaN 1]), r = 1; else, r = 0; end") == 1.0
+    @test val("r = all(NaN);") === true
+    @test (x = val("r = [1;2;3]; r(:,:) = [];"); x isa AbstractMatrix && size(x) == (0, 1))
+    @test val("r = 2 ^ [1 2; 3 4];") isa AbstractMatrix
 end
 
 @testset "R07 (S4) [1 2 3; zeros(0,2)] is a dimension error in Octave" begin
-    @test_broken val("r = [1 2 3; zeros(0,2)];") isa MatlabError
+    @test val("r = [1 2 3; zeros(0,2)];") isa MatlabError
 end
 
 @testset "R08 Julia exceptions escape MATLAB try/catch" begin
-    @test_broken val("try, x = trace(ones(2,3)); r = 1; catch, r = 2; end") in (1.0, 2.0)
-    @test_broken !(val("r = sprintf('%c', 65.5);") isa Exception)
+    @test val("try, x = trace(ones(2,3)); r = 1; catch, r = 2; end") in (1.0, 2.0)
+    @test !(val("r = sprintf('%c', 65.5);") isa Exception)
 end
 
 @testset "R09 sprintf numeric conversions of char data" begin
-    @test_broken val("r = sprintf('%d|', 'ab');") == "97|98|"
+    @test val("r = sprintf('%d|', 'ab');") == "97|98|"
 end
 
 @testset "R11 set_shock_stderr! keeps the covariance (Dynare: M_.Sigma_e(i,i) = value^2 only)" begin
@@ -126,7 +126,7 @@ end
         """
     out = IOBuffer()
     p = run(pipeline(ignorestatus(`$(Base.julia_cmd()) --project=$(dirname(@__DIR__)) -e $script`); stdout=out, stderr=devnull))
-    @test_broken occursin("ALIVE", String(take!(out)))       # today: the child exits with code 7, nothing printed
+    @test occursin("ALIVE", String(take!(out)))       # today: the child exits with code 7, nothing printed
 end
 
 @testset "R14 negative variance inside the QZ criterion: raw DomainError" begin
@@ -178,16 +178,16 @@ end
 
 # ====================================================================== new findings (load API)
 @testset "R32 (S4) non-ASCII characters become '?'" begin
-    @test_broken val("r = double('é');") == 233.0          # MATLAB: 233 (UTF-16 code unit); Octave: [195 169]; JDyn: 63
+    @test val("r = double('é');") == 233.0          # MATLAB: 233 (UTF-16 code unit); Octave: [195 169]; JDyn: 63
 end
 
 @testset "R22 steady_state_model is evaluated with Julia's Base, not MATLAB semantics" begin
     m = build("var y; varexo e; parameters a; a = 2.5;\nmodel; y = 0.5*y(-1) + e; end;\nsteady_state_model; y = round(a); end;\n")
     @test val("r = round(2.5);") == 3.0                                  # JDyn's own interpreter: right
-    @test_broken steady_state(m; check=false)[1][1] == 3.0                # MATLAB round(2.5) = 3; compiled Julia round: 2
+    @test steady_state(m; check=false)[1][1] == 3.0                # MATLAB round(2.5) = 3; compiled Julia round: 2
     m2 = build("var y; varexo e; parameters a; a = 2.5;\nmodel; y = 0.5*y(-1) + e; end;\nsteady_state_model; y = mod(a, 0); end;\n")
     r = try; steady_state(m2; check=false)[1][1]; catch e; e; end
-    @test_broken r == 2.5                                                 # MATLAB mod(x, 0) = x; JDyn: SteadyStateError (NaN)
+    @test r == 2.5                                                 # MATLAB mod(x, 0) = x; JDyn: SteadyStateError (NaN)
 end
 
 @testset "R23 options of earlier stoch_simul statements are dropped by the load API" begin

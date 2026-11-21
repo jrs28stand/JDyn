@@ -41,6 +41,9 @@ function tokenize(lines::Vector)
             continue
         end
         text = _asciify(text0)
+        # non-ASCII characters are replaced by one '?' each for tokenizing (byte columns); string literals take the
+        # original character at the same position
+        origc = isascii(text0) ? nothing : collect(String(text0))
         st = strip(text)
         if block_comment > 0
             if st == "%}"
@@ -99,7 +102,7 @@ function tokenize(lines::Vector)
                         j += 1
                         break
                     end
-                    write(buf, text[j]); j += 1
+                    write(buf, origc === nothing ? text[j] : origc[j]); j += 1
                 end
                 i = j; ws = false
                 continue

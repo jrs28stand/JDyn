@@ -292,7 +292,9 @@ _minmax!("min", <)
 function _anyall!(name, fn)
     BUILTINS[name] = function (I, a, nout)
         _nargs(a, 1, 2, name)
-        x = _logical(a[1])
+        # any and all look at the non-zero entries; a NaN counts as neither (any(NaN) is false, all(NaN) true)
+        x0 = arr(a[1])
+        x = eltype(x0) == Bool ? x0 : (name == "any" ? ((x0 .!= 0) .& .!isnan.(x0)) : ((x0 .!= 0) .| isnan.(x0)))
         (isempty(x) && size(x) == (0, 0)) && return name == "all"
         ax = _dim_arg(x, a, 2)
         ax === nothing && return ret(x)
@@ -331,9 +333,18 @@ end
 
 bi!("unique") do I, a, nout
     (nout > 1 || length(a) != 1 || !is_num(a[1])) && _unsup("unique with several outputs or non-numeric input")
-    x = farr(a[1])
-    u = sort(unique(vec(x)))
-    ret(size(x, 1) == 1 ? reshape(u, 1, :) : reshape(u, :, 1))
+    x0 = arr(a[1])
+    x = farr(x0)
+    # NaNs are all different (MATLAB since R2013a, Octave): they are kept, at the end; -0 and 0 are equal
+    v = vec(x)
+    nn = sort(filter(!isnan, v))
+    u = isempty(nn) ? Float64[] : [nn[i] for i in eachindex(nn) if i == 1 || nn[i] != nn[i-1]]
+    append!(u, fill(NaN, count(isnan, v)))
+    if isempty(x)
+        return size(x) == (0, 0) ? zeros(0, 0) : zeros(0, 1)
+    end
+    res = size(x, 1) == 1 ? reshape(u, 1, :) : reshape(u, :, 1)
+    eltype(x0) == Bool ? ret(Matrix{Bool}(res .!= 0)) : ret(res)
 end
 bi!("fliplr") do I, a, nout
     a[1] isa AbstractString ? reverse(a[1]) : ret(arr(a[1])[:, end:-1:1])
@@ -646,7 +657,11 @@ function _cfmt(spec::AbstractString, x::Float64)
         (x != round(x) || x < 0) && return Printf.format(Printf.Format(spec[1:end-1] * "e"), x)
         return Printf.format(Printf.Format(spec), BigInt(x))
     end
-    conv == 'c' && return Printf.format(Printf.Format(spec[1:end-1] * "s"), string(Char(Int(x))))
+    if conv == 'c'
+        (x == round(x) && 0 <= x < 0x110000 && !(0xd800 <= x < 0xe000)) ||
+            return Printf.format(Printf.Format(replace(spec[1:end-1], r"\.\d+" => "") * "e"), x)   # as %s of a non-integer
+        return Printf.format(Printf.Format(spec[1:end-1] * "s"), string(Char(Int(x))))
+    end
     Printf.format(Printf.Format(spec), x)
 end
 
@@ -671,7 +686,7 @@ function _num2str(x, fmt=nothing)
     String(strip(_cfmt("%" * string(dgt + 7 + (x < 0)) * "." * string(dgt) * "g", x)))
 end
 
-const _FMT_RE = r"%([-+ 0#]*)(\*|\d+)?(?:\.(\*|\d+))?([diouxXfeEgGcs%])"
+const _FMT_RE = r"%([-+ 0#]*)(\*|\d+)?(?:\.(\*|\d+))?(?:hh|h|ll|l|L|q|j|z|t)?([diouxXfeEgGcs%])"
 const _ESC = Dict('n' => "\n", 't' => "\t", '\\' => "\\", 'r' => "\r", 'a' => "\a", 'b' => "\b", 'f' => "\f", 'v' => "\v")
 _unescape(s) = replace(s, r"\\(.)" => m -> get(_ESC, m[2], m))
 
@@ -699,7 +714,7 @@ function _sprintf(fmt::AbstractString, args)
         pos = 1
         broke = false
         for m in specs
-            write(out, fmt[pos:m.offset-1])
+            write(out, fmt[pos:prevind(fmt, m.offset)])
             pos = m.offset + ncodeunits(m.match)
             if m.captures[4] == "%"
                 write(out, "%")
@@ -716,6 +731,11 @@ function _sprintf(fmt::AbstractString, args)
                 continue
             end
             v = flat[k]
+            if v isa String && length(v) > 1 && m.captures[4] != "s"
+                # a char array met by a numeric (or %c) conversion is used one character at a time: %d of 'ab' is 97, 98
+                splice!(flat, k, [string(c) for c in v])
+                v = flat[k]
+            end
             k += 1
             spec = "%" * m.captures[1] * something(m.captures[2], "") * (m.captures[3] === nothing ? "" : "." * m.captures[3]) * m.captures[4]
             if v isa String

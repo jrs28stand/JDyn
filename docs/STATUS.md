@@ -11,7 +11,7 @@ criterion where Dynare's and JDyn's QZ round differently). The higher-order test
 | Area | Check | Worst difference |
 |---|---|---|
 | Calibration of `.mod` files with MATLAB code | the 157 files of Dynare's test suite in pydyn's corpus: `M_.params`, `M_.Sigma_e` (and `oo_.steady_state` for 67 of them) | 157 identical, 0 different, 0 refused (rtol 1e-10) |
-| MATLAB semantics | 82 cases of pydyn plus 254 new ones against Octave | all match or are refused (61 refused) |
+| MATLAB semantics | 82 cases of pydyn plus 376 new ones against Octave (122 from the second review: logical class, shapes, empty arrays, deletion, `any`/`all`/`unique` with NaN, `scalar^matrix`, `sprintf` of char data) | all match or are refused (60 of the 376 refused) |
 | Steady state | analytical blocks, `_steadystate.m` files (interpreted), helper functions, numerical solve | exact; 1.6e-6 on collard, where Dynare stops its solver early (JDyn's residual 1.8e-15) |
 | First-order decision rules | collard, rbc_occbin, schorfheide (ghx, ghu, order_var) | 8e-15 |
 | IRFs, parameter loops | schorfheide IRFs; 6 parameter sets in one load; nk_baseline with Julia or `.m` steady state | 5e-16 (IRFs), 4e-14 (rules), 3e-9 (nk_baseline) |
@@ -161,7 +161,16 @@ maximum_lag + periods + maximum_lead) and `exo_simul` (rows x n_exo) have Dynare
   MATLAB compilation) and preprocesses again.
 - The 7.2 preprocessor's Julia output writes `normcdf(mu, sigma, x)` (reversed argument order) and
   chained comparisons `a < b < c` that Julia would read differently from MATLAB; JDyn corrects both.
-- Where MATLAB and Octave differ, the interpreter follows MATLAB; `isoctave` is false.
+- Where MATLAB and Octave differ, the interpreter follows MATLAB; `isoctave` is false. Two places where it is more
+  permissive than Octave on purpose: a deletion subscript that spans its dimension counts as a colon
+  (`A(1:end,2) = []`, `A(1,2) = []` on a row), and `A(1:end) = []` style forms follow MATLAB.
+- `steady_state_model` is evaluated in a bare Julia module (`steady_state_module`, src/model.jl): only the operators
+  the preprocessor writes and MATLAB's functions (`round` half away from zero, `mod`/`rem` with MATLAB's conventions,
+  `sign`, `fix`, `max`/`min` ignoring NaN, `x^y`, ...) exist there. A name it does not have (`exit`, any other Julia
+  function, a MATLAB function not listed) sends the block to the interpreter, which resolves or refuses it.
+  Non-ASCII characters in string literals are kept (MATLAB: UTF-16 code units; the rest of a line is read as ASCII).
+- Julia exceptions raised inside an interpreter builtin (or inside a MATLAB `try`) are MATLAB errors: a `try/catch`
+  catches them and the message says what Julia reported.
 - JDyn fixes several MATLAB-semantics bugs that pydyn has (`strrep` with overlapping matches,
   `strsplit` with repeated delimiters, `sprintf('%.3d')`, `num2str(x, fmt)` blanks).
 

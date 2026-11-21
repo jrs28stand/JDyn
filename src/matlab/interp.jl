@@ -368,6 +368,8 @@ function mcall(I::Interp, name, args, nargout, sc)
         push!(I.scope_stack, sc)
         r = try
             f(I, args, nargout)
+        catch e
+            e isa _JULIA_ERRORS ? throw(matlab_error(e)) : rethrow()
         finally
             pop!(I.scope_stack)
         end
@@ -548,7 +550,8 @@ function mexec(I::Interp, s, sc)
         saved_scopes, saved_end, saved_depth = length(I.scope_stack), length(I.end_stack), I.depth
         try
             return exec_block(I, s.body, sc)
-        catch e
+        catch e0
+            e = matlab_error(e0)                 # a Julia exception from an operator is a MATLAB error too
             e isa MatlabError || rethrow()
             resize!(I.scope_stack, saved_scopes)
             resize!(I.end_stack, saved_end)
