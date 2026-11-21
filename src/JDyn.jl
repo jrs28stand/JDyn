@@ -44,7 +44,7 @@ export run_preprocessor, load, Model, ModelError, steady_state, SteadyStateError
        Occbin, OccbinResult, OccbinIRF, OccbinError, OccbinPeriodicError, OccbinMaxitError, OccbinHorizonError, OccbinLoopError,
        OccbinDynareBug, error_flag, irf_occbin, occbin_graph_table, surprise_shocks, mod_options, check_constraints,
        Estimation, EstimationError, estimate, posterior_mode, sample_posterior, log_likelihood, log_prior, log_posterior,
-       smooth, SmootherResult, SmootherError, parameter_vector, prior_mode,
+       smooth, SmootherResult, SmootherError, check_smoother, parameter_vector, prior_mode,
        perfect_foresight, PerfectForesightResult, PerfectForesightError, unanticipated_shocks
 
 end

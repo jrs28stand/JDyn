@@ -32,7 +32,7 @@ const _SM_DEFAULTS = Dict{String,Any}("datafile" => nothing, "first_obs" => 1, "
     "kalman_algo" => 0, "kalman_tol" => 1e-10, "diffuse_kalman_tol" => 1e-6, "qz_criterium" => nothing,
     "filtered_vars" => false, "filter_step_ahead" => nothing, "filter_covariance" => false,
     "smoothed_state_uncertainty" => false, "parameter_set" => "calibration", "varobs" => nothing,
-    "replicate_dynare_bugs" => false, "Harvey_scale_factor" => 10.0, "noconstant" => false)
+    "replicate_dynare_bugs" => false, "Harvey_scale_factor" => 10.0)
 const PARAMETER_SETS = ("calibration", "posterior_mode", "posterior_mean", "posterior_median", "mle_mode", "prior_mode", "prior_mean")
 # options of the estimation statement that concern the optimiser, the sampler or its output, not the smoother
 const _ESTIMATION_ONLY = Set(["mode_compute", "mode_file", "mode_check", "mode_check.status", "mh_replic", "mh_nblck", "mh_nblocks",
@@ -48,7 +48,7 @@ const _DECOMP_COSMETIC = Set(["colormap", "fig_name", "graph_format", "nodisplay
     "shock_decomposition", "plot_shock_decomposition"])
 # options the code cannot honour: refused rather than ignored
 const _SM_REFUSED = Dict("heteroskedastic_filter" => "heteroskedastic filters", "smoother_redux" => "smoother_redux",
-    "occbin" => "OccBin smoothing", "partial_information" => "partial information", "kalman_algo5" => "the pruned skewed filter")
+    "occbin" => "OccBin smoothing", "noconstant" => "noconstant (Dynare's store_smoother_results ignores it, so its output mixes two conventions)", "partial_information" => "partial information", "kalman_algo5" => "the pruned skewed filter")
 
 _unwrap1(v) = (v isa AbstractVector && length(v) == 1) ? v[1] : v
 _flag(v) = !(v === false || v === 0 || v === 0.0 || v === nothing || v == "")
@@ -75,7 +75,7 @@ function _resolve_options(m::Model, user::Dict{String,Any}; extra_kinds=())
     for (k, v) in from_file
         haskey(opts, k) && (opts[k] = v)
     end
-    for k in ("logdata", "kalman_tol", "diffuse_kalman_tol", "Harvey_scale_factor", "noconstant")   # MATLAB-side `options_.x = ...;`
+    for k in ("logdata", "kalman_tol", "diffuse_kalman_tol", "Harvey_scale_factor")   # MATLAB-side `options_.x = ...;`
         if !haskey(from_file, k) && haskey(m.matlab_options, k)
             try
                 opts[k] = scalar(m.matlab_options[k], "options_.$k")
@@ -106,7 +106,7 @@ function _resolve_options(m::Model, user::Dict{String,Any}; extra_kinds=())
         opts[k] = _tonum(_unwrap1(opts[k]))
     end
     for k in ("loglinear", "logdata", "diffuse_filter", "filtered_vars", "filter_covariance", "smoothed_state_uncertainty",
-              "replicate_dynare_bugs", "noconstant")
+              "replicate_dynare_bugs")
         opts[k] = _flag(_unwrap1(opts[k]))
     end
     opts["datafile"] = _unwrap1(opts["datafile"])
@@ -754,7 +754,7 @@ measurement-error parameters as `set_all_parameters`), or `parameter_set=` `"pos
 Options are Dynare's and default to those of the file's `estimation` / `calib_smoother` statements (merged in file order);
 keywords take precedence: `datafile first_obs nobs prefilter loglinear logdata diffuse_filter lik_init (1, 2, 3) Harvey_scale_factor
 kalman_algo (0-4) filtered_vars filter_step_ahead filter_covariance smoothed_state_uncertainty kalman_tol diffuse_kalman_tol
-qz_criterium noconstant varobs`. `presample` is accepted and has no effect on the smoother (as in Dynare). Options of Dynare's
+qz_criterium varobs`. `presample` is accepted and has no effect on the smoother (as in Dynare). Options of Dynare's
 statement that the code does not act on give one warning; ones that would change the numbers raise a `SmootherError`.
 
 Blocks of the file: `observation_trends` (linear trends removed from the data, demeaned under `prefilter`; returned in `Trend` /
@@ -862,10 +862,10 @@ function smooth(m::Model, data=nothing; sol=nothing, estimation=nothing, theta=n
         obs = raw[first:first+nob-1, :]
     end
     smpl = size(obs, 1)
-    obs_const = opts["noconstant"] ? zeros(pp) : const_all[mf]
+    obs_const = const_all[mf]
     prefilter = opts["prefilter"] == 1
     if prefilter
-        any(c -> abs(c) > 1e-9, const_all[mf]) && opts["noconstant"] == false &&
+        any(c -> abs(c) > 1e-9, const_all[mf]) &&
             throw(SmootherError("prefilter=1 is inconsistent with observed variables that have a non-zero steady state (same check as Dynare)"))
         obs_const = Float64[(c = filter(!isnan, obs[:, j]); isempty(c) ? 0.0 : sum(c) / length(c)) for j in 1:pp]
     end
@@ -1021,7 +1021,7 @@ function _first_order_checked(m::Model, params, qz, loglinear, lik_init)
 end
 
 "Internal-consistency errors of a smoother result (rounding level): transition, simulation, measurement (and decomposition if given)."
-function check(res::SmootherResult, decomp=nothing; sol=nothing)
+function check_smoother(res::SmootherResult, decomp=nothing; sol=nothing)
     G, Hh = sol === nothing ? (res.G, res.H) : (Matrix(sol.G), Matrix(sol.H))
     (sol !== nothing && res.loglinear) && throw(SmootherError("loglinear result: use the stored (log) decision rules, not sol"))
     prev = vcat(res.init_state', res.smoothed[1:end-1, :])
