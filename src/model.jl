@@ -28,11 +28,51 @@ function run_preprocessor(modfile::AbstractString; preprocessor=nothing, output=
     append!(args, extra_args)
     out = IOBuffer(); err = IOBuffer()
     proc = run(pipeline(ignorestatus(Cmd(`$exe $args`; dir=dirname(modfile))); stdout=out, stderr=err))
-    proc.exitcode == 0 || error("preprocessor failed:\n$(String(take!(out)))\n$(String(take!(err)))")
     name = splitext(basename(modfile))[1]
+    if proc.exitcode != 0
+        msg = String(take!(out)) * "\n" * String(take!(err))
+        if occursin("`use_dll` option is not compatible with Julia", msg)
+            # use_dll only says how Dynare compiles the model under MATLAB: drop it and preprocess again
+            _preprocess_without_use_dll(exe, modfile, name, args, extra_args)
+        else
+            error("preprocessor failed:\n$msg")
+        end
+    end
     jd = joinpath(dirname(modfile), name, "model", "json")
     isfile(joinpath(jd, "modfile.json")) || error("no JSON output in $jd")
     jd
+end
+
+"""
+Preprocess `modfile` without its `use_dll` option (which the preprocessor refuses with language=julia):
+expand the macros, remove `use_dll` from the `model(...)` options and the `// --+ options: +--` line,
+preprocess that text in a scratch folder, and move the output next to the original file.
+"""
+function _preprocess_without_use_dll(exe, modfile, name, args, extra_args)
+    tmp = mktempdir()
+    try
+        expanded = joinpath(tmp, name * ".mod")
+        out = IOBuffer(); err = IOBuffer()
+        proc = run(pipeline(ignorestatus(Cmd(`$exe $(basename(modfile)) savemacro=$expanded onlymacro $extra_args`; dir=dirname(modfile)));
+                            stdout=out, stderr=err))
+        (proc.exitcode == 0 && isfile(expanded)) || error("preprocessor failed (macro expansion):\n$(String(take!(out)))\n$(String(take!(err)))")
+        text = read(expanded, String)
+        strip_opt(opts) = join(filter(o -> strip(o) != "use_dll", split(opts, ",")), ",")
+        text = replace(text, r"\bmodel\s*\(([^()]*)\)" => m -> begin
+            inner = strip_opt(match(r"\(([^()]*)\)", m).captures[1])
+            isempty(strip(inner)) ? "model" : "model($inner)"
+        end)
+        text = replace(text, r"(--\+\s*options:[^\n]*?)\buse_dll\b" => s"\1")
+        write(expanded, text)
+        out = IOBuffer(); err = IOBuffer()
+        proc = run(pipeline(ignorestatus(Cmd(`$exe $args`; dir=tmp)); stdout=out, stderr=err))
+        proc.exitcode == 0 || error("preprocessor failed:\n$(String(take!(out)))\n$(String(take!(err)))")
+        dest = joinpath(dirname(modfile), name)
+        rm(dest; recursive=true, force=true)
+        mv(joinpath(tmp, name), dest)
+    finally
+        rm(tmp; recursive=true, force=true)
+    end
 end
 
 # ---------------------------------------------------------------------- generated model functions
@@ -52,9 +92,11 @@ const RUNTIME_DEFS = quote
         dxp
     end
     normcdf(x::Real) = 0.5 * $(SpecialFunctions.erfc)(-x / sqrt(2.0))
-    normcdf(x::Real, mu::Real, sigma::Real) = normcdf((x - mu) / sigma)
+    # the 7.2 preprocessor's Julia output writes the three-argument forms as normcdf(mu, sigma, x)
+    # (ExprNode.cc: "Julia API is normcdf(mu, sigma, x)"), not MATLAB's normcdf(x, mu, sigma)
+    normcdf(mu::Real, sigma::Real, x::Real) = normcdf((x - mu) / sigma)
     normpdf(x::Real) = exp(-0.5 * x * x) / sqrt(2pi)
-    normpdf(x::Real, mu::Real, sigma::Real) = normpdf((x - mu) / sigma) / sigma
+    normpdf(mu::Real, sigma::Real, x::Real) = normpdf((x - mu) / sigma) / sigma
     erf(x::Real) = $(SpecialFunctions.erf)(x)
     erfc(x::Real) = $(SpecialFunctions.erfc)(x)
     ln(x::Real) = log(x)

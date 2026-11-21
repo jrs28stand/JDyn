@@ -653,3 +653,97 @@ if section("review")
     end
 end
 end
+
+# ====================================================================== (b) corpus files against Dynare
+"""
+Load one file of the corpus (`rel` under the Dynare source tree) and compare with Dynare's results.
+Returns (outcome, detail): "identical", "refused" (ModelError while running the statements),
+"out of scope" (model features JDyn does not support, preprocessor failure), "DIFFERENT" (loaded
+with a different calibration, or a steady state that differs), "steady state failed", "crash".
+"""
+function corpus_case(rel, ref)
+    src = joinpath(DYNARE_SRC, rel)
+    isfile(src) || return ("skipped", "not in the Dynare source tree")
+    d = mktempdir()
+    for f in readdir(dirname(src))
+        p = joinpath(dirname(src), f)
+        (isfile(p) && filesize(p) < 3_000_000) && cp(p, joinpath(d, f); force=true)
+    end
+    M.ISOCTAVE[] = true                                     # the reference run used Octave
+    try
+        m = try
+            with_logger(NullLogger()) do
+                M.load(joinpath(d, basename(src)))
+            end
+        catch e
+            msg = sprint(showerror, e)
+            if e isa ModelError
+                scope = occursin(r"deterministic exogenous|external functions in the model|expected the preprocessor|generated function", msg)
+                return (scope ? "out of scope" : "refused", first(msg, 300))
+            end
+            occursin("preprocessor failed", msg) && return ("out of scope", first(msg, 300))
+            return ("crash", first(msg, 300))
+        end
+        params = m.params
+        if Int(ref["after_steady"]) != 0
+            params = with_logger(NullLogger()) do
+                M.steady_state(m; check=false)[2]
+            end
+        end
+        rp = vec(Float64.(ref["params"] isa Real ? [ref["params"]] : ref["params"]))
+        close_nan(params, rp; rtol=1e-10) || return ("DIFFERENT", "params differ: " *
+            join([string(n, " ", a, " vs ", b) for (n, a, b) in zip(m.param_names, params, rp) if !close_nan(a, b; rtol=1e-10)][1:min(end, 5)], "; "))
+        rs = ref["Sigma_e"] isa Real ? fill(Float64(ref["Sigma_e"]), 1, 1) : Float64.(ref["Sigma_e"])
+        length(rs) == length(m.Sigma_e) && close_nan(m.Sigma_e, reshape(rs, size(m.Sigma_e)); rtol=1e-10) ||
+            return ("DIFFERENT", "Sigma_e differs")
+        if Int(ref["check_ys"]) != 0
+            ys = try
+                with_logger(NullLogger()) do
+                    M.steady_state(m)[1]
+                end
+            catch e
+                return ("steady state failed", first(sprint(showerror, e), 300))
+            end
+            # rtol: Dynare's own steady-state solver stops at 1e-6 on the residuals for numerical steady states
+            rt = Float64(ref["ys_rtol"])
+            ry = vec(Float64.(ref["ys"] isa Real ? [ref["ys"]] : ref["ys"]))
+            close_nan(ys, ry; rtol=rt, atol=rt) || return ("DIFFERENT", "steady state differs: max |diff| = $(maximum(abs, ys .- ry; init=0.0))")
+        end
+        return ("identical", "")
+    catch e
+        e isa InterruptException && rethrow()
+        return ("crash", first(sprint(showerror, e), 300))
+    finally
+        M.ISOCTAVE[] = false
+        rm(d; recursive=true, force=true)
+    end
+end
+
+if section("corpus")
+@testset "corpus" begin
+    path = joinpath(REF, "mat_corpus.mat")
+    if !isfile(path) || !isdir(DYNARE_SRC)
+        @info "corpus reference or Dynare source tree missing: corpus test skipped"
+    else
+        c = matread(path)
+        files = String.(vec(c["files"]))
+        @test length(files) >= 40
+        sel = get(ENV, "JDYN_CORPUS", "")                   # e.g. "1:20" or a substring of the file names
+        idx = isempty(sel) ? eachindex(files) : occursin(r"^\d+:\d+$", sel) ? (eval(Meta.parse(sel))) :
+              [k for k in eachindex(files) if occursin(Regex(sel), files[k])]
+        log = get(ENV, "JDYN_CORPUS_LOG", "")
+        counts = Dict{String,Int}()
+        for k in idx
+            t = @elapsed (outcome, detail) = corpus_case(files[k], c["refs"]["f$(k-1)"])
+            counts[outcome] = get(counts, outcome, 0) + 1
+            line = "$k | $(files[k]) | $outcome | $(round(t; digits=1)) s | $detail"
+            println(line)
+            isempty(log) || open(io -> println(io, line), log, "a")
+            # loading with a different calibration without an error is the worst outcome: there must be none
+            @test outcome != "DIFFERENT"
+            @test outcome in ("identical", "refused", "out of scope", "skipped")
+        end
+        println("corpus: ", join(["$k $v" for (k, v) in sort(collect(counts))], ", "))
+    end
+end
+end
