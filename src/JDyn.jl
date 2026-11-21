@@ -40,6 +40,7 @@ include("perfect_foresight.jl")
 include("plotting.jl")
 include("occbin.jl")
 include("results.jl")
+include("results_estimation.jl")
 
 export run_preprocessor, load, Model, ModelError, steady_state, SteadyStateError, first_order, FirstOrderSolution,
        BlanchardKahnError, ghx, ghu, irf, simulate, set_param!, set_params!, get_param, set_shock_stderr!,
@@ -53,6 +54,7 @@ export run_preprocessor, load, Model, ModelError, steady_state, SteadyStateError
        DecompositionPlotData, decomposition_table, stack_bars,
        perfect_foresight, PerfectForesightResult, PerfectForesightError, unanticipated_shocks,
        dynare, @dynare, DynareWorkspace, build_M, build_options, MStruct, Cell,
-       stoch_simul!, steady!, check!, perfect_foresight_setup!, perfect_foresight_solver!, occbin_solver!, set_param_value!
+       stoch_simul!, steady!, check!, perfect_foresight_setup!, perfect_foresight_solver!, occbin_solver!, set_param_value!,
+       estimation!, calib_smoother!
 
 end

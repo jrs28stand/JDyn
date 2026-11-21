@@ -543,7 +543,7 @@ function Estimation(m::Model; data=nothing, allow_unsupported::Bool=false, state
     if statement === nothing
         length(ests) > 1 && throw(EstimationError("the .mod file has $(length(ests)) estimation statements; pass statement=k to choose one"))
     end
-    if !isempty(ests)
+    if !isempty(ests) && statement != 0          # statement=0: the options come from the keywords alone (dynare()'s options_)
         st = ests[statement === nothing ? end : statement]
         merge!(raw, get_or(st, "options", Dict{String,Any}()))
     end

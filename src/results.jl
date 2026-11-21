@@ -589,6 +589,7 @@ function dynare(modfile::AbstractString; output=nothing, shocks=Dict{Int,Any}(),
         ws.M_[k] = fresh[k]
     end
     ws.M_.endo_histval = h
+    haskey(ws.state, :H) && (ws.M_.H = ws.state[:H])           # the measurement-error covariance estimation left (results_estimation.jl)
     _mark_synced!(ws)
     haskey(ws.oo_, "steady_state") || (ws.oo_.steady_state = _col(Float64[get(m.oo, v, 0.0) for v in m.endo_names]))
     haskey(ws.oo_, "exo_steady_state") || (ws.oo_.exo_steady_state = _col(exo_steady(m)))
@@ -635,6 +636,10 @@ function _run_in_place!(ws, st, nss, shocks, rng)
         _perfect_foresight_wee!(ws)
     elseif kind == "occbin_solver"
         occbin_solver!(ws)
+    elseif kind == "estimation"
+        _estimation!(ws, st, String.(get_or(st, "symbol_list", String[])), nothing, 0, (;))
+    elseif kind == "calib_smoother"
+        _calib_smoother!(ws, st, String.(get_or(st, "symbol_list", String[])), (;))
     elseif !(kind in _QUIET_KINDS)
         warn_once(m, "dynare(): '$kind' does not fill oo_ yet")
     end
