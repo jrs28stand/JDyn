@@ -1,0 +1,36 @@
+{"dynamic_model": {"model_local_variables": [], "external_functions_temporary_terms_": [], "temporary_terms_": [{"temporary_term": "T14", "value": "beta*c(1)^(-1)"}
+, {"temporary_term": "T22", "value": "alpha*exp(z(1))*k^(alpha-1)"}
+, {"temporary_term": "T25", "value": "1+T22-delta"}
+, {"temporary_term": "T32", "value": "exp(z)*k(-1)^alpha"}
+], 
+"residuals":[
+{"residual": {"lhs": "c^(-1)", "rhs": "beta*c(1)^(-1)*(1+alpha*exp(z(1))*k^(alpha-1)-delta)"}}
+, {"residual": {"lhs": "k", "rhs": "exp(z)*k(-1)^alpha-c+k(-1)*(1-delta)"}}
+, {"residual": {"lhs": "z", "rhs": "rho*z(-1)+e"}}
+
+]
+, "external_functions_temporary_terms_jacobian": [], "temporary_terms_jacobian": [{"temporary_term": "T46", "value": "beta*get_power_deriv(c(1),(-1),1)"}
+, {"temporary_term": "T50", "value": "exp(z)*get_power_deriv(k(-1),alpha,1)"}
+, {"temporary_term": "T54", "value": "alpha*exp(z(1))*get_power_deriv(k,alpha-1,1)"}
+], "jacobian": {"dims": [3, 10], "entries": [{"indices": [1, 4], "eq": 1, "var": "c", "shift": 0, "val": "get_power_deriv(c,(-1),1)"}
+, {"indices": [1, 7], "eq": 1, "var": "c", "shift": 1, "val": "(-(T25*T46))"}
+, {"indices": [1, 5], "eq": 1, "var": "k", "shift": 0, "val": "(-(T14*T54))"}
+, {"indices": [1, 9], "eq": 1, "var": "z", "shift": 1, "val": "(-(T14*T22))"}
+, {"indices": [2, 4], "eq": 2, "var": "c", "shift": 0, "val": "1"}
+, {"indices": [2, 2], "eq": 2, "var": "k", "shift": -1, "val": "(-(1-delta+T50))"}
+, {"indices": [2, 5], "eq": 2, "var": "k", "shift": 0, "val": "1"}
+, {"indices": [2, 6], "eq": 2, "var": "z", "shift": 0, "val": "(-T32)"}
+, {"indices": [3, 3], "eq": 3, "var": "z", "shift": -1, "val": "(-rho)"}
+, {"indices": [3, 6], "eq": 3, "var": "z", "shift": 0, "val": "1"}
+, {"indices": [3, 10], "eq": 3, "var": "e", "shift": 0, "val": "(-1)"}
+]}, "external_functions_temporary_terms_hessian": [], "temporary_terms_hessian": [], "hessian": {"dims": [3, 10, 10], "entries": [{"indices": [1, 4, 4], "eq": 1, "var1": "c", "shift1": 0, "var2": "c", "shift2": 0, "val": "get_power_deriv(c,(-1),2)"}
+, {"indices": [1, 7, 7], "eq": 1, "var1": "c", "shift1": 1, "var2": "c", "shift2": 1, "val": "(-(T25*beta*get_power_deriv(c(1),(-1),2)))"}
+, {"indices": [1, 7, 5], "eq": 1, "var1": "c", "shift1": 1, "var2": "k", "shift2": 0, "val": "(-(T46*T54))"}
+, {"indices": [1, 7, 9], "eq": 1, "var1": "c", "shift1": 1, "var2": "z", "shift2": 1, "val": "(-(T22*T46))"}
+, {"indices": [1, 5, 5], "eq": 1, "var1": "k", "shift1": 0, "var2": "k", "shift2": 0, "val": "(-(T14*alpha*exp(z(1))*get_power_deriv(k,alpha-1,2)))"}
+, {"indices": [1, 5, 9], "eq": 1, "var1": "k", "shift1": 0, "var2": "z", "shift2": 1, "val": "(-(T14*T54))"}
+, {"indices": [1, 9, 9], "eq": 1, "var1": "z", "shift1": 1, "var2": "z", "shift2": 1, "val": "(-(T14*T22))"}
+, {"indices": [2, 2, 2], "eq": 2, "var1": "k", "shift1": -1, "var2": "k", "shift2": -1, "val": "(-(exp(z)*get_power_deriv(k(-1),alpha,2)))"}
+, {"indices": [2, 2, 6], "eq": 2, "var1": "k", "shift1": -1, "var2": "z", "shift2": 0, "val": "(-T50)"}
+, {"indices": [2, 6, 6], "eq": 2, "var1": "z", "shift1": 0, "var2": "z", "shift2": 0, "val": "(-T32)"}
+]}, "external_functions_temporary_terms_third_derivative": [], "temporary_terms_third_derivative": [], "third_derivative": {"dims": [3, 10, 10, 10], "entries": []}}}

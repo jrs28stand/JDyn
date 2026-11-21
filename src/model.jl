@@ -103,6 +103,12 @@ const RUNTIME_DEFS = quote
     cbrt(x::Real) = $(Base.cbrt)(x)
 end
 
+# While the package is precompiled (src/precompile.jl) a model may only be loaded into modules of the package itself:
+# Core.eval into an anonymous module is refused then.
+_generating() = ccall(:jl_generating_output, Cint, ()) == 1
+module _WorkloadModel end
+baremodule _WorkloadSSM end
+
 # ---------------------------------------------------------------------- the steady_state_model module
 # The preprocessor's Julia text of a steady_state_model block runs in a bare module: no Base, so a MATLAB function
 # name that Julia also has cannot get Julia's meaning (round(2.5) is 3, mod(x, 0) is x) and one that only Julia has
@@ -139,6 +145,7 @@ const SSM_NAMES = Dict{Symbol,Any}(
 
 "A module with only what a steady_state_model block may use (see SSM_NAMES), the functions of RUNTIME_DEFS, and `helpers`."
 function steady_state_module(helpers=Dict{String,Any}())
+    _generating() && return _WorkloadSSM          # precompile workload: no steady_state_model block, nothing to define
     mod = Module(gensym(:JDynSSM), false, false)
     for (n, f) in SSM_NAMES
         Core.eval(mod, Expr(:const, Expr(:(=), n, QuoteNode(f))))
@@ -216,7 +223,7 @@ end
 function load_model_functions(json_dir::AbstractString, raw::Dict{String,Any}; helpers=Dict{String,Any}())
     jdir = joinpath(dirname(json_dir), "julia")
     isdir(jdir) || throw(ModelError("no Julia output from the preprocessor in $jdir (run it with language=julia)"))
-    mod = Module(gensym(:JDynModel))
+    mod = _generating() ? _WorkloadModel : Module(gensym(:JDynModel))
     Core.eval(mod, RUNTIME_DEFS)
     for (name, f) in helpers                          # MATLAB helper functions called in steady_state_model
         Core.eval(mod, :($(Symbol(name))(args...) = $(f)(args...)))

@@ -564,7 +564,7 @@ otherwise shocks are drawn from the workspace's random stream (`seed=n` seeds it
 seed 0 like Dynare's 'default'; `set_dynare_seed(...)` lines of the file act as in Dynare; an explicit `rng` replaces
 the stream). The draws are Julia's, reproducible run to run but not MATLAB's: see docs/RESULTS.md, "Random draws".
 """
-function dynare(modfile::AbstractString; output=nothing, shocks=Dict{Int,Any}(), rng=nothing, seed=nothing, kw...)
+function dynare(modfile::AbstractString; output=nothing, shocks=Dict{Int,Any}(), rng=nothing, seed=nothing, _json_dir=nothing, kw...)
     if output === nothing
         # derivatives up to the highest order a stoch_simul statement asks for (Dynare's default is 2)
         output = occursin(r"order\s*=\s*3", read(modfile, String)) ? "third" : "second"
@@ -581,7 +581,7 @@ function dynare(modfile::AbstractString; output=nothing, shocks=Dict{Int,Any}(),
         wsref[] = ws
         st -> _run_in_place!(ws, st, nss, shocks, rng)
     end
-    m = load(modfile; output=output, on_command=factory, kw...)
+    m = _json_dir === nothing ? load(modfile; output=output, on_command=factory, kw...) : Model(_json_dir; on_command=factory, kw...)
     ws = wsref[]
     m.session.host.oo.results = nothing             # the struct now belongs to the workspace alone
     _apply_matlab_options!(ws)

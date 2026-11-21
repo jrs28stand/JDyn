@@ -97,3 +97,25 @@ end
     r2 = (JDyn.stoch_simul!(ws; order=2, irf=0, periods=50, nomoments=true, rng=Random.Xoshiro(1)); copy(ws.oo_.endo_simul))
     @test r1 == r2
 end
+
+@testset "order-1 simulate: allocation-free loop equals the textbook recursion" begin
+    ws = _seed_run(; seed=1)
+    dr = JDyn.as_dr(JDyn.first_order(ws.model))
+    sh = randn(Random.Xoshiro(1), 500, 1) .* 0.01
+    ys, ov, sv = dr["ys"], dr["order_var"], dr["state_var"]
+    ref = zeros(500, length(ys)); x = zeros(length(sv))
+    for t in 1:500
+        yh = dr["ghx"] * x + dr["ghu"] * sh[t, :]
+        ref[t, ov] .= ys[ov] .+ yh
+        x = ref[t, sv] - ys[sv]
+    end
+    @test JDyn.simulate(dr, sh) == ref
+end
+
+@testset "filtered theoretical moments with a large grid are fast" begin
+    ws = _seed_run()
+    t = @elapsed with_logger(NullLogger()) do
+        JDyn.stoch_simul!(ws; order=1, irf=0, periods=0, hp_filter=1600, filtered_theoretical_moments_grid=8192)
+    end
+    @test t < 30
+end

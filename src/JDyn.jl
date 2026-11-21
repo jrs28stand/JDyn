@@ -55,6 +55,8 @@ export run_preprocessor, load, Model, ModelError, steady_state, SteadyStateError
        DecompositionPlotData, decomposition_table, stack_bars,
        perfect_foresight, PerfectForesightResult, PerfectForesightError, unanticipated_shocks,
        dynare, @dynare, DynareWorkspace, build_M, build_options, MStruct, Cell,
-       stoch_simul!, steady!, check!, perfect_foresight_setup!, perfect_foresight_solver!, occbin_solver!, set_param_value!
+       stoch_simul!, steady!, check!, perfect_foresight_setup!, perfect_foresight_solver!, occbin_solver!, set_param_value!, set_dynare_seed!
+
+include("precompile.jl")
 
 end
