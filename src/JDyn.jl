@@ -1,0 +1,36 @@
+"""
+JDyn: Dynare models in Julia, with the same `.mod` files as MATLAB/Octave Dynare.
+
+The Dynare 7.2 preprocessor (C++) reads the `.mod` file and writes JSON plus Julia code for the model
+equations and their derivatives; JDyn runs the statements of the file in order (including the MATLAB
+lines between them, through a MATLAB-subset interpreter) and does the numerical work in Julia.
+No MATLAB or Octave is needed at run time.
+"""
+module JDyn
+
+using LinearAlgebra
+using LinearAlgebra: lu, issuccess, schur, ordschur!, qr, UpperTriangular, opnorm, pinv
+using Printf
+using Logging
+using Random
+import JSON
+import MAT
+import NLsolve
+import SpecialFunctions
+
+include("matlab/values.jl")
+include("matlab/parser.jl")
+include("matlab/builtins.jl")
+include("matlab/interp.jl")
+include("model.jl")
+include("matlab/session.jl")
+include("steady.jl")
+include("perturbation.jl")
+include("simulate.jl")
+include("moments.jl")
+
+export run_preprocessor, load, Model, ModelError, steady_state, SteadyStateError, first_order, FirstOrderSolution,
+       BlanchardKahnError, ghx, ghu, irf, simulate, set_param!, set_params!, get_param, set_shock_stderr!,
+       stoch_simul_moments, theoretical_moments
+
+end
