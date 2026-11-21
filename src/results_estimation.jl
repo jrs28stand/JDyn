@@ -60,6 +60,7 @@ function _estimation_kwargs(ws, user)
     end
     # options_.order is always read (Dynare's estimation resets it to 1; the table of defaults would hide a 2)
     kw[:order] = _opti(ws, "order", 1)
+    (occ = _occbin_overrides(ws)) === nothing || (kw[:occbin] = occ)
     kw
 end
 
@@ -85,6 +86,7 @@ function _smoother_kwargs(ws; full::Bool)
         df = _optf(ws, "datafile", nothing)
         df === nothing || (kw[:datafile] = String(df))
     end
+    (occ = _occbin_overrides(ws)) === nothing || (kw[:occbin] = occ)
     kw
 end
 
@@ -199,6 +201,10 @@ oo_.SmoothedShocks and oo_.SmoothedMeasurementErrors from a `SmootherResult` (st
 a (nobs x 1) column, fields created in decision-rule order as Dynare does, the smoother's own results removed first.
 """
 function _store_smoother_results!(oo::MStruct, m::Model, res::SmootherResult)
+    if res.occbin !== nothing                   # OccBin: oo_.occbin.smoother; nothing else is written if the smoother failed
+        _store_occbin_smoother!(oo, m, res)
+        res.occbin.smoother.error_flag == 0 || return oo
+    end
     for f in _SMOOTHER_FIELDS
         delete!(oo, f)
     end
@@ -207,7 +213,7 @@ function _store_smoother_results!(oo::MStruct, m::Model, res::SmootherResult)
     varobs = res.varobs
     nk = !isempty(res.filter_step_ahead)
     S = MStruct()
-    S.occbin = false
+    S.occbin = res.occbin !== nothing
     S.loglinear = res.loglinear
     S.SteadyState = _col(res.SteadyState)
     S.TrendCoeffs = _col(res.TrendCoeffs)

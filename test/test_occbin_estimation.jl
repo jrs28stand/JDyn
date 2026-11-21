@@ -273,3 +273,65 @@ end
     @test regime_table(rh; periods=[3])[1]["regime_sequence"] == "0  1  0"
     @test regime_table(rh; periods=[3], dynare_indexing=true)[1]["regime_sequence"] == "0"
 end
+
+@testset "dynare(): OccBin estimation(smoother) fills oo_ as Dynare" begin
+    s, r = oref("occest_nkm_smoother"), oref("occest_nkm_lik")
+    names = split(r["names"], ';')
+    x0 = vec(s["x0"])
+    src = read(joinpath(OREF, "occest_nkm.mod"), String)
+    i = findfirst("occbin_setup(likelihood_piecewise_kalman_filter);", src)
+    init = "estimated_params_init;\n" * join(["$(nm), $(@sprintf("%.17g", x));" for (nm, x) in zip(names, x0)], "\n") * "\nend;\n"
+    src = src[1:first(i)-1] * init * "options_.occbin.likelihood.maxit = 31;\n" *
+          "estimation(datafile=dataobsfile, mode_compute=0, nobs=120, first_obs=1, mh_replic=0, plot_priors=0, nograph, smoother) yg inom pi;\n"
+    d = mktempdir()
+    write(joinpath(d, "occ_dyn.mod"), src)
+    cp(joinpath(OREF, "occest_nkm_data.csv"), joinpath(d, "dataobsfile.csv"))
+    ws = with_logger(NullLogger()) do; dynare(joinpath(d, "occ_dyn.mod")); end
+    oo = ws.oo_
+    @test oo.Smoother.occbin == true
+    @test JDyn._occbin_overrides(ws)["likelihood.maxit"] == 31
+    m = ws.model
+    SV = hcat([vec(oo.SmoothedVariables[v]) for v in m.endo_names]...)
+    @test mxd(SV, s["pkf_SmoothedVariables"]) < 1e-10
+    SS = hcat([vec(oo.SmoothedShocks[v]) for v in m.exo_names]...)
+    @test mxd(SS, s["pkf_SmoothedShocks"]) < 1e-10
+    UV = hcat([vec(oo.UpdatedVariables[v]) for v in m.endo_names]...)
+    @test mxd(UV, s["pkf_UpdatedVariables"]) < 1e-10
+    occ = oo.occbin.smoother
+    @test occ.error_flag == 0 && occ.warning_flag == 0
+    rh = dregimes(s["pkf_regimes"])
+    @test occ.regime_history.shape == (1, length(rh))
+    @test all(vec(occ.regime_history.items[t].regime) == rh[t][1][1] && vec(occ.regime_history.items[t].regimestart) == rh[t][1][2] for t in eachindex(rh))
+    @test mxd(oo.occbin.linear_smoother.alphahat, s["pkf_linear_alphahat"]) < 1e-10
+    @test mxd(oo.occbin.linear_smoother.etahat, s["pkf_linear_etahat"]) < 1e-10
+    @test mxd(occ.alphahat, Matrix((s["pkf_SmoothedVariables"] .- vec(s["ys"])')[:, Int.(vec(r["order_var"]))]')) < 1e-10
+    # re-run on the workspace with the inversion filter as smoother
+    estimation!(ws, ["yg"]; mode_compute=0, smoother=true)
+    @test mxd(hcat([vec(ws.oo_.SmoothedVariables[v]) for v in m.endo_names]...), s["pkf_SmoothedVariables"]) < 1e-10
+end
+
+@testset "dynare(): occbin_solver regime history and occbin_write_regimes" begin
+    src = read(joinpath(OREF, "occest_rbc.mod"), String) * "\noccbin_write_regimes(periods=[1 2 50], filename='rbc_regimes');\n"
+    d = mktempdir()
+    write(joinpath(d, "occ_wr.mod"), src)
+    ws = with_logger(NullLogger()) do; dynare(joinpath(d, "occ_wr.mod")); end
+    m = ws.model
+    ob = Occbin(m)
+    res = with_logger(NullLogger()) do; simulate(ob); end
+    rh = ws.oo_.occbin.simul.regime_history
+    @test rh.shape == (1, length(res.regime_history))
+    @test JDyn._regimes_from_cell(rh) == res.regime_history
+    @test haskey(rh.items[1], "regime2") && !haskey(rh.items[1], "regime")
+    lines = readlines(joinpath(d, "Output", "rbc_regimes.csv"))
+    @test lines[1] == "time,regime_sequence_1,starting_period_of_regime_1,regime_sequence_2,starting_period_of_regime_2"
+    @test length(lines) == 4 && startswith(lines[4], "50,")
+    reg50 = res.regime_history[50]
+    @test lines[4] == "50," * join([join(string.(reg50[1][1]), "  "), join(string.(reg50[1][2]), "  "), join(string.(reg50[2][1]), "  "),
+                                    join(string.(reg50[2][2]), "  ")], ",")
+    # Dynare 7.2 fills the rows with the first regimes (row index instead of period)
+    ws.options_.replicate_dynare_bugs = true
+    occbin_write_regimes!(ws; type="simul")
+    lines2 = readlines(joinpath(d, "Output", "rbc_regimes.csv"))
+    @test startswith(lines2[4], "50,") && lines2[4] != lines[4] || res.regime_history[3] == reg50
+    @test_throws ModelError occbin_write_regimes!(ws; type="smoother")       # no smoother run: Dynare errors too
+end

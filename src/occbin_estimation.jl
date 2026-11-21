@@ -258,3 +258,139 @@ function occbin_shock_decomposition(m::Model, res::SmootherResult; tinit::Intege
     ob = Occbin(m; params=res.params)
     occbin_shock_decomposition(sm, ob.P, ob.Q; tinit=tinit)
 end
+
+# ====================================================================== oo_ (dynare(), estimation!, calib_smoother!)
+"OccBin options set in options_.occbin (by MATLAB lines of the file or by keywords): overrides for `occbin_filter_options`."
+function _occbin_overrides(ws)
+    isempty(ws.model.occbin_constraints) && return nothing
+    oc = _getpath(ws.options_, "occbin", nothing)
+    oc isa MStruct || return nothing
+    out = Dict{String,Any}()
+    for (k, v) in _flat_options(oc)
+        haskey(OCCBIN_FILTER_DEFAULTS, k) || continue
+        v isa AbstractArray && length(v) == 1 && (v = first(v))
+        v isa AbstractArray && isempty(v) && (v = nothing)
+        out[k] = v
+    end
+    isempty(out) ? nothing : out
+end
+
+_rowf(v) = reshape(Float64.(collect(v)), 1, :)
+
+"A regime history as Dynare's struct array (fields regime/regimestart, or regime1, regimestart1, regime2, regimestart2): a row Cell of structs, as JDyn writes M_.aux_vars."
+function _regime_history_cell(rh::AbstractVector)
+    items = Any[]
+    for reg in rh
+        s = MStruct()
+        if length(reg) == 1
+            s.regime = _rowf(reg[1][1]); s.regimestart = _rowf(reg[1][2])
+        else
+            for (j, (r, st)) in enumerate(reg)
+                s["regime$j"] = _rowf(r); s["regimestart$j"] = _rowf(st)
+            end
+        end
+        push!(items, s)
+    end
+    Cell(items, (1, length(items)))
+end
+
+"""
+oo_.occbin.smoother and oo_.occbin.linear_smoother as occbin.DSGE_smoother writes them (evaluate_smoother.m / dynare_estimation_1.m):
+error and warning flags, regime histories, the smoothed and updated variables and shocks of both smoothers (with Dynare's
+alphahat/etahat/ahat in decision-rule order), the simulation with the smoothed shocks and the regime matrices.
+"""
+function _store_occbin_smoother!(oo::MStruct, m::Model, res::SmootherResult)
+    occ = get(oo, "occbin", nothing)
+    occ isa MStruct || (occ = MStruct(); oo.occbin = occ)
+    sm, lin = res.occbin.smoother, res.occbin.linear
+    ov = res.solution.order_var
+    S = MStruct()
+    S.error_flag = Float64(sm.error_flag)
+    S.regime_history = _regime_history_cell(sm.regime_history)
+    if !sm.inversion_filter
+        S.warning_flag = Float64(sm.warning_flag)
+        S.realtime_regime_history = _regime_history_cell(sm.realtime_regime_history)
+    end
+    if sm.error_flag == 0
+        tmp = MStruct()
+        r2 = deepcopy(res); r2.occbin = nothing
+        _store_smoother_results!(tmp, m, r2)
+        for f in ("SmoothedVariables", "UpdatedVariables", "SmoothedShocks")
+            S[f] = tmp[f]
+        end
+        S.alphahat = Matrix(sm.smoothed[:, ov]')
+        S.etahat = Matrix(sm.shocks')
+        S.ahat = Matrix(sm.updated[:, ov]')
+        S.SteadyState = _col(sm.ys)
+        if !sm.inversion_filter
+            S.epsilonhat = Matrix(res.measurement_errors')
+            S.trend_coeff = zeros(length(res.varobs), 1)
+            sm.TT === nothing || (S.T0 = cat([T[ov, ov] for T in sm.TT]...; dims=3); S.R0 = cat([R[ov, :] for R in sm.RR]...; dims=3);
+                                  S.C0 = hcat([C[ov] for C in sm.CC]...))
+            if sm.piecewise !== nothing
+                sim = MStruct(); sim.piecewise = sm.piecewise; sim.linear = sm.linear
+                S.simul = sim
+            end
+        end
+    end
+    occ.smoother = S
+    if lin !== nothing && !sm.inversion_filter
+        L = MStruct()
+        tmp = MStruct()
+        _store_smoother_results!(tmp, m, lin)
+        for f in ("SmoothedVariables", "UpdatedVariables", "SmoothedShocks")
+            L[f] = tmp[f]
+        end
+        L.alphahat = Matrix(lin.smoothed[:, ov]')
+        L.etahat = Matrix(lin.shocks')
+        L.ahat = Matrix(lin.updated[:, ov]')
+        L.SteadyState = _col(lin.SteadyState)
+        L.T0 = lin.G[ov, ov]
+        L.R0 = lin.H[ov, :]
+        occ.linear_smoother = L
+    end
+    oo
+end
+
+"Regimes back from a regime_history Cell of structs (oo_.occbin.simul / smoother)."
+function _regimes_from_cell(c::Cell)
+    out = OccRegime[]
+    for s in c.items
+        if haskey(s, "regime")
+            push!(out, OccRegime([(Int.(vec(s.regime)), Int.(vec(s.regimestart)))]))
+        else
+            k = count(f -> startswith(f, "regimestart"), keys(s))
+            push!(out, OccRegime([(Int.(vec(s["regime$j"])), Int.(vec(s["regimestart$j"]))) for j in 1:k]))
+        end
+    end
+    out
+end
+
+"""
+    occbin_write_regimes!(ws; type=..., periods=..., filename=...) -> rows
+
+Dynare's `occbin_write_regimes` (write_regimes_to_xls.m): the regime history of `oo_.occbin.simul` (type `simul`, the default)
+or `oo_.occbin.smoother` (type `smoother`) as a table `time, regime_sequence, starting_period_of_regime` (suffixes `_1`, `_2`
+with two constraints), written as CSV to `<dir>/Output/<filename>.csv` (Dynare: `.xls`; default filename
+`<model>_occbin_regimes`). Options come from options_.occbin.write_regimes (keywords are written there first).
+Dynare 7.2 labels the rows with `periods` but fills them with the first regimes; JDyn writes the regimes of the labelled
+periods unless `options_.replicate_dynare_bugs` is set.
+"""
+function occbin_write_regimes!(ws; options...)
+    _take_options!(ws, Dict(Symbol("occbin.write_regimes." * String(k)) => v for (k, v) in options))
+    m = ws.model
+    wr = _getpath(ws.options_, "occbin.write_regimes", MStruct())
+    typ = lowercase(String(get(wr, "type", "simul")))
+    typ in ("simul", "smoother") || throw(ModelError("write_regimes_to_xls: output type can only be simul or smoother."))
+    occ = get(ws.oo_, "occbin", nothing)
+    src = occ isa MStruct ? get(occ, typ, nothing) : nothing
+    (src isa MStruct && haskey(src, "regime_history")) || throw(ModelError("write_regimes_to_xls: the required field does not exist"))
+    rh = _regimes_from_cell(src.regime_history)
+    per = get(wr, "periods", zeros(0, 0))
+    periods = (per isa AbstractArray && isempty(per)) ? nothing : Int.(round.(vec(collect(per))))
+    fname = String(get(wr, "filename", m.name * "_occbin_regimes"))
+    dir = joinpath(m.mod_dir, "Output")
+    mkpath(dir)
+    bugs = _optb(ws, "replicate_dynare_bugs", false)
+    write_regime_table(joinpath(dir, fname * ".csv"), rh; periods=periods, dynare_indexing=bugs)
+end

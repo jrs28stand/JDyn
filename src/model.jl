@@ -609,7 +609,8 @@ const _STORED_KINDS = Set(["stoch_simul", "estimation", "occbin_solver", "estima
     "estimated_params_bounds", "plot_shock_decomposition", "realtime_shock_decomposition",
     "squeeze_shock_decomposition", "init2shocks", "filter_initial_state",
     "perfect_foresight_with_expectation_errors_setup", "perfect_foresight_with_expectation_errors_solver",
-    "histval", "mshocks", "forecast", "conditional_forecast_paths", "conditional_forecast", "plot_conditional_forecast"])
+    "histval", "mshocks", "forecast", "conditional_forecast_paths", "conditional_forecast", "plot_conditional_forecast",
+    "occbin_write_regimes_xls"])
 const _LATEX_KINDS = Set(["write_latex_dynamic_model", "write_latex_static_model", "write_latex_original_model",
     "write_latex_steady_state_model", "collect_latex_files", "write_latex_definitions"])
 

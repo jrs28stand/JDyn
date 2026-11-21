@@ -117,7 +117,8 @@ _corr(S) = (d = sqrt.(diag(S)); [d[i] > 0 && d[j] > 0 ? S[i, j] / (d[i] * d[j]) 
 # where the preprocessor's MATLAB driver writes each statement's options (ComputingTasks.cc); every other
 # statement writes into options_ itself. Statements writing to a separate struct (options_ident, options_mom_,
 # options_occbin_ for occbin_setup, ...) do not change options_ and are skipped here.
-const _OPTION_PREFIX = Dict("occbin_solver" => "occbin.", "occbin_write_regimes" => "occbin.", "data" => "dataset.")
+const _OPTION_PREFIX = Dict("occbin_solver" => "occbin.", "occbin_write_regimes" => "occbin.", "occbin_write_regimes_xls" => "occbin.",
+                           "data" => "dataset.")
 const _OPTION_ELSEWHERE = Set(["occbin_setup", "occbin_graph", "identification", "method_of_moments", "model_info",
                                "conditional_forecast", "dynare_sensitivity", "model_diagnostics", "heterogeneity_solve"])
 
@@ -528,6 +529,7 @@ function occbin_solver!(ws::DynareWorkspace; options...)
     sim.linear = Matrix{Float64}(r.linear)
     sim.shocks_sequence = Matrix{Float64}(r.shocks)
     sim.exo_pos = _col(r.exo_pos)
+    sim.regime_history = _regime_history_cell(r.regime_history)
     occ = get(ws.oo_, "occbin", MStruct())
     occ.simul = sim
     ws.oo_.occbin = occ
@@ -641,6 +643,8 @@ function _run_in_place!(ws, st, nss, shocks, rng)
         _perfect_foresight_wee!(ws)
     elseif kind == "occbin_solver"
         occbin_solver!(ws)
+    elseif kind == "occbin_write_regimes_xls"
+        occbin_write_regimes!(ws)                       # src/occbin_estimation.jl
     elseif kind == "estimation"
         _estimation!(ws, st, String.(get_or(st, "symbol_list", String[])), nothing, 0, (;))
     elseif kind == "calib_smoother"
