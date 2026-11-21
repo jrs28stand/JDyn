@@ -477,7 +477,16 @@ function PFStacked(m::Model, params, ss; eq_index=nothing)
               zeros(m.n_exo), 0)
 end
 
-function _pf_pattern(P::PFStacked, T::Int)
+"Sparse pattern of the stacked Jacobian for T periods, with the buffers filled in place and the LU factorisation (symbolic analysis reused)."
+mutable struct PFPattern
+    A::SparseMatrixCSC{Float64,Int}
+    perm::Vector{Int}                # position in V (K x T) of each stored entry of A
+    res::Vector{Float64}
+    V::Matrix{Float64}
+    F::Any
+end
+
+function _pf_pattern(P::PFStacked, T::Int)::PFPattern
     get!(P.patterns, T) do
         n, K = P.n, length(P.er)
         rows = Int[]; cols = Int[]; lin = Int[]
@@ -490,7 +499,7 @@ function _pf_pattern(P::PFStacked, T::Int)
         A = sparse(rows, cols, Float64.(1:length(rows)), T * n, T * n)
         nnz(A) == length(rows) || throw(ModelError("stacked Jacobian has duplicate entries"))
         perm = Int[lin[Int(v)] for v in A.nzval]                 # position in V (K x T) of each stored entry
-        (A, perm, zeros(T * n), zeros(K, T))
+        PFPattern(A, perm, zeros(T * n), zeros(K, T), nothing)
     end
 end
 
@@ -544,7 +553,8 @@ next call with the same T.
 function evaluate!(P::PFStacked, Y::AbstractMatrix, y0, yT, X::AbstractMatrix, jac::Bool=true)
     n, T = P.n, size(Y, 2)
     P.evaluations += 1
-    A, perm, res, V = _pf_pattern(P, T)
+    pat = _pf_pattern(P, T)
+    A, perm, res, V = pat.A, pat.perm, pat.res, pat.V
     full = Matrix{Float64}(undef, n, T + 2)
     full[:, 1] .= y0; full[:, T+2] .= yT; full[:, 2:T+1] .= Y
     f = P.m.fns
@@ -560,10 +570,22 @@ function evaluate!(P::PFStacked, Y::AbstractMatrix, y0, yT, X::AbstractMatrix, j
     res, nothing
 end
 
-"A \\ b with a sparse LU factorisation; a singular matrix gives NaN."
-function _pf_lu_solve(A::SparseMatrixCSC, b::AbstractVector)
+"""
+A \\ b with a sparse LU factorisation; a singular matrix gives NaN. With `pat` (the pattern `A` was built
+from) the symbolic analysis of the first factorisation is reused by the next ones.
+"""
+function _pf_lu_solve(A::SparseMatrixCSC, b::AbstractVector, pat=nothing)
     try
-        F = lu(A; check=false)
+        if pat !== nothing && pat.A === A
+            if pat.F === nothing
+                pat.F = lu(A; check=false)
+            else
+                lu!(pat.F, A; check=false)
+            end
+            F = pat.F
+        else
+            F = lu(A; check=false)
+        end
         issuccess(F) || return fill(NaN, length(b))
         return F \ b
     catch e
@@ -618,7 +640,7 @@ function _pf_sim1(m::Model, P::PFStacked, endo, exo, periods, o, log)
         if err < tolf
             converged = true
         else
-            dy = _pf_lu_solve(A, res)
+            dy = _pf_lu_solve(A, res, _pf_pattern(P, periods))
             Y = Y .- reshape(dy, n, T)
         end
         it += 1
@@ -656,7 +678,8 @@ function _pf_sim1_linear(m::Model, P::PFStacked, endo, exo, periods, ss, xss, pa
     Y = dy[:, lag+1:lag+periods]
     res = residuals(Y)
     K = length(P.sel)
-    A, perm, _, V = _pf_pattern(P, periods)
+    pat = _pf_pattern(P, periods)
+    A, perm, V = pat.A, pat.perm, pat.V
     for t in 1:periods
         V[:, t] .= vals[P.sel]
     end

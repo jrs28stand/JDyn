@@ -12,8 +12,11 @@ const PF_RTOL, PF_ATOL = 1e-10, 1e-11
 const PF_DIFFS = Dict{String,Float64}()
 const PF_RELDIFFS = Dict{String,Float64}()
 
-function pf_build(name; text=nothing)
+function pf_build(name; text=nothing, files=Dict{String,String}())
     d = mktempdir()
+    for (f, c) in files
+        write(joinpath(d, f), c)
+    end
     if text === nothing
         cp(joinpath(REF, name * ".mod"), joinpath(d, name * ".mod"))
     else
@@ -272,6 +275,44 @@ const PF_STACKED = Dict(
         @test abs(d0["k"][1]) < 1e-12 && abs(dT["k"][end]) < 0.05 && size(dT["k"]) == (150,)
         @test abs(dT["z"][end]) < 1e-15 && abs(JDyn.paths(res; deviation=:initial, exo=true)["z"][end] - 0.1) < 1e-15
         @test res.exo_names == ["z", "g"] && res.periods == 150
+    end
+
+
+    @testset "expectation errors from a datafile" begin
+        # the same news as pf_surprise, given as the CSV file of the datafile option (not a Dynare reference
+        # run: checked against the learnt_in version)
+        m, r = pf_build("pf_surprise"), pf_ref("pf_surprise")
+        res = pf_solve(m)
+        si, ti = res.info["shocks_info"], res.info["terminal_info"]
+        T = 60
+        rows = ["," * join(fill("x", T), ","), "period," * join(1:T, ",")]
+        for t in 1:T
+            push!(rows, "t$t," * join([p <= t ? string(si[1, t, p]) : "" for p in 1:T], ","))
+        end
+        push!(rows, "terminal," * join(ti[1, :], ","))
+        text = read(joinpath(REF, "pf_surprise.mod"), String)
+        text = replace(text, r"^shocks\(learnt_in[^;]*;.*?end;\s*"ms => "")
+        text = replace(text, "perfect_foresight_with_expectation_errors_setup(periods = 60);" => "perfect_foresight_with_expectation_errors_setup(periods = 60, datafile='pfwee_data.csv');")
+        m2 = pf_build("pf_df"; text=text, files=Dict("pfwee_data.csv" => join(rows, "\n") * "\n"))
+        res2 = pf_solve(m2)
+        @test res2.status
+        @test pf_maxdiff(res2.endo_simul, res.endo_simul) <= 1e-12
+        PF_DIFFS["pf_surprise through a datafile (vs learnt_in)"] = pf_maxdiff(res2.endo_simul, res.endo_simul)
+    end
+
+    @testset "refusals and re-runs" begin
+        text = replace(read(joinpath(REF, "pf_temp.mod"), String), "perfect_foresight_setup(periods=150);" => "initval_file(filename='nothing.csv');\nperfect_foresight_setup(periods=150);")
+        m = try; pf_build("pf_initval_file"; text=text); catch e; e; end
+        # either the loader or the simulation refuses an initval_file; neither runs it silently
+        @test m isa Exception || (try; pf_solve(m); false; catch e; e isa ModelError; end)
+        # a changed parameter takes effect at the next simulation
+        m = pf_build("pf_temp")
+        a = pf_solve(m)
+        set_param!(m, "bet", 0.96)
+        b = pf_solve(m)
+        @test maximum(abs, a.endo_simul .- b.endo_simul) > 1e-3
+        set_param!(m, "bet", 0.97)
+        @test maximum(abs, pf_solve(m).endo_simul .- a.endo_simul) < 1e-12
     end
 
     @testset "stacked evaluation: Jacobian by finite differences" begin

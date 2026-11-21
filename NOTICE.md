@@ -13,6 +13,8 @@ see Dynare's `license.txt`):
 | `src/perturbation.jl` | `matlab/stochastic_solver/dyn_first_order_solver.m`, `stochastic_solvers.m` (loglinear) | GPL-3.0-or-later, Dynare Team |
 | `src/simulate.jl` | `matlab/stochastic_solver/simult_.m`, `irf.m` | GPL-3.0-or-later, Dynare Team |
 | `src/moments.jl` | `matlab/moments/*.m` (theoretical and simulated moments, variance decompositions), `matlab/matrix_solver/lyapunov_symm.m`, `matlab/get_lower_cholesky_covariance.m`, `matlab/sample_hp_filter.m`, `matlab/one_sided_hp_filter.m`, the Baxter-King filter of dseries | GPL-3.0-or-later, Dynare Team |
+| `src/perfect_foresight.jl` | `matlab/perfect-foresight-models/*.m` (perfect_foresight_setup, make_ex_, make_y_, perfect_foresight_solver and its core, sim1, sim1_linear, sim1_purely_*, solve_stacked_problem, compute_maxerror, the expectation-errors setup and solver) and the preprocessor's handling of `initval`, `endval`, `histval`, `shocks`, `mshocks` | GPL-3.0-or-later, Dynare Team |
+| `src/perfect_foresight.jl` (complementarity solver `lmmcp`) | `matlab/lmmcp/lmmcp.m` | Copyright 2005 Christian Kanzow and Stefania Petra, 2013 Christophe Gouel, 2014-2022 Dynare Team; permissive terms ("Unlimited permission is granted to everyone to use, copy, modify or distribute this software") |
 | `src/matlab/session.jl` (option defaults) | `matlab/default_option_values.m` | GPL-3.0-or-later, Dynare Team |
 | `test/*.jl` | the models and checks of Dynare's examples and test suite, read from a Dynare source tree at test time (not copied) | GPL-3.0-or-later, Dynare Team |
 | `test/matlab_extra.mat` | numerical output of GNU Octave 8.4 | not program code |

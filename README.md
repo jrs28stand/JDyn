@@ -9,7 +9,8 @@ the Dynare team's own Julia implementation see [Dynare.jl](https://github.com/Dy
 which uses a Julia-flavoured syntax in `.mod` files.
 
 **Status (2026-11-21): first order.** Calibration, steady state, first-order decision rules, IRFs,
-simulation and moments are implemented and match Dynare 7.2; higher order, OccBin, perfect foresight,
+simulation and moments are implemented and match Dynare 7.2, as is perfect foresight (`perfect_foresight(m)`);
+higher order, OccBin,
 filtering and estimation are not yet. See [docs/STATUS.md](docs/STATUS.md).
 
 ## How it works
@@ -51,6 +52,10 @@ mom = stoch_simul_moments(m)           # what stoch_simul reports (order 1)
 res = JDyn.irf_figures(m, sol)         # Dynare's IRF figures as data (shocks, variables, threshold rules)
 JDyn.write_csv("irfs.csv", JDyn.irf_table(res))   # tidy: shock,variable,period,value,order (for ggplot2)
 plot_irfs(m, sol; nograph=false)       # SVG files; PNG/PDF with `using Plots` (optional extension)
+
+res = perfect_foresight(m)             # perfect_foresight_setup + _solver of the .mod file; Dynare's oo_.endo_simul layout
+res.endo_simul, res.exo_simul, res.iterations, res.max_residual
+res["k"]                               # path of one variable (initial condition, periods, terminal condition)
 
 # parameter loops without re-running the preprocessor
 for b in 0.98:0.005:0.995
