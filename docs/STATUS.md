@@ -1,7 +1,9 @@
 # Status (2026-11-21)
 
 Reference: Dynare 7.2 under GNU Octave 8.4 (the same reference results as pydyn). All figures below are
-from `test/runtests.jl` (TOTAL_PLACEHOLDER). The higher-order tests need the k-order library
+from `test/runtests.jl` (5,176 checks pass, 0 fail; 4 skipped or marked broken: two references without IRFs,
+an auxiliary-variable perfect-foresight test not yet enabled, and an estimation point exactly on the QZ
+criterion where Dynare's and JDyn's QZ round differently). The higher-order tests need the k-order library
 (`deps/korder/build.sh`) and skip with a warning without it.
 
 ## Implemented and checked against Dynare
