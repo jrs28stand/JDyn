@@ -25,7 +25,7 @@ filtering and estimation are not yet. See [docs/STATUS.md](docs/STATUS.md).
 
 ## Requirements
 
-- Julia 1.10 or later.
+- Julia 1.10 or later (tested with 1.12).
 - The Dynare 7.2 preprocessor, built from the Dynare 7.2 sources without Octave or MATLAB:
 
 ```sh
@@ -47,6 +47,10 @@ sol = first_order(m)                   # FirstOrderSolution: y - ys = G (y(-1) -
 ghx(sol), ghu(sol)                     # Dynare's oo_.dr.ghx / ghu (decision-rule order)
 irf(sol, [0.01, 0.0]; periods=40)      # deviations, (periods, n_endo)
 mom = stoch_simul_moments(m)           # what stoch_simul reports (order 1)
+
+res = JDyn.irf_figures(m, sol)         # Dynare's IRF figures as data (shocks, variables, threshold rules)
+JDyn.write_csv("irfs.csv", JDyn.irf_table(res))   # tidy: shock,variable,period,value,order (for ggplot2)
+plot_irfs(m, sol; nograph=false)       # SVG files; PNG/PDF with `using Plots` (optional extension)
 
 # parameter loops without re-running the preprocessor
 for b in 0.98:0.005:0.995

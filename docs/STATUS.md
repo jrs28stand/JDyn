@@ -1,7 +1,7 @@
 # Status (2026-11-21)
 
 Reference: Dynare 7.2 under GNU Octave 8.4 (the same reference results as pydyn). All figures below are
-from `test/runtests.jl` (1,667 checks pass, 0 fail; 3 skipped: perfect foresight, and references
+from `test/runtests.jl` (1,739 checks pass, 0 fail; 3 skipped: perfect foresight, and references
 without IRFs).
 
 ## Implemented and checked against Dynare
@@ -26,7 +26,9 @@ faster than pydyn on the same machine. An interpreted `_steadystate.m` costs abo
 - Orders 2 and 3 (plan: Dynare's C++ k-order library through `ccall`, fed with the preprocessor's
   G1-G3; the preprocessor output and `simulate` at orders 2-3 are already in place).
 - OccBin, perfect foresight, Kalman filter and smoother, shock decompositions, estimation.
-- Plotting (in progress: optional, with a tidy CSV export of the plotted data).
+- Plotting beyond first-order IRFs (OccBin, smoother, decompositions, ...). First-order IRF figures are
+  done: Dynare's content rules, tidy CSV export, SVG built in, PNG/PDF through an optional Plots.jl
+  extension (see docs/plotting.md).
 - Optimal policy (Ramsey, OSR), heterogeneous agents, PAC/VAR models, `dseries`: refused with an error.
 - Theoretical moments at order 2 (refused with an error).
 
