@@ -1,7 +1,7 @@
 # Shared test set-up. References are pydyn's (Dynare 7.2 under Octave 8.4): set JDYN_REF to the pydyn
 # repository's reference/ folder, JDYN_EXAMPLES to Dynare 7.2's examples/ folder, JDYN_DYNARE_SRC to the
 # Dynare 7.2 source tree (for the MATLAB corpus) and DYNARE_PREPROCESSOR to the 7.2 preprocessor.
-using Test, JDyn, MAT, LinearAlgebra, Logging
+using Test, JDyn, MAT, LinearAlgebra, Logging, Printf
 
 const REF = get(ENV, "JDYN_REF") do
     cands = [joinpath(@__DIR__, "..", "..", "jrs28stand", "pydyn", "reference"),

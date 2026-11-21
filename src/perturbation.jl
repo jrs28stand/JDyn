@@ -72,6 +72,56 @@ function dr_ordering(lli::AbstractMatrix)
         (nstatic=length(static), npred=length(pred), nboth=length(both), nfwrd=length(fwrd))
 end
 
+# ---------------------------------------------------------------------- ordered QZ
+# Dynare's mjdgges: LAPACK dgges with a selection function, so that the decomposition and the ordering
+# are one call (Julia's schur + ordschur! is dgges3 followed by dtgsen, 20-40% slower on these sizes).
+# The criterion is read from a per-thread slot set just before the ccall (no task switch can happen
+# between the two).
+const _QZ_CRIT = fill(QZ_CRITERIUM, 1)
+const _BlasInt = LinearAlgebra.BlasInt
+function _qz_select(ar::Ptr{Float64}, ai::Ptr{Float64}, b::Ptr{Float64})::LinearAlgebra.BlasInt
+    c = @inbounds _QZ_CRIT[Threads.threadid()]
+    re, im, bb = unsafe_load(ar), unsafe_load(ai), unsafe_load(b)
+    LinearAlgebra.BlasInt(re * re + im * im < c * c * bb * bb)
+end
+
+"""
+    _ordered_qz(E, D, qz_criterium) -> (S, T, Z, alpha, beta, sdim)
+
+Real generalised Schur form of the pencil (E, D) with the generalised eigenvalues alpha/beta of modulus
+below `qz_criterium` first. Falls back to `schur` + `ordschur!` when LAPACK reports that rounding made
+the reordering ambiguous (info n+2 / n+3).
+"""
+function _ordered_qz(E::Matrix{Float64}, D::Matrix{Float64}, qz_criterium::Real)
+    n = size(E, 1)
+    A, B = copy(E), copy(D)
+    sdim = Ref{_BlasInt}(0); info = Ref{_BlasInt}(0)
+    alphar, alphai, beta = zeros(n), zeros(n), zeros(n)
+    vsl = zeros(1, 1); vsr = zeros(n, n)
+    lwork = 8n + 16 + 32n
+    work = zeros(lwork); bwork = zeros(_BlasInt, n)
+    sel = @cfunction(_qz_select, _BlasInt, (Ptr{Float64}, Ptr{Float64}, Ptr{Float64}))
+    tid = Threads.threadid()
+    length(_QZ_CRIT) < tid && append!(_QZ_CRIT, fill(QZ_CRITERIUM, tid - length(_QZ_CRIT)))
+    _QZ_CRIT[tid] = Float64(qz_criterium)
+    ccall((LinearAlgebra.BLAS.@blasfunc(dgges_), LinearAlgebra.BLAS.libblastrampoline), Cvoid,
+          (Ref{UInt8}, Ref{UInt8}, Ref{UInt8}, Ptr{Cvoid}, Ref{_BlasInt}, Ptr{Float64}, Ref{_BlasInt},
+           Ptr{Float64}, Ref{_BlasInt}, Ref{_BlasInt}, Ptr{Float64}, Ptr{Float64}, Ptr{Float64}, Ptr{Float64},
+           Ref{_BlasInt}, Ptr{Float64}, Ref{_BlasInt}, Ptr{Float64}, Ref{_BlasInt}, Ptr{_BlasInt}, Ref{_BlasInt},
+           Clong, Clong, Clong),
+          'N', 'V', 'S', sel, n, A, max(1, n), B, max(1, n), sdim, alphar, alphai, beta, vsl, 1, vsr, max(1, n),
+          work, lwork, bwork, info, 1, 1, 1)
+    if info[] == 0
+        return A, B, vsr, complex.(alphar, alphai), beta, Int(sdim[])
+    elseif info[] < 0 || info[] <= n
+        throw(BlanchardKahnError("generalised Schur decomposition failed (LAPACK dgges info=$(info[]))"))
+    end
+    GS = schur(E, D)
+    select = abs.(GS.α) .< qz_criterium .* abs.(GS.β)
+    ordschur!(GS, select)
+    GS.S, GS.T, GS.Z, Vector{ComplexF64}(GS.α), Vector{Float64}(real.(GS.β)), count(select)
+end
+
 """
     solve_linear_re(fm, f0, fp, fu; qz_criterium, lag, lead) -> (G, H, eigenvalues)
 
@@ -114,16 +164,11 @@ function solve_linear_re(fm, f0, fp, fu; qz_criterium=QZ_CRITERIUM, lag=nothing,
             D[ndyn+r, npred+r] = 1.0
             E[ndyn+r, nspred+r] = 1.0
         end
-        GS = schur(E, D)
-        alpha, beta = GS.α, GS.β
+        S, T, w, alpha, beta, sdim = _ordered_qz(E, D, qz_criterium)
         if any((abs.(alpha) .<= QZ_ZERO_THRESHOLD) .& (abs.(beta) .<= QZ_ZERO_THRESHOLD))
             throw(BlanchardKahnError("one of the generalised eigenvalues is close to 0/0 (the model has a singularity: Dynare's error 7)"))
         end
-        select = abs.(alpha) .< qz_criterium .* abs.(beta)
-        ordschur!(GS, select)
-        S, T, w = GS.S, GS.T, GS.Z
-        eig = GS.α ./ GS.β
-        sdim = count(select)
+        eig = alpha ./ beta
     else
         S = T = w = zeros(0, 0)
         eig = ComplexF64[]

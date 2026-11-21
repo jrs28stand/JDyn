@@ -92,16 +92,29 @@ function _from_steady_state_model_interpreted(m::Model, params, x, y)
     y, params
 end
 
-"Set auxiliary variables from their defining equations, which are linear in the variable itself."
+"""
+Set auxiliary variables from their defining equations, which are linear in the variable itself: two
+Gauss-Seidel sweeps of one Newton step per auxiliary variable (as pydyn). The coefficient of an auxiliary
+variable in its own equation is constant, so the Jacobian is evaluated once.
+"""
 function fill_auxiliary(m::Model, ys, x, params)
-    aux = [Int(d["endo_index"]) for d in get_or(m.raw, "aux_vars", [])]
+    aux = get!(m.cache, :aux_endo_index) do
+        Int[Int(d["endo_index"]) for d in get_or(m.raw, "aux_vars", [])]
+    end::Vector{Int}
     ys = copy(ys)
     isempty(aux) && return ys
+    x = Vector{Float64}(x); params = Vector{Float64}(params)
+    for i in aux
+        isfinite(ys[i]) || (ys[i] = 0.0)
+    end
+    J = static_jac(m, ys, x, params)
+    diagc = Float64[J[i, i] for i in aux]
+    exact = all(isfinite, diagc) && all(!iszero, diagc)
     for _ in 1:2
-        for i in aux
+        for (k, i) in enumerate(aux)
             isfinite(ys[i]) || (ys[i] = 0.0)
             r = static_resid(m, ys, x, params)[i]
-            ys[i] -= r / static_jac(m, ys, x, params)[i, i]
+            ys[i] -= r / (exact ? diagc[k] : static_jac(m, ys, x, params)[i, i])
         end
     end
     ys
