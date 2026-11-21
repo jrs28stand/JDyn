@@ -27,6 +27,8 @@ criterion where Dynare's and JDyn's QZ round differently). The higher-order test
 | Estimation, first order (`src/priors.jl`, `kalman.jl`, `estimation.jl`) | prior log density on all families (est_priors); log likelihood and log prior at 13 reference files (est_schorfheide, est_nk v0-v9, est_ur v0-v6: missing data, measurement errors incl. correlated, first_obs/presample, prefilter, lik_init 1-3, diffuse and univariate filters, trends); Hessian, Laplace approximation, csminwel modes, log posterior at Dynare's 40 stored draws | 1.4e-11 (log likelihood), 6e-13 (log prior), 3.6e-10 (log posterior at the draws), 6e-6 (Hessian, relative), 2e-8 (mode value), 5e-5 std (mode location) |
 | Kalman smoother (`src/smoother.jl`): `calib_smoother`, smoother at calibration, posterior mode/mean/median, ML mode, prior mode/mean, or a given theta; multivariate and univariate, diffuse (`kalman_algo` 3/4) and stationary, missing data, measurement errors (correlated too), trends, prefilter, loglinear, filtered/updated variables, `filter_step_ahead`, state uncertainty, `filter_initial_state` | 14 smo_* cases (both defect modes), sd_*, est_* start points, Smets-Wouters-scale sw_* (4 cases) | 1.4e-14 (smo_*), 5.8e-14 (sd_*, est_*), 5e-7 absolute on values of order 100 (SW, diffuse), 1.8e-8 relative (SW, stationary) |
 | Shock decompositions (`src/shock_decomposition.jl`): `shock_decomposition`, `initial_condition_decomposition`, groups, `init2shocks`, `realtime_shock_decomposition` (pooled, vintage, conditional, forecast), `squeeze`, plotted numbers (yoy/aoa, diff, flip, crop, screening) as tables | smo_*, sd_nk, sd_ur references | 1e-12 or better |
+| Forecasts (`src/forecast.jl`): `forecast` after stoch_simul (orders 1-3, histval, var lists, `conf_sig`, measurement-error bands) and after estimation (from the smoother at the mode; prefilter, observation trends, diffuse filter); `conditional_forecast` with calibration, posterior mode, prior mean; `plot_conditional_forecast` as a table | test/forecast: fc_cal.mod (4 variants, run in place by `dynare()`), est_fc_sch (loglinear, at Dynare's mode), est_fc_nk (prefilter, measurement error), est_fc_ur (unit root, trends) | 1e-11 or better (fc_cal); 1e-10 (estimation cases; trends 1e-9). Intervals from random draws (order 2, conditional forecasts with free shocks) match exactly when Dynare's draws are replayed |
+| Optimisers (`src/optimizers.jl`): `mode_compute` 5 (newrat), 7 (fminsearch), 8 (Dynare's simplex), 9 (CMA-ES) | test/optim: est_opt_nk, est_opt_sch (test/test_optimizers.jl) | simplex: Dynare's iterates (same mode, iteration and function counts on est_opt_nk); newrat: first step to 1e-5 relative, mode within 3e-6 of Dynare's log posterior (0.003 posterior std); fminsearch 6e-10, CMA-ES 2e-11 in log posterior |
 | Perfect foresight: stacked Newton (initval/endval/histval, `shocks`, `mshocks`, `endogenous_terminal_period`) | 8 models of pydyn's pf_* set, Dynare's `perfect_foresight_rbc` | 1e-13 absolute (1e-14 relative), same Newton iteration count |
 | Perfect foresight: purely backward, purely forward and static models; `model(linear)` and `linear_approximation` | 5 references | 1e-15 (period by period), 7e-15 (linear) |
 | Perfect foresight: homotopy (3 size/step options, linearization and marginal-linearization fallbacks) | 5 references | 2e-15 relative (levels of 1e7: 7e-8 absolute); same number of homotopy iterations and completion share |
@@ -112,11 +114,13 @@ and `decomposition_plot_data` / `decomposition_table` (CSV through `write_csv`) 
 - Supported: `varobs`, one `estimated_params` block (plus `estimated_params_init`, `_bounds`, `use_calibration`),
   `observation_trends`, data from `.m`/`.csv`/`.mat`/matrix, `first_obs`, `nobs`, `presample`, `prefilter`,
   `loglinear`/`logdata`, `lik_init` 1-3, `diffuse_filter`, `kalman_algo` 0-4, `qz_criterium`, `riccati_tol`,
-  `mode_compute` 0 and 4 (csminwel, ported from Dynare), `mh_replic`/`mh_nblck`/`mh_jscale`/`mh_drop`
+  `mode_compute` 0, 4 (csminwel), 5 (newrat), 7 (fminsearch), 8 (simplex), 9 (CMA-ES), `forecast`, `mh_replic`/`mh_nblck`/`mh_jscale`/`mh_drop`
   (random-walk Metropolis-Hastings), Laplace and modified-harmonic-mean marginal densities, posterior moments.
   `estimate(m)` runs what the `.mod` file's `estimation` statement asks. Unsupported options raise an
-  `EstimationError` (or warn once with `allow_unsupported=true`); other `mode_compute` values are replaced by csminwel with a warning.
-- Not implemented: forecasts, posterior IRFs, recursive estimation, other samplers, orders above 1,
+  `EstimationError` (or warn once with `allow_unsupported=true`); other `mode_compute` values (1, 3, 12, 13: MATLAB toolboxes;
+  2, 6, 10, 101, 102: Dynare's own, not ported yet) raise an `EstimationError`, as do newrat's `optim('Hessian', 0 or 2)`.
+- Not implemented: forecasts over the posterior draws (`forecast` with `mh_replic > 0`, oo_.PointForecast / MeanForecast:
+  refused), posterior IRFs, recursive estimation, other samplers, orders above 1,
   particle filters, more than one `estimated_params` block.
 - The sampler is checked against Dynare's target density (40 stored draws) and statistically (2 x 4000 draws:
   means within 0.17 posterior std of Dynare's 2 x 20000, modified harmonic mean within 0.19); it is not
@@ -125,6 +129,30 @@ and `decomposition_plot_data` / `decomposition_table` (CSV through `write_csv`) 
   filter (pydyn refuses them); Blanchard-Kahn failures carry Dynare's penalty.
 - Known difference: a root within rounding of `qz_criterium` (Schorfheide with rho = 0.999999, Dynare info 3) is
   classified as stable by JDyn's QZ; marked as broken in the tests.
+
+## Forecasts and optimisers
+
+- `forecast(m; periods, conf_sig, var_list, order, ...)`, `forecast(smoother_result, m; periods, ...)`, `conditional_forecast(m; paths,
+  controlled_varexo, parameter_set, ...)`, `conditional_forecast_table`; in `dynare()` the `forecast`, `conditional_forecast_paths`,
+  `conditional_forecast` and `plot_conditional_forecast` statements run in place (`forecast!`, `conditional_forecast!` re-run them).
+  `estimate()` returns the forecast of the `forecast` option in `EstimationResult.forecast` (Dynare's `oo_.forecast`; with
+  `mode_compute=0` only together with `smoother`, as Dynare).
+- Random numbers: order-2/3 forecast intervals and conditional forecasts with free shocks use Julia's generator (`rng`); `draws=`
+  replays Dynare's (the tests record them in Octave after `set_dynare_seed` and match exactly). Quantiles follow MATLAB's (method 5).
+- Dynare 7.2 defects corrected by default, reproduced with `replicate_dynare_bugs=true`: after estimation with `prefilter` or
+  `observation_trends`, Dynare adds the data mean / trend to the mean forecast of the observed variables but not to HPDinf/HPDsup;
+  with prefilter it subtracts the steady state of the variable at the observed variable's position in var_list, and fails when an
+  observed variable is missing from var_list.
+- Not implemented: `varexo_det` forecasts (refused), forecasts over posterior draws, OccBin forecasts.
+- newrat: the gradient steps are chosen so that the posterior moves by 1e-5, so the 1e-11 rounding differences between JDyn's and
+  Dynare's likelihoods change the gradient by about 1e-6 relative and the univariate steps of `mr_gstep` (whose second differences
+  are dominated by rounding in both programs) after the first iteration: the first step matches, the iterates then differ, the
+  optimum agrees to newrat's tolerance. With univariate filters JDyn's outer-product Hessian uses per-period contributions
+  (Dynare: per observation), so the path differs further there.
+- simplex: comparisons only, so Dynare's iterates are reproduced (est_opt_nk: same 3609 iterations and 5988 evaluations), except where
+  two vertices tie to rounding (est_opt_sch from the prior means: both programs stall far from the mode, at different points).
+- fminsearch (7) is MATLAB's algorithm; Dynare under Octave calls Octave's different `fminsearch`, so only the optimum is compared.
+  CMA-ES (9) uses cmaes.m's strategy parameters, boundary handling and stopping rules (simplified restart/stagnation logic).
 
 ## Perfect foresight
 

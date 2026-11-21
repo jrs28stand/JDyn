@@ -621,6 +621,7 @@ function _run_in_place!(ws, st, nss, shocks, rng)
         _histval!(ws)
         return
     end
+    kind == "conditional_forecast_paths" && return _cf_paths_statement!(ws, st)
     kind in COMPUTE_KINDS || return
     _model_to_M!(ws)
     if kind == "steady"
@@ -644,6 +645,8 @@ function _run_in_place!(ws, st, nss, shocks, rng)
         _estimation!(ws, st, String.(get_or(st, "symbol_list", String[])), nothing, 0, (;))
     elseif kind == "calib_smoother"
         _calib_smoother!(ws, st, String.(get_or(st, "symbol_list", String[])), (;))
+    elseif kind in ("forecast", "conditional_forecast", "plot_conditional_forecast")
+        _forecast_statement!(ws, kind, st, rng)          # src/forecast.jl
     elseif !(kind in _QUIET_KINDS)
         warn_once(m, "dynare(): '$kind' does not fill oo_ yet")
     end

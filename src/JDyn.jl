@@ -35,6 +35,7 @@ include("moments.jl")
 include("priors.jl")
 include("kalman.jl")
 include("estimation.jl")
+include("optimizers.jl")
 include("smoother.jl")
 include("shock_decomposition.jl")
 include("perfect_foresight.jl")
@@ -43,6 +44,7 @@ include("occbin.jl")
 include("results.jl")
 include("results_estimation.jl")
 include("seeds.jl")
+include("forecast.jl")
 
 export run_preprocessor, load, Model, ModelError, steady_state, SteadyStateError, first_order, FirstOrderSolution,
        BlanchardKahnError, ghx, ghu, irf, simulate, set_param!, set_params!, get_param, set_shock_stderr!,
@@ -57,7 +59,9 @@ export run_preprocessor, load, Model, ModelError, steady_state, SteadyStateError
        perfect_foresight, PerfectForesightResult, PerfectForesightError, unanticipated_shocks,
        dynare, @dynare, DynareWorkspace, build_M, build_options, MStruct, Cell,
        stoch_simul!, steady!, check!, perfect_foresight_setup!, perfect_foresight_solver!, occbin_solver!, set_param_value!,
-       estimation!, calib_smoother!, set_dynare_seed!
+       estimation!, calib_smoother!, set_dynare_seed!,
+       forecast, ForecastResult, conditional_forecast, ConditionalForecastResult, conditional_forecast_table, forecast_struct,
+       conditional_forecast_struct, forecast!, conditional_forecast!
 
 include("precompile.jl")
 

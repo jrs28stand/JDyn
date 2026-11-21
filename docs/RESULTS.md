@@ -44,7 +44,8 @@ for s in (0.5, 1.0, 2.0)
 end
 ```
 
-Commands: `steady!`, `check!`, `stoch_simul!(var_list; shocks, rng, options...)`, `perfect_foresight_setup!`,
+Commands: `steady!`, `check!`, `stoch_simul!(var_list; shocks, rng, options...)`, `forecast!(var_list; draws, rng, options...)`,
+`conditional_forecast!(; paths, draws, rng, options...)`, `perfect_foresight_setup!`,
 `perfect_foresight_solver!`, `occbin_solver!`, `set_param_value!`. Each takes the workspace as first
 argument, or acts on the last one `dynare`/`@dynare` made (as MATLAB's commands act on the globals).
 Parameters a steady-state file or `steady_state_model` block sets go back to `M_.params`, as in Dynare.
@@ -95,6 +96,7 @@ To compare simulations with Dynare use its `oo_.exo_simul` (`dynare(file; shocks
 | perfect_foresight_rbc: `oo_.endo_simul` (3x202) | 2.8e-14 |
 | `oo_.exo_simul` (202x1), `M_.params`, `oo_.steady_state` | exact / 1e-15 |
 | collard_2001 `stoch_simul(periods=2000)` with Dynare's shocks: `oo_.endo_simul` (6x2000), `oo_.dr.gh*` | 2e-6 / 1.4e-5 |
+| test/forecast/fc_cal.mod (4 variants: levels, measurement errors, loglinear, order 2): `oo_.forecast` and `oo_.conditional_forecast` after each statement, run in place (test/test_forecast.jl) | < 1e-11 (deterministic statements; stochastic ones with Dynare's draws replayed) |
 
 The collard gap is Dynare's: its steady state stops at a residual of 1e-6 (default tolf), JDyn's is exact.
 At Dynare's steady state the decision rules agree to 1e-12 (test_korder.jl).
@@ -112,7 +114,10 @@ At Dynare's steady state the decision rules agree to 1e-12 (test_korder.jl).
 | occbin_solver | oo_.occbin.simul.{piecewise, linear, shocks_sequence} | yes |
 | estimation | prior, posterior.optimization, posterior_mode / mle_mode (+ `_std_at_mode`), MarginalDensity, posterior_mean/median/var/hpdinf/hpdsup/deciles/density, posterior.metropolis, Smoother, SmoothedVariables, UpdatedVariables, FilteredVariables(+KStepAhead), SmoothedShocks, SmoothedMeasurementErrors, dr (order_var ... edim), steady_state | yes, see "estimation and calib_smoother" below; `estimation!(ws; ...)` re-runs it |
 | calib_smoother | the smoother fields above, prior (with an estimated_params block), dr, steady_state | yes (`calib_smoother!(ws; ...)` re-runs it) |
-| forecast, osr, identification, shock_decomposition, ... | | not supported by JDyn |
+| forecast | forecast.{Mean, HPDinf, HPDsup, HPDinf_ME, HPDsup_ME} | yes (`forecast!`; after stoch_simul, orders 1-3; after estimation the `EstimationResult.forecast` field, copied into oo_ by `estimation`) |
+| conditional_forecast_paths, conditional_forecast | conditional_forecast.{cond, uncond, controlled_exo_variables, controlled_variables, instruments, graph}; options_cond_fcst_ | yes (`conditional_forecast!`; estimated parameter sets read oo_.posterior_mode / _mean / _median / mle_mode) |
+| plot_conditional_forecast | (figures) | the plotted numbers as a table (`conditional_forecast_table`) |
+| osr, identification, ... | | not supported by JDyn |
 
 ## estimation and calib_smoother (what Dynare 7.2 writes, and what JDyn writes)
 

@@ -426,6 +426,7 @@ function _estimation!(ws::DynareWorkspace, st, var_list, data, seed, options)
         _store_smoother_results!(oo, m, res)
         _store_dr_estimation!(oo, m, res.solution)
     end
+    _estimation_forecast!(ws, m, est, theta, res, vl)
     _set_estimation_options!(ws, m, nobs, est.n, _fsa(ws), early_return && isnan(first_obs0) ? 1.0 : first_obs0, lik_init)
     O.varlist = _cellcol(isempty(vl) && (smoother_flag || wants_filter) ? orig_endo_names(m) : vl)
     _gui!(oo, "ran_estimation")
@@ -601,3 +602,22 @@ estimation!(; kw...) = estimation!(_current(); kw...)
 estimation!(var_list::AbstractVector; kw...) = estimation!(_current(), var_list; kw...)
 calib_smoother!(; kw...) = calib_smoother!(_current(); kw...)
 calib_smoother!(var_list::AbstractVector; kw...) = calib_smoother!(_current(), var_list; kw...)
+
+"""
+The `forecast=` option of `estimation` (dynare_estimation_1.m): the classical forecast from the smoother at the mode
+(with `mode_compute=0` only when the smoother ran) into `oo_.forecast`; over posterior draws not implemented.
+"""
+function _estimation_forecast!(ws, m, est, theta, res, vl)
+    nf = _opti(ws, "forecast", 0)
+    nf > 0 || return
+    mcmc = _opti(ws, "mh_replic", 0) > 0 && _opti(ws, "mode_compute", 5) != 0
+    mcmc && throw(EstimationError("forecast with mh_replic > 0 (forecasts over the posterior draws) is not implemented"))
+    sm = res
+    if sm === nothing
+        _opti(ws, "mode_compute", 5) == 0 && return         # Dynare forecasts at the initial values only with `smoother`
+        sm = smooth(m; estimation=est, theta=theta)
+    end
+    fc = forecast(sm, m; periods=nf, conf_sig=Float64(_optf(ws, "forecasts.conf_sig", 0.9)), var_list=String.(collect(vl)))
+    ws.oo_.forecast = forecast_struct(fc)
+    nothing
+end
