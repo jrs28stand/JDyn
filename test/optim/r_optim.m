@@ -2,7 +2,7 @@
 % test/optim holding est_schorfheide_data.m and est_nk_data.m of pydyn's references.
 addpath /root/ref/dynare-7.2/matlab
 addpath /root/ref/stubs
-cases = {'est_opt_sch', 5; 'est_opt_sch', 50; 'est_opt_sch', 8; 'est_opt_nk', 9; 'est_opt_sch', 9; 'est_opt_sch', 7};
+cases = {'est_opt_sch', 5; 'est_opt_sch', 50; 'est_opt_nk', 5; 'est_opt_sch', 8; 'est_opt_nk', 8; 'est_opt_nk', 9; 'est_opt_sch', 9; 'est_opt_sch', 7};
 for c = 1:rows(cases)
   clearvars -except c cases
   pause(1.5); rehash;
