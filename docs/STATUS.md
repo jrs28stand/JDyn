@@ -1,9 +1,9 @@
 # Status (2026-11-21)
 
 Reference: Dynare 7.2 under GNU Octave 8.4 (the same reference results as pydyn). All figures below are
-from `test/runtests.jl` (1,739 checks pass, 0 fail; 3 skipped: perfect foresight, and references
-without IRFs). `test_korder.jl` (56 checks) and `test_moments_order2.jl` (308 checks) were added on the `korder` branch;
-they skip with a warning when the k-order library is not built. The OccBin tests (test_occbin.jl, test_occbin_options.jl) add 493 checks, 0 failing, run separately.
+from `test/runtests.jl` (2,596 checks pass, 0 fail; 3 skipped: perfect foresight, and references
+without IRFs). The higher-order tests need the k-order library (`deps/korder/build.sh`) and skip with a
+warning without it.
 
 ## Implemented and checked against Dynare
 
