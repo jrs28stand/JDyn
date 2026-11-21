@@ -1189,6 +1189,7 @@ end
 
 "Laplace approximation of the log marginal data density."
 function laplace(est::Estimation, theta::AbstractVector, invhess::AbstractMatrix)
+    any(<=(0), diag(invhess)) && return NaN          # not a covariance matrix (a noisy Hessian, e.g. with a particle filter)
     stdh = sqrt.(diag(invhess))
     (any(!isfinite, stdh) || !_ispd(invhess)) && return NaN
     logdet_ = log(det(invhess ./ (stdh * stdh'))) + 2 * sum(log, stdh)
@@ -1298,10 +1299,11 @@ function add_hessian!(est::Estimation, mode::ModeResult)
     mode.hessian = hh
     if all(isfinite, hh) && all(>(0), diag(hh))
         mode.inv_hessian = inverse_hessian(hh)
-        is_bayesian(est.prior) && (mode.laplace = laplace(est, mode.x, mode.inv_hessian))
+        any(<=(0), diag(mode.inv_hessian)) && (mode.inv_hessian = nothing)     # not positive definite (noisy Hessians)
     else
         mode.inv_hessian = nothing
     end
+    mode.inv_hessian !== nothing && is_bayesian(est.prior) && (mode.laplace = laplace(est, mode.x, mode.inv_hessian))
     mode
 end
 

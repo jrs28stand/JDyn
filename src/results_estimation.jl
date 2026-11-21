@@ -414,7 +414,7 @@ function _estimation!(ws::DynareWorkspace, st, var_list, data, seed, options)
                 theta = Float64[post[nm].mean for nm in est.names]       # Dynare then sets M_ to the posterior mean
             end
             # the frequentist smoother runs at the mode / posterior mean unless a Bayesian smoother was asked for
-            _optb(ws, "frequentist_smoother", true) && (smooth_at = theta)
+            _optb(ws, "frequentist_smoother", true) && !haskey(o, "nl") && (smooth_at = theta)     # no smoother with a particle filter
         end
         res = nothing
         if smooth_at !== nothing
