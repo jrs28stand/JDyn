@@ -16,6 +16,7 @@ without IRFs).
 | Shipped examples (first order) | gali_2015, schorfheide_2000, bkk_1992, rbc_occbin, aguiar_gopinath_2007_trend, nk_baseline, collard_* | 1e-14 to 4e-10 |
 | Moments (order 1) | theoretical (plain, HP, band-pass, unit roots), variance decompositions (incl. correlated shocks, conditional, measurement error), simulated moments on Dynare's draws | 3e-13 (theoretical), 2e-10 (simulated skewness) |
 | Auxiliary and model-local variables, `loglinear` | against Dynare | 3e-14, 5e-13 |
+| Estimation, first order (`src/priors.jl`, `kalman.jl`, `estimation.jl`) | prior log density on all families (est_priors); log likelihood and log prior at 13 reference files (est_schorfheide, est_nk v0-v9, est_ur v0-v6: missing data, measurement errors incl. correlated, first_obs/presample, prefilter, lik_init 1-3, diffuse and univariate filters, trends); Hessian, Laplace approximation, csminwel modes, log posterior at Dynare's 40 stored draws | 1.4e-11 (log likelihood), 6e-13 (log prior), 3.6e-10 (log posterior at the draws), 6e-6 (Hessian, relative), 2e-8 (mode value), 5e-5 std (mode location) |
 
 Speed of one `set_param!` + steady state + first-order solve: 0.04-0.08 ms (15 variables), 0.4 ms
 (28 variables, Julia steady-state function), 1.4 ms (42 variables, numerical steady state), 4 to 6 times
@@ -25,12 +26,31 @@ faster than pydyn on the same machine. An interpreted `_steadystate.m` costs abo
 
 - Orders 2 and 3 (plan: Dynare's C++ k-order library through `ccall`, fed with the preprocessor's
   G1-G3; the preprocessor output and `simulate` at orders 2-3 are already in place).
-- OccBin, perfect foresight, Kalman filter and smoother, shock decompositions, estimation.
+- OccBin, perfect foresight, Kalman smoother, shock decompositions, estimation beyond first order.
 - Plotting beyond first-order IRFs (OccBin, smoother, decompositions, ...). First-order IRF figures are
   done: Dynare's content rules, tidy CSV export, SVG built in, PNG/PDF through an optional Plots.jl
   extension (see docs/plotting.md).
 - Optimal policy (Ramsey, OSR), heterogeneous agents, PAC/VAR models, `dseries`: refused with an error.
 - Theoretical moments at order 2 (refused with an error).
+
+## Estimation: scope and limits
+
+- Supported: `varobs`, one `estimated_params` block (plus `estimated_params_init`, `_bounds`, `use_calibration`),
+  `observation_trends`, data from `.m`/`.csv`/`.mat`/matrix, `first_obs`, `nobs`, `presample`, `prefilter`,
+  `loglinear`/`logdata`, `lik_init` 1-3, `diffuse_filter`, `kalman_algo` 0-4, `qz_criterium`, `riccati_tol`,
+  `mode_compute` 0 and 4 (csminwel, ported from Dynare), `mh_replic`/`mh_nblck`/`mh_jscale`/`mh_drop`
+  (random-walk Metropolis-Hastings), Laplace and modified-harmonic-mean marginal densities, posterior moments.
+  `estimate(m)` runs what the `.mod` file's `estimation` statement asks. Unsupported options raise an
+  `EstimationError` (or warn once with `allow_unsupported=true`); other `mode_compute` values are replaced by csminwel with a warning.
+- Not implemented: smoother, forecasts, posterior IRFs, recursive estimation, other samplers, orders above 1,
+  particle filters, more than one `estimated_params` block.
+- The sampler is checked against Dynare's target density (40 stored draws) and statistically (2 x 4000 draws:
+  means within 0.17 posterior std of Dynare's 2 x 20000, modified harmonic mean within 0.19); it is not
+  draw-for-draw because Octave's random numbers cannot be reproduced.
+- Differences from pydyn: csminwel instead of scipy optimisers; correlated measurement errors in the univariate
+  filter (pydyn refuses them); Blanchard-Kahn failures carry Dynare's penalty.
+- Known difference: a root within rounding of `qz_criterium` (Schorfheide with rho = 0.999999, Dynare info 3) is
+  classified as stable by JDyn's QZ; marked as broken in the tests.
 
 ## Behaviour to know
 

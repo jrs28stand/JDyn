@@ -28,10 +28,14 @@ include("steady.jl")
 include("perturbation.jl")
 include("simulate.jl")
 include("moments.jl")
+include("priors.jl")
+include("kalman.jl")
+include("estimation.jl")
 include("plotting.jl")
 
 export run_preprocessor, load, Model, ModelError, steady_state, SteadyStateError, first_order, FirstOrderSolution,
        BlanchardKahnError, ghx, ghu, irf, simulate, set_param!, set_params!, get_param, set_shock_stderr!,
-       stoch_simul_moments, theoretical_moments, plot_irfs, irf_figures, irf_table, write_csv, pltorg, IRFResult, IRFFigure
+       stoch_simul_moments, theoretical_moments, plot_irfs, irf_figures, irf_table, write_csv, pltorg, IRFResult, IRFFigure,
+       Estimation, EstimationError, estimate, posterior_mode, sample_posterior, log_likelihood, log_prior, log_posterior
 
 end

@@ -240,6 +240,21 @@ bi!("cumsum", "cumprod") do I, a, nout
     _unsup("cumsum/cumprod")
 end
 
+# diff(x), diff(x, n), diff(x, n, dim): differences along the first non-singleton dimension (data files of estimation)
+BUILTINS["diff"] = function (I, a, nout)
+    _nargs(a, 1, 3, "diff")
+    x = farr(a[1])
+    n = length(a) >= 2 && !_isemptyarr(a[2]) ? Int(scalar(a[2])) : 1
+    n >= 0 || merr("diff: order must be a non-negative integer")
+    dim = length(a) == 3 ? Int(scalar(a[3])) : (size(x, 1) != 1 ? 1 : 2)
+    dim in (1, 2) || merr("diff: dimension must be 1 or 2")
+    for _ in 1:n
+        size(x, dim) <= 1 && return zeros(dim == 1 ? 0 : size(x, 1), dim == 1 ? size(x, 2) : 0)
+        x = dim == 1 ? x[2:end, :] .- x[1:end-1, :] : x[:, 2:end] .- x[:, 1:end-1]
+    end
+    ret(x)
+end
+
 function _minmax!(name, better)
     BUILTINS[name] = function (I, a, nout)
         _nargs(a, 1, 3, name)

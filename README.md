@@ -10,7 +10,7 @@ which uses a Julia-flavoured syntax in `.mod` files.
 
 **Status (2026-11-21): first order.** Calibration, steady state, first-order decision rules, IRFs,
 simulation and moments are implemented and match Dynare 7.2; higher order, OccBin, perfect foresight,
-filtering and estimation are not yet. See [docs/STATUS.md](docs/STATUS.md).
+the Kalman smoother is not. First-order estimation (priors, likelihood, posterior mode, Metropolis-Hastings) is implemented and checked against Dynare. See [docs/STATUS.md](docs/STATUS.md).
 
 ## How it works
 
