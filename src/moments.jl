@@ -457,16 +457,13 @@ function _th_autocovariances(R::Rules, Sigma, ivar, o)
                 W = hcat(aa .* tneg[g], b2 === nothing ? bb : b2)
                 f_hp[g, :, :] .= gain[g]^2 .* (W * f_om * W')
             end
-            # real(ifft over frequencies) * 2 pi
+            # real(ifft over frequencies) * 2 pi: out[t] = Re(sum_k f[k] exp(+2 pi i k t / ngrid)) / ngrid * 2 pi, by FFT
             out = zeros(ngrid, nvar, nvar)
+            scale = 2pi / ngrid
             for a in 1:nvar, b in 1:nvar
-                col = f_hp[:, a, b]
-                for t in 0:ngrid-1
-                    s = zero(ComplexF64)
-                    for k in 0:ngrid-1
-                        s += col[k+1] * cis(2pi * k * t / ngrid)
-                    end
-                    out[t+1, a, b] = real(s) / ngrid * 2pi
+                s = _dft(view(f_hp, :, a, b), +1)
+                for t in 1:ngrid
+                    out[t, a, b] = real(s[t]) * scale
                 end
             end
             out
@@ -821,7 +818,7 @@ function stoch_simul_moments(m::Model; var_list=nothing, dr=nothing, shocks=noth
     periods <= o["drop"] && throw(ArgumentError("STOCH_SIMUL error: The horizon of simulation is shorter than the number of observations to be dropped. Either increase periods or decrease drop."))
     Sigma = m.Sigma_e
     if shocks === nothing
-        rng = rng === nothing ? Random.default_rng() : rng
+        rng = rng === nothing ? dynare_rng(m) : rng
         iv = findall(!=(0), diag(Sigma))
         shocks = zeros(periods, size(Sigma, 1))
         shocks[:, iv] .= randn(rng, periods, length(iv)) * Matrix(cholesky(Symmetric(Sigma[iv, iv])).L)'

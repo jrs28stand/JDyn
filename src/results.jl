@@ -328,7 +328,8 @@ function _stoch_simul(ws, m, oo, var_list, shocks, rng)
             impulse = order > 1 && relative ? cs[:, i] ./ cs[i, i] ./ 100 : cs[:, i]   # GIRFs: shock normalised to 0.01
             y = order == 1 ? irf(dr, impulse; periods=nirf) :
                 irf(dr, impulse; Sigma_e=m.Sigma_e, periods=nirf, order=order, pruning=pruning,
-                    drop=_opti(ws, "drop", 100), replic=_opti(ws, "replic", 50), rng=rng)
+                    drop=_opti(ws, "drop", 100), replic=_opti(ws, "replic", 50),
+                    rng=rng === nothing ? dynare_rng(ws) : rng)
             relative && order == 1 && (y = 100 .* y ./ cs[i, i])
             for j in ivar
                 irfs[string(m.endo_names[j], "_", sname)] = _row(y[:, j])
@@ -342,7 +343,7 @@ function _stoch_simul(ws, m, oo, var_list, shocks, rng)
             size(shocks) == (periods, m.n_exo) || throw(ArgumentError("shocks must be periods x exo_nbr = ($periods, $(m.n_exo))"))
             Matrix{Float64}(shocks)
         else
-            r = rng === nothing ? Random.default_rng() : rng
+            r = rng === nothing ? dynare_rng(ws) : rng
             iv = findall(!=(0), diag(m.Sigma_e))
             e = zeros(periods, m.n_exo)
             e[:, iv] .= randn(r, periods, length(iv)) * Matrix(cholesky(Symmetric(m.Sigma_e[iv, iv])).U)
@@ -546,7 +547,7 @@ stoch_simul!(var_list::AbstractVector; kw...) = stoch_simul!(_current(), var_lis
 set_param_value!(name::AbstractString, v::Real) = set_param_value!(_current(), name, v)
 
 """
-    dynare(modfile; output=nothing, shocks=Dict(), rng=nothing, kw...) -> DynareWorkspace
+    dynare(modfile; output=nothing, shocks=Dict(), rng=nothing, seed=nothing, kw...) -> DynareWorkspace
 
 Run a .mod file as `dynare modfile` does and return M_, options_ and oo_ as MATLAB-style structs:
 `ws.oo_.endo_simul`, `ws.oo_.dr.ghx`, `ws.oo_.irfs.y_e`, `ws.M_.params`, ... (Julia reads them with
@@ -559,9 +560,11 @@ workspace without preprocessing: `M_.params[i] = x` or `set_param_value!(ws, "rh
 
 `shocks` maps the position of a `stoch_simul` statement among the file's stoch_simul statements (1, 2, ...)
 to a (periods x n_exo) shock matrix, to reproduce a given simulation (e.g. Dynare's `oo_.exo_simul`);
-otherwise shocks are drawn with `rng` (Julia's random numbers, so paths differ from MATLAB's).
+otherwise shocks are drawn from the workspace's random stream (`seed=n` seeds it as `set_dynare_seed(n)`, default
+seed 0 like Dynare's 'default'; `set_dynare_seed(...)` lines of the file act as in Dynare; an explicit `rng` replaces
+the stream). The draws are Julia's, reproducible run to run but not MATLAB's: see docs/RESULTS.md, "Random draws".
 """
-function dynare(modfile::AbstractString; output=nothing, shocks=Dict{Int,Any}(), rng=nothing, kw...)
+function dynare(modfile::AbstractString; output=nothing, shocks=Dict{Int,Any}(), rng=nothing, seed=nothing, _json_dir=nothing, kw...)
     if output === nothing
         # derivatives up to the highest order a stoch_simul statement asks for (Dynare's default is 2)
         output = occursin(r"order\s*=\s*3", read(modfile, String)) ? "third" : "second"
@@ -569,6 +572,7 @@ function dynare(modfile::AbstractString; output=nothing, shocks=Dict{Int,Any}(),
     wsref = Ref{Any}(nothing)
     nss = Ref(0)
     factory = function (m)
+        set_dynare_seed!(m, seed === nothing ? "default" : seed)     # Dynare seeds its stream with 'default' at start-up
         ws = DynareWorkspace(m, build_M(m), build_options(m), MStruct(), Dict{String,Any}())
         ws.oo_.exo_det_steady_state = zeros(0, 0)
         ws.oo_.dynare_version = "7.2"
@@ -577,7 +581,7 @@ function dynare(modfile::AbstractString; output=nothing, shocks=Dict{Int,Any}(),
         wsref[] = ws
         st -> _run_in_place!(ws, st, nss, shocks, rng)
     end
-    m = load(modfile; output=output, on_command=factory, kw...)
+    m = _json_dir === nothing ? load(modfile; output=output, on_command=factory, kw...) : Model(_json_dir; on_command=factory, kw...)
     ws = wsref[]
     m.session.host.oo.results = nothing             # the struct now belongs to the workspace alone
     _apply_matlab_options!(ws)

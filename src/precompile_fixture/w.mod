@@ -1,0 +1,17 @@
+var c k z;
+varexo e;
+parameters alpha beta rho delta sigma;
+alpha = 0.36; beta = 0.99; rho = 0.9; delta = 0.025; sigma = 0.01;
+model;
+  c^(-1) = beta * c(+1)^(-1) * (alpha * exp(z(+1)) * k^(alpha-1) + 1 - delta);
+  k = exp(z) * k(-1)^alpha - c + (1 - delta) * k(-1);
+  z = rho * z(-1) + e;
+end;
+initval; c = 2.75; k = 38; z = 0; e = 0; end;
+steady;
+check;
+shocks; var e; stderr sigma; end;
+stoch_simul(order=1, irf=10, periods=300, hp_filter=1600, nograph);
+stoch_simul(order=1, irf=10, nograph);
+stoch_simul(order=2, irf=10, periods=300, nograph);
+x = oo_.dr.ghx;

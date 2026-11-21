@@ -2,6 +2,26 @@
 # Dynare's simult_.m and irf.m). Decision rules are Dicts with Dynare's oo_.dr fields: "ghx", "ghu",
 # "ghxx", ... (rows in decision-rule order), "ys", "order_var", "state_var" (1-based), "order".
 
+function _simulate1!(out, ghx, ghu, shocks, ys, ov, sv, y0)    # function barrier: concrete types in the loop
+    x = y0[sv] - ys[sv]
+    nov = length(ov); nsv = length(sv)
+    t1 = zeros(nov); t2 = zeros(nov); u = zeros(size(shocks, 2))
+    ysov = ys[ov]; yssv = ys[sv]
+    for t in 1:size(shocks, 1)
+        @inbounds for j in eachindex(u)
+            u[j] = shocks[t, j]
+        end
+        mul!(t1, ghx, x); mul!(t2, ghu, u)
+        @inbounds for i in 1:nov
+            out[t, ov[i]] = ysov[i] + (t1[i] + t2[i])
+        end
+        @inbounds for k in 1:nsv
+            x[k] = out[t, sv[k]] - yssv[k]
+        end
+    end
+    out
+end
+
 _as_dr(dr::FirstOrderSolution) = as_dr(dr)
 _as_dr(dr::AbstractDict) = dr
 
@@ -21,12 +41,10 @@ function simulate(dr::AbstractDict, shocks::AbstractMatrix; order=nothing, pruni
     out = zeros(T, n)
     ghx_, ghu_ = dr["ghx"], dr["ghu"]
     if order == 1
-        x = y0[sv] - ys[sv]
-        for t in 1:T
-            yh = ghx_ * x + ghu_ * shocks[t, :]
-            out[t, ov] .= ys[ov] .+ yh
-            x = out[t, sv] - ys[sv]
-        end
+        # the same arithmetic as `yh = ghx*x + ghu*u; out[t, ov] = ys[ov] + yh; x = out[t, sv] - ys[sv]`, without
+        # allocating in the loop (2.5 million periods allocated ~3 GB per run)
+        _simulate1!(out, Matrix{Float64}(ghx_), Matrix{Float64}(ghu_), Matrix{Float64}(shocks), Vector{Float64}(ys),
+                    Vector{Int}(ov), Vector{Int}(sv), Vector{Float64}(y0))
         return out
     end
     ghxx, ghxu, ghuu, ghs2 = dr["ghxx"], dr["ghxu"], dr["ghuu"], vec(dr["ghs2"])

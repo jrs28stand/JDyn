@@ -332,7 +332,7 @@ Dulmage-Mendelsohn decomposition and the blocks are solved from the last to the 
 equations already hold at the initial guess is skipped (so the variables that only appear in identically satisfied
 equations stay at their initial values); `j2(j)` is indexed with the *row* positions of the block, as in Dynare.
 """
-function _dynare_solve(fun, jac, x0::Vector{Float64}; tolf, tolx, maxit)
+function _dynare_solve(fun, jac, x0::Vector{Float64}; tolf, tolx, maxit, rng=Random.default_rng())
     x = copy(x0)
     nn = length(x)
     fvec = fun(x)
@@ -346,7 +346,7 @@ function _dynare_solve(fun, jac, x0::Vector{Float64}; tolf, tolx, maxit)
         idx = any(!iszero, x) ? findall(iszero, x) : collect(1:nn)
         in0 = length(idx)
         good = false
-        for gen in (() -> rand(in0) .* 10, () -> randn(in0) .* 10, () -> -rand(in0) .* 10)
+        for gen in (() -> rand(rng, in0) .* 10, () -> randn(rng, in0) .* 10, () -> -rand(rng, in0) .* 10)
             for _ in 0:in0*10
                 x[idx] .= gen()
                 fvec = fun(x); fjac = jac(x)
@@ -392,7 +392,7 @@ function _solve_static(m::Model, y0, x, params; tolf=DYNARE_TOLF, tolx=eps(Float
     y0 = Vector{Float64}(y0)
     # Dynare's solve_algo = 4 first; the old robust search below is only used where it fails
     ys, ok, srows, moved, why = try
-        _dynare_solve(f, jac, y0; tolf=tolf, tolx=tolx, maxit=maxit)
+        _dynare_solve(f, jac, y0; tolf=tolf, tolx=tolx, maxit=maxit, rng=dynare_rng(m))
     catch e
         e isa LinearAlgebra.SingularException || e isa LinearAlgebra.LAPACKException || e isa DomainError || rethrow()
         y0, false, Int[], Int[], :failed

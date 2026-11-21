@@ -52,6 +52,42 @@ Parameters a steady-state file or `steady_state_model` block sets go back to `M_
 The existing API (`load`, `first_order`, `perfect_foresight`, `estimate`, ...) is unchanged: `dynare()` is a
 layer over it, and `ws.model` is the usual `Model`.
 
+## Random draws and seeds
+
+Every random draw in JDyn comes from one stream per workspace (per `Model`), `JDyn.dynare_rng(ws)`, a Julia
+`Xoshiro` generator. It is seeded as Dynare seeds its global stream: with 'default' (seed 0) when `dynare()` starts,
+so **a run is reproducible by default**, and consecutive commands continue the same stream (as MATLAB's global stream).
+
+```julia
+ws = dynare("model.mod")               # seed 0: the same shocks, GIRF draws, ... on every run
+ws = dynare("model.mod"; seed=123)     # as set_dynare_seed(123) before the first statement
+set_dynare_seed!(ws, 123)              # re-seed the workspace; options_.DynareRandomStreams.{algo,seed} follow
+stoch_simul!(ws; periods=1000)         # draws what the first stoch_simul of dynare(...; seed=123) draws
+ws.options_.DynareRandomStreams.seed = 7   # also works: the stream is re-seeded at the next draw
+```
+
+In the .mod file `set_dynare_seed(n)`, `set_dynare_seed('default')`, `set_dynare_seed('clock')`, `set_dynare_seed('reset')`
+and `set_dynare_seed(algo, n)` (algo recorded, JDyn's generator is always Xoshiro) are MATLAB builtins of the interpreter
+and write `options_.DynareRandomStreams`; `'clock'` stores the seed it chose so the run can be repeated with it.
+An explicit `rng=` (to `dynare`, `stoch_simul!`, `irf`, `estimate`, ...) or `shocks=` replaces the stream.
+
+Used by: `stoch_simul(periods>0)` shocks, the generalised IRFs at order > 1, the random initial guesses of the
+steady-state solver (`solve_randomize_initial_guess`), `estimate` (csminwel's random Hessian perturbation; the
+Metropolis-Hastings chains are seeded from the model's seed, `Xoshiro(seed * 7919 + chain)`, as before with seed 0).
+
+**The draws differ from MATLAB's and Octave's.** Dynare's `set_dynare_seed(n)` selects a Mersenne-twister (or Octave
+`state`) stream that JDyn does not reproduce; the same seed gives the same numbers on every JDyn run, never MATLAB's.
+To compare simulations with Dynare use its `oo_.exo_simul` (`dynare(file; shocks=Dict(1 => exo))`), not the seed.
+`rand`/`randn` lines in a .mod file are still refused by the interpreter.
+
+## Performance notes
+
+* Filtered theoretical moments (`hp_filter`, `bandpass_filter` with theoretical moments) transform the spectral
+  density to autocovariances with an FFT (`src/fft.jl`; radix 2 and Bluestein for other grid lengths). It was a direct
+  O(grid^2) sum: with `filtered_theoretical_moments_grid=8192` Dynare's `tests/moments/example1_hp_test.mod` took 835 s;
+  it takes about 6 s now (the first call in a session adds Julia's compilation, see below).
+* The first `dynare()` call in a Julia session compiles most of JDyn; later calls are fast (collard: 0.5 s).
+
 ## Checked against Dynare 7.2 (test/test_results.jl)
 
 | | |
