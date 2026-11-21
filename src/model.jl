@@ -146,6 +146,23 @@ function _idx_matrix(v, k)
     M
 end
 
+"""
+Rewrite chained comparisons `a < b < c` in the generated code as MATLAB evaluates them, `(a < b) < c`
+(Julia would read `a < b && b < c`; the preprocessor prints MATLAB's left-associative chains unchanged).
+"""
+function _matlab_comparisons(ex)
+    ex isa Expr || return ex
+    args = map(_matlab_comparisons, ex.args)
+    if ex.head == :comparison && length(args) > 3
+        acc = Expr(:call, args[2], args[1], args[3])
+        for i in 4:2:length(args)
+            acc = Expr(:call, args[i], acc, args[i+1])
+        end
+        return acc
+    end
+    Expr(ex.head, args...)
+end
+
 function load_model_functions(json_dir::AbstractString, raw::Dict{String,Any}; helpers=Dict{String,Any}())
     jdir = joinpath(dirname(json_dir), "julia")
     isdir(jdir) || throw(ModelError("no Julia output from the preprocessor in $jdir (run it with language=julia)"))
@@ -161,13 +178,13 @@ function load_model_functions(json_dir::AbstractString, raw::Dict{String,Any}; h
             # the steady_state_model block: the 7.2 preprocessor writes invalid Julia for a call with several
             # outputs ([ys_[1], kk, info] = f(...)); such a block is interpreted instead (steady.jl)
             try
-                Base.include(mod, joinpath(jdir, f))
+                Base.include(_matlab_comparisons, mod, joinpath(jdir, f))
             catch e
                 e isa LoadError || rethrow()
             end
             continue
         end
-        Base.include(mod, joinpath(jdir, f))
+        Base.include(_matlab_comparisons, mod, joinpath(jdir, f))
     end
     get(n) = Base.invokelatest(isdefined, mod, Symbol(n)) ? Base.invokelatest(getfield, mod, Symbol(n)) : nothing
     req(n) = (f = get(n); f === nothing ? throw(ModelError("generated function $n is missing")) : f)
@@ -250,6 +267,7 @@ function Model(json_dir::AbstractString; functions=Dict{String,Any}(), steady_st
     exo = String[d["name"] for d in raw["exogenous"]]
     par = String[d["name"] for d in raw["parameters"]]
     isempty(get_or(raw, "exogenous_deterministic", [])) || throw(ModelError("deterministic exogenous variables are not supported"))
+    isempty(get_or(raw, "heterogeneity_dimension", [])) || throw(ModelError("heterogeneous-agent models (heterogeneity_dimension) are not supported"))
     info = raw["model_info"]
     n = length(endo)
     lli_raw = info["lead_lag_incidence"]

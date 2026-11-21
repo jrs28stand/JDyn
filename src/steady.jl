@@ -92,16 +92,29 @@ function _from_steady_state_model_interpreted(m::Model, params, x, y)
     y, params
 end
 
-"Set auxiliary variables from their defining equations, which are linear in the variable itself."
+"""
+Set auxiliary variables from their defining equations, which are linear in the variable itself: two
+Gauss-Seidel sweeps of one Newton step per auxiliary variable (as pydyn). The coefficient of an auxiliary
+variable in its own equation is constant, so the Jacobian is evaluated once.
+"""
 function fill_auxiliary(m::Model, ys, x, params)
-    aux = [Int(d["endo_index"]) for d in get_or(m.raw, "aux_vars", [])]
+    aux = get!(m.cache, :aux_endo_index) do
+        Int[Int(d["endo_index"]) for d in get_or(m.raw, "aux_vars", [])]
+    end::Vector{Int}
     ys = copy(ys)
     isempty(aux) && return ys
+    x = Vector{Float64}(x); params = Vector{Float64}(params)
+    for i in aux
+        isfinite(ys[i]) || (ys[i] = 0.0)
+    end
+    J = static_jac(m, ys, x, params)
+    diagc = Float64[J[i, i] for i in aux]
+    exact = all(isfinite, diagc) && all(!iszero, diagc)
     for _ in 1:2
-        for i in aux
+        for (k, i) in enumerate(aux)
             isfinite(ys[i]) || (ys[i] = 0.0)
             r = static_resid(m, ys, x, params)[i]
-            ys[i] -= r / static_jac(m, ys, x, params)[i, i]
+            ys[i] -= r / (exact ? diagc[k] : static_jac(m, ys, x, params)[i, i])
         end
     end
     ys
@@ -211,7 +224,24 @@ function stoch_options(m::Model)
     end
     out
 end
-qz_criterium(m::Model, value=nothing; default=1.0 + 1e-6) = value !== nothing ? Float64(value) : Float64(get(stoch_options(m), "qz_criterium", default))
+"""
+Option `name` of the model's solution commands, else a value the .mod file assigned to `options_.name` in
+MATLAB code (Dynare's commands read that field too, e.g. select_qz_criterium_value.m), else `default`.
+"""
+function solver_option(m::Model, name::AbstractString, default)
+    so = stoch_options(m)
+    haskey(so, name) && return so[name]
+    if haskey(m.matlab_options, name)
+        v = m.matlab_options[name]
+        try
+            return scalar(v, "options_.$name")
+        catch
+        end
+    end
+    default
+end
+qz_criterium(m::Model, value=nothing; default=1.0 + 1e-6) = value !== nothing ? Float64(value) : Float64(solver_option(m, "qz_criterium", default))
+qz_zero_threshold(m::Model) = Float64(solver_option(m, "qz_zero_threshold", QZ_ZERO_THRESHOLD))
 
 "Warn (once per model) about options of `statement` that `what` does not act on."
 function warn_unused(m::Model, statement, honoured, what; extra=Set{String}())

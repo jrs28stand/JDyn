@@ -149,6 +149,7 @@ const _MOM_FROM_MOD = Dict("bandpass.indicator" => "bandpass", "bandpass.passban
 function _mom_options(m, overrides)
     o = copy(_MOM_DEFAULTS)
     if m !== nothing
+        o["qz_criterium"] = qz_criterium(m)          # also from check / estimation / options_.qz_criterium
         for (k, v) in get(m.options, "stoch_simul", Dict{String,Any}())
             k = get(_MOM_FROM_MOD, k, k)
             haskey(o, k) && (o[k] = v)
@@ -603,7 +604,15 @@ What `stoch_simul` reports at first order for `var_list`: theoretical moments if
 otherwise moments of a simulation of `periods` periods (shocks drawn as `randn(periods, n) * chol(Sigma_e)'`
 unless `shocks` is given).
 """
+# stoch_simul options that do not change the moments (IRFs, display, solver choices checked by first_order)
+const _MOM_NEUTRAL = Set(["irf", "irf_shocks", "relative_irf", "irf_in_percent", "analytical_girf", "emas_girf",
+    "emas_drop", "emas_tolf", "emas_max_iter", "stderr_multiples", "diagonal_only", "replic", "nomodelsummary", "print",
+    "dr_display_tol", "loglinear", "k_order_solver", "partial_information", "aim_solver", "dr_cycle_reduction",
+    "dr_logarithmic_reduction", "dr_cycle_reduction_tol", "dr_cycle_reduction_maxiter", "dr_logarithmic_reduction_tol",
+    "dr_logarithmic_reduction_maxiter", "qz_zero_threshold", "solve_algo", "logdata"])
+
 function stoch_simul_moments(m::Model; var_list=nothing, dr=nothing, shocks=nothing, rng=nothing, H=nothing, options...)
+    warn_unused(m, "stoch_simul", union(Set(keys(_MOM_DEFAULTS)), Set(keys(_MOM_FROM_MOD)), _MOM_NEUTRAL), "stoch_simul_moments")
     o = _mom_options(m, Dict(string(k) => v for (k, v) in options))
     o["periods"] == 0 && return theoretical_moments(m, dr; var_list=var_list, H=H, options...)
     o["order"] >= 2 && throw(ArgumentError("JDyn simulates at first order only for now (order=$(o["order"]) requested; pass order=1)"))

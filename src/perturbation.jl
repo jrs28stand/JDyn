@@ -51,16 +51,14 @@ function irf(s::FirstOrderSolution, shock::AbstractVector; periods::Int=40)
     out
 end
 
-"Simulate deviations from the steady state for a (T, n_exo) shock array."
-function simulate(s::FirstOrderSolution, shocks::AbstractMatrix; y0=nothing)
-    y = y0 === nothing ? zeros(size(s.G, 1)) : Float64.(y0)
-    out = zeros(size(shocks, 1), length(y))
-    for t in 1:size(shocks, 1)
-        y = s.G * y + s.H * shocks[t, :]
-        out[t, :] .= y
-    end
-    out
-end
+"""
+    simulate(sol::FirstOrderSolution, shocks; y0=nothing) -> (T, n) levels
+
+Simulate for a (T, n_exo) shock array from `y0` (levels, default the steady state). Like Dynare's
+`simult_` (and `simulate(dr, ...)` for a decision-rule Dict), the result is in levels (in logs for a
+`loglinear` solution); subtract `sol.ys'` for deviations.
+"""
+simulate(s::FirstOrderSolution, shocks::AbstractMatrix; y0=nothing) = simulate(as_dr(s), shocks; order=1, y0=y0)
 
 "Dynare's decision-rule ordering: static, purely backward, mixed, purely forward."
 function dr_ordering(lli::AbstractMatrix)
@@ -72,13 +70,64 @@ function dr_ordering(lli::AbstractMatrix)
         (nstatic=length(static), npred=length(pred), nboth=length(both), nfwrd=length(fwrd))
 end
 
+# ---------------------------------------------------------------------- ordered QZ
+# Dynare's mjdgges: LAPACK dgges with a selection function, so that the decomposition and the ordering
+# are one call (Julia's schur + ordschur! is dgges3 followed by dtgsen, 20-40% slower on these sizes).
+# The criterion is read from a per-thread slot set just before the ccall (no task switch can happen
+# between the two).
+const _QZ_CRIT = fill(QZ_CRITERIUM, 1)
+const _BlasInt = LinearAlgebra.BlasInt
+function _qz_select(ar::Ptr{Float64}, ai::Ptr{Float64}, b::Ptr{Float64})::LinearAlgebra.BlasInt
+    c = @inbounds _QZ_CRIT[Threads.threadid()]
+    re, im, bb = unsafe_load(ar), unsafe_load(ai), unsafe_load(b)
+    LinearAlgebra.BlasInt(re * re + im * im < c * c * bb * bb)
+end
+
+"""
+    _ordered_qz(E, D, qz_criterium) -> (S, T, Z, alpha, beta, sdim)
+
+Real generalised Schur form of the pencil (E, D) with the generalised eigenvalues alpha/beta of modulus
+below `qz_criterium` first. Falls back to `schur` + `ordschur!` when LAPACK reports that rounding made
+the reordering ambiguous (info n+2 / n+3).
+"""
+function _ordered_qz(E::Matrix{Float64}, D::Matrix{Float64}, qz_criterium::Real)
+    n = size(E, 1)
+    A, B = copy(E), copy(D)
+    sdim = Ref{_BlasInt}(0); info = Ref{_BlasInt}(0)
+    alphar, alphai, beta = zeros(n), zeros(n), zeros(n)
+    vsl = zeros(1, 1); vsr = zeros(n, n)
+    lwork = 8n + 16 + 32n
+    work = zeros(lwork); bwork = zeros(_BlasInt, n)
+    sel = @cfunction(_qz_select, _BlasInt, (Ptr{Float64}, Ptr{Float64}, Ptr{Float64}))
+    tid = Threads.threadid()
+    length(_QZ_CRIT) < tid && append!(_QZ_CRIT, fill(QZ_CRITERIUM, tid - length(_QZ_CRIT)))
+    _QZ_CRIT[tid] = Float64(qz_criterium)
+    ccall((LinearAlgebra.BLAS.@blasfunc(dgges_), LinearAlgebra.BLAS.libblastrampoline), Cvoid,
+          (Ref{UInt8}, Ref{UInt8}, Ref{UInt8}, Ptr{Cvoid}, Ref{_BlasInt}, Ptr{Float64}, Ref{_BlasInt},
+           Ptr{Float64}, Ref{_BlasInt}, Ref{_BlasInt}, Ptr{Float64}, Ptr{Float64}, Ptr{Float64}, Ptr{Float64},
+           Ref{_BlasInt}, Ptr{Float64}, Ref{_BlasInt}, Ptr{Float64}, Ref{_BlasInt}, Ptr{_BlasInt}, Ref{_BlasInt},
+           Clong, Clong, Clong),
+          'N', 'V', 'S', sel, n, A, max(1, n), B, max(1, n), sdim, alphar, alphai, beta, vsl, 1, vsr, max(1, n),
+          work, lwork, bwork, info, 1, 1, 1)
+    if info[] == 0
+        return A, B, vsr, complex.(alphar, alphai), beta, Int(sdim[])
+    elseif info[] < 0 || info[] <= n
+        throw(BlanchardKahnError("generalised Schur decomposition failed (LAPACK dgges info=$(info[]))"))
+    end
+    GS = schur(E, D)
+    select = abs.(GS.α) .< qz_criterium .* abs.(GS.β)
+    ordschur!(GS, select)
+    GS.S, GS.T, GS.Z, Vector{ComplexF64}(GS.α), Vector{Float64}(real.(GS.β)), count(select)
+end
+
 """
     solve_linear_re(fm, f0, fp, fu; qz_criterium, lag, lead) -> (G, H, eigenvalues)
 
 Solve `fp E y(+1) + f0 y + fm y(-1) + fu u = 0` for `y = G y(-1) + H u` (Dynare's algorithm: static
 variables removed by QR, ordered QZ on the dynamic block).
 """
-function solve_linear_re(fm, f0, fp, fu; qz_criterium=QZ_CRITERIUM, lag=nothing, lead=nothing)
+function solve_linear_re(fm, f0, fp, fu; qz_criterium=QZ_CRITERIUM, lag=nothing, lead=nothing,
+                         qz_zero_threshold=QZ_ZERO_THRESHOLD)
     lag = lag === nothing ? vec(any(fm .!= 0; dims=1)) : lag
     lead = lead === nothing ? vec(any(fp .!= 0; dims=1)) : lead
     n = size(f0, 1)
@@ -114,16 +163,11 @@ function solve_linear_re(fm, f0, fp, fu; qz_criterium=QZ_CRITERIUM, lag=nothing,
             D[ndyn+r, npred+r] = 1.0
             E[ndyn+r, nspred+r] = 1.0
         end
-        GS = schur(E, D)
-        alpha, beta = GS.α, GS.β
-        if any((abs.(alpha) .<= QZ_ZERO_THRESHOLD) .& (abs.(beta) .<= QZ_ZERO_THRESHOLD))
+        S, T, w, alpha, beta, sdim = _ordered_qz(E, D, qz_criterium)
+        if any((abs.(alpha) .<= qz_zero_threshold) .& (abs.(beta) .<= qz_zero_threshold))
             throw(BlanchardKahnError("one of the generalised eigenvalues is close to 0/0 (the model has a singularity: Dynare's error 7)"))
         end
-        select = abs.(alpha) .< qz_criterium .* abs.(beta)
-        ordschur!(GS, select)
-        S, T, w = GS.S, GS.T, GS.Z
-        eig = GS.α ./ GS.β
-        sdim = count(select)
+        eig = alpha ./ beta
     else
         S = T = w = zeros(0, 0)
         eig = ComplexF64[]
@@ -195,8 +239,13 @@ First-order solution at the steady state (computed unless `ys` is given). `qz_cr
 function first_order(m::Model; ys=nothing, params=nothing, qz_criterium=nothing, loglinear=nothing)
     so = stoch_options(m)
     loglinear = loglinear === nothing ? get(so, "loglinear", false) == true : loglinear
-    for key in ("partial_information", "aim_solver", "dr", "dr_cycle_reduction_tol", "sylvester")
-        haskey(so, key) && warn_once(m, "the .mod file sets $key: JDyn always uses its QZ-based solver")
+    # solver choices: the preprocessor writes dr=cycle_reduction as dr_cycle_reduction=true, etc. (pydyn looked
+    # for a "dr" key that the JSON never has, so it missed them). The solution is the same up to the
+    # solver's tolerance, except for partial_information, which solves a different problem.
+    for key in ("partial_information", "aim_solver", "dr", "dr_cycle_reduction", "dr_logarithmic_reduction",
+                "dr_cycle_reduction_tol", "dr_cycle_reduction_maxiter", "dr_logarithmic_reduction_tol",
+                "dr_logarithmic_reduction_maxiter", "sylvester", "sylvester_fixed_point_tol")
+        (haskey(so, key) && so[key] !== false) && warn_once(m, "the .mod file sets $key: JDyn always uses its QZ-based solver")
     end
     if ys === nothing
         ys, params = steady_state(m; params=params)
@@ -215,7 +264,7 @@ function first_order(m::Model; ys=nothing, params=nothing, qz_criterium=nothing,
     fm, f0, fp, fu = J[:, 1:n], J[:, n+1:2n], J[:, 2n+1:3n], J[:, 3n+1:end]
     lli = m.lead_lag_incidence
     G, H, eig = solve_linear_re(fm, f0, fp, fu; qz_criterium=JDyn.qz_criterium(m, qz_criterium),
-                                lag=lli[:, 1] .> 0, lead=lli[:, 3] .> 0)
+                                qz_zero_threshold=JDyn.qz_zero_threshold(m), lag=lli[:, 1] .> 0, lead=lli[:, 3] .> 0)
     order_var, state_var, _ = dr_ordering(lli)
     nonstate = trues(n); nonstate[state_var] .= false
     G[:, nonstate] .= 0.0                              # clean numerical noise in columns of non-states

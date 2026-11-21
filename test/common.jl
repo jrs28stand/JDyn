@@ -1,12 +1,14 @@
 # Shared test set-up. References are pydyn's (Dynare 7.2 under Octave 8.4): set JDYN_REF to the pydyn
 # repository's reference/ folder, JDYN_EXAMPLES to Dynare 7.2's examples/ folder, JDYN_DYNARE_SRC to the
 # Dynare 7.2 source tree (for the MATLAB corpus) and DYNARE_PREPROCESSOR to the 7.2 preprocessor.
-using Test, JDyn, MAT, LinearAlgebra, Logging
+using Test, JDyn, MAT, LinearAlgebra, Logging, Printf
 
-const _REF_CANDIDATES = [joinpath(@__DIR__, "..", "..", "jrs28stand", "pydyn", "reference"),
-                         joinpath(@__DIR__, "..", "..", "..", "jrs28stand", "pydyn", "reference")]   # clone in work/<name>
-const REF = get(ENV, "JDYN_REF", something(findfirst(isdir, _REF_CANDIDATES) |> k -> k === nothing ? nothing : _REF_CANDIDATES[k],
-                                           _REF_CANDIDATES[1]))
+const REF = get(ENV, "JDYN_REF") do
+    cands = [joinpath(@__DIR__, "..", "..", "jrs28stand", "pydyn", "reference"),
+             joinpath(@__DIR__, "..", "..", "..", "jrs28stand", "pydyn", "reference"),
+             "/home/claude/jrs28stand/pydyn/reference"]
+    normpath(something(findfirst(isdir, cands) |> i -> i === nothing ? nothing : cands[i], cands[1]))
+end
 const DYNARE_SRC = get(ENV, "JDYN_DYNARE_SRC", "/root/ref/dynare-7.2")
 const EXAMPLES = get(ENV, "JDYN_EXAMPLES", joinpath(DYNARE_SRC, "examples"))
 const SS = joinpath(EXAMPLES, "stochastic_simulations")
