@@ -198,6 +198,7 @@ function Model(json_dir::AbstractString; functions=Dict{String,Any}(), steady_st
     exo = String[d["name"] for d in raw["exogenous"]]
     par = String[d["name"] for d in raw["parameters"]]
     isempty(get_or(raw, "exogenous_deterministic", [])) || throw(ModelError("deterministic exogenous variables are not supported"))
+    isempty(get_or(raw, "heterogeneity_dimension", [])) || throw(ModelError("heterogeneous-agent models (heterogeneity_dimension) are not supported"))
     info = raw["model_info"]
     n = length(endo)
     lli_raw = info["lead_lag_incidence"]

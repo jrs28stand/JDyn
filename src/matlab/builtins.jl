@@ -1058,7 +1058,19 @@ function _root(F, x0)
     function f!(r, x)
         r .= F(x)
     end
-    sol = NLsolve.nlsolve(f!, Float64.(x0); method=:trust_region, ftol=1e-14, xtol=0.0, iterations=2000, autodiff=:central)
+    function j!(J, x)                    # central differences (NLsolve 5 no longer takes autodiff=:central)
+        xx = copy(x)
+        for k in eachindex(xx)
+            h = cbrt(eps()) * max(abs(xx[k]), 1.0)
+            xk = xx[k]
+            xx[k] = xk + h; fp = F(xx)
+            xx[k] = xk - h; fm = F(xx)
+            xx[k] = xk
+            J[:, k] .= (fp .- fm) ./ (2h)
+        end
+        J
+    end
+    sol = NLsolve.nlsolve(f!, j!, Float64.(x0); method=:trust_region, ftol=1e-14, xtol=0.0, iterations=2000)
     x = sol.zero
     fx = F(x)
     x, fx
