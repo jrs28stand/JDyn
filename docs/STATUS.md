@@ -25,6 +25,8 @@ criterion where Dynare's and JDyn's QZ round differently). The higher-order test
 | OccBin: piecewise-linear simulation (one and two constraints), `simul_*` options, error flags 310-313, periodic solutions, `error_bind`/`error_relax` | rbc_occbin (169 shock periods, 2 constraints), borrcon_sim/curb, occ_borrcon (two shocks; maxit sweeps, curb_retrench, endo_init, exo_pos, max/reset check-ahead, init_regime, init_binding_indicator), occ_rbc_cyc/occ_rbc1/occ_rbc_err (52 + 24 cycling cases): paths, regime histories and error flags | 3e-15 (paths), regime histories and flags identical |
 | OccBin IRFs (`occbin.irf`: both signs, all shocks, `shocksize`, `check_ahead_periods`, `maxit`) | occ_borrcon (2 shocks), occ_rbc_cyc (2 constraints) | 9e-16 |
 | Estimation, first order (`src/priors.jl`, `kalman.jl`, `estimation.jl`) | prior log density on all families (est_priors); log likelihood and log prior at 13 reference files (est_schorfheide, est_nk v0-v9, est_ur v0-v6: missing data, measurement errors incl. correlated, first_obs/presample, prefilter, lik_init 1-3, diffuse and univariate filters, trends); Hessian, Laplace approximation, csminwel modes, log posterior at Dynare's 40 stored draws | 1.4e-11 (log likelihood), 6e-13 (log prior), 3.6e-10 (log posterior at the draws), 6e-6 (Hessian, relative), 2e-8 (mode value), 5e-5 std (mode location) |
+| Kalman smoother (`src/smoother.jl`): `calib_smoother`, smoother at calibration, posterior mode/mean/median, ML mode, prior mode/mean, or a given theta; multivariate and univariate, diffuse (`kalman_algo` 3/4) and stationary, missing data, measurement errors (correlated too), trends, prefilter, loglinear, filtered/updated variables, `filter_step_ahead`, state uncertainty, `filter_initial_state` | 14 smo_* cases (both defect modes), sd_*, est_* start points, Smets-Wouters-scale sw_* (4 cases) | 1.4e-14 (smo_*), 5.8e-14 (sd_*, est_*), 5e-7 absolute on values of order 100 (SW, diffuse), 1.8e-8 relative (SW, stationary) |
+| Shock decompositions (`src/shock_decomposition.jl`): `shock_decomposition`, `initial_condition_decomposition`, groups, `init2shocks`, `realtime_shock_decomposition` (pooled, vintage, conditional, forecast), `squeeze`, plotted numbers (yoy/aoa, diff, flip, crop, screening) as tables | smo_*, sd_nk, sd_ur references | 1e-12 or better |
 | Perfect foresight: stacked Newton (initval/endval/histval, `shocks`, `mshocks`, `endogenous_terminal_period`) | 8 models of pydyn's pf_* set, Dynare's `perfect_foresight_rbc` | 1e-13 absolute (1e-14 relative), same Newton iteration count |
 | Perfect foresight: purely backward, purely forward and static models; `model(linear)` and `linear_approximation` | 5 references | 1e-15 (period by period), 7e-15 (linear) |
 | Perfect foresight: homotopy (3 size/step options, linearization and marginal-linearization fallbacks) | 5 references | 2e-15 relative (levels of 1e7: 7e-8 absolute); same number of homotopy iterations and completion share |
@@ -39,7 +41,7 @@ faster than pydyn on the same machine. An interpreted `_steadystate.m` costs abo
 
 - Theoretical moments at order 3 and filtered (HP, band-pass) theoretical moments at order 2 (refused, as in Dynare);
   loglinear models above order 1 (refused, as in Dynare); unit roots with pruning at order 2 (refused, as Dynare).
-- Kalman smoother, shock decompositions, estimation beyond first order.
+- Estimation beyond first order; Bayesian smoothed distributions over posterior draws (see the smoother section).
 - OccBin estimation, smoothing, forecasts, shock decompositions and `occbin_write_regimes`: not implemented (the
   `smoother_*`, `likelihood_*`, `filter_*` options of `occbin_setup`/`occbin_solver` give a warning; `occbin_write_regimes`
   is reported as an unhandled statement). OccBin figures themselves are not drawn: the plotted content is
@@ -77,6 +79,29 @@ The constraint expressions are evaluated period by period from the preprocessor'
 Also run, without a Dynare reference: Dynare's `tests/occbin/model_irrcap_twoconstraints/dynrbc.mod` (lower-case
 `steady_state`, model-local variables, `simul_periodic_solution`, `curb_retrench`, 71 iterations in one period) agrees with pydyn to 4e-16.
 
+## Smoother and shock decompositions
+
+`smooth(m, data=nothing; parameter_set=..., replicate_dynare_bugs=false, kw...)` is Dynare's `DsgeSmoother` as used by
+`calib_smoother` and by `estimation(smoother)`; options come from the `.mod` file's statements and can be overridden by
+keywords. `estimate()` runs it at the mode (or the start point with `mode_compute=0`) when `smoother` is set. Output follows
+Dynare's layout (`SmoothedVariables`, `SmoothedShocks`, `SmoothedMeasurementErrors`, `UpdatedVariables`, `FilteredVariables`,
+k-step arrays, `Variance`, `State_uncertainty`, `Init_State_Vector`). `check_smoother` tests the identities.
+`shock_decomposition`, `initial_condition_decomposition`, `realtime_shock_decomposition`, `group_shocks`, `squeeze_shock_decomposition`
+and `decomposition_plot_data` / `decomposition_table` (CSV through `write_csv`) give the figures' content as tables.
+
+- Dynare 7.2 defects (multivariate diffuse smoother with a diffuse period lacking data or with F_inf = 0; the same case for
+  the univariate State_uncertainty; `filter_initial_state` centring) are corrected by default; `replicate_dynare_bugs=true`
+  reproduces Dynare's output. Both modes are tested against the references (corrected equals Dynare's own univariate output).
+  Dynare's realtime decomposition starting at period 2 is kept in both modes.
+- Univariate smoother with correlated measurement errors: supported (augmented state); validated only against the multivariate
+  smoother, not a Dynare reference.
+- Smets-Wouters scale (sw_* references): see the timing lines of test/test_smoother.jl output (about 0.02 s for the stationary
+  cases including the first-order solve; diffuse cases use the univariate filter and match both Dynare algorithms).
+- Refused with an error: `heteroskedastic_filter`, `smoother_redux`, OccBin smoothing, `noconstant`, `partial_information`,
+  `kalman_algo=5`, `lik_init` 4/5, `Harvey_scale_factor=0`, `filter_initial_state` with the diffuse filter. Variable lists of
+  decomposition statements are ignored with a warning; the drawn-figure references (drawn_*) are not compared.
+- `Init_State_uncertainty` is trimmed to the state (Dynare leaves it untrimmed under the expanded state).
+
 ## Estimation: scope and limits
 
 - Supported: `varobs`, one `estimated_params` block (plus `estimated_params_init`, `_bounds`, `use_calibration`),
@@ -86,7 +111,7 @@ Also run, without a Dynare reference: Dynare's `tests/occbin/model_irrcap_twocon
   (random-walk Metropolis-Hastings), Laplace and modified-harmonic-mean marginal densities, posterior moments.
   `estimate(m)` runs what the `.mod` file's `estimation` statement asks. Unsupported options raise an
   `EstimationError` (or warn once with `allow_unsupported=true`); other `mode_compute` values are replaced by csminwel with a warning.
-- Not implemented: smoother, forecasts, posterior IRFs, recursive estimation, other samplers, orders above 1,
+- Not implemented: forecasts, posterior IRFs, recursive estimation, other samplers, orders above 1,
   particle filters, more than one `estimated_params` block.
 - The sampler is checked against Dynare's target density (40 stored draws) and statistically (2 x 4000 draws:
   means within 0.17 posterior std of Dynare's 2 x 20000, modified harmonic mean within 0.19); it is not
