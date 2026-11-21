@@ -504,7 +504,7 @@ end
 @testset "option checks" begin
     m = estload("est_ur")
     @test_throws JDyn.EstimationError Estimation(m; diffuse_filter=true, lik_init=2)
-    @test_throws JDyn.EstimationError Estimation(m; order=2)
+    @test_throws JDyn.EstimationError Estimation(m; order=3)
     @test_throws JDyn.EstimationError Estimation(estload("est_nk"); prefilter=1)       # non-zero steady state of piobs, robs
     @test JDyn.check_prefilter(Estimation(estload("est_nk", 3)))
     @test_throws JDyn.EstimationError Estimation(m; kalman_algo=5)

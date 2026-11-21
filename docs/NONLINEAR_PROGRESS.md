@@ -11,3 +11,7 @@ Branch nonlinear-est (base main 7fd0a4d). Spec: pydyn nonlinear_filters.py / non
 
 ## Next
 1. Run smoke (/tmp/dev/smoke.jl) and test file; fix. 2. Add test to runtests.jl ALL_TESTS. 3. Docs (STATUS.md, RESULTS.md). 4. Full suite once. 5. Final report.
+
+## Final state
+All pieces done; test_nonlinear_estimation.jl passes (576 checks); full suite passed except one old assertion in test_estimation.jl
+(order=2 was refused; now order=3 is), rerun alone: all passed. Open: MH chains not Dynare-draw-identical (OctaveRNG exists for it).
