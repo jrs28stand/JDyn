@@ -283,7 +283,7 @@ const DECL_KINDS = Set(["param_init", "initval", "endval", "histval", "shocks", 
     "osr_params", "optim_weights", "matched_moments", "matched_irfs", "matched_irfs_weights", "var_model",
     "pac_model", "trend_component_model", "var_expectation_model", "perfect_foresight_setup",
     "perfect_foresight_solver", "initval_file", "histval_file", "homotopy", "occbin_setup",
-    "load_params_and_steady_state", "save_params_and_steady_state", "options", "model_info"])
+    "load_params_and_steady_state", "save_params_and_steady_state", "options", "model_info", "conditional_forecast_paths"])
 "Dynare statements that compute or display: inside a block whose condition is unknown they are skipped."
 const COMPUTE_KINDS = Set(["steady", "check", "stoch_simul", "estimation", "osr", "forecast", "calib_smoother", "identification",
     "model_diagnostics", "model_info", "resid", "rplot", "perfect_foresight_setup",

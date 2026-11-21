@@ -480,7 +480,7 @@ const _HONOURED_EST = Set(["datafile", "first_obs", "nobs", "loglinear", "logdat
     "mh_nblck", "mh_jscale", "mh_drop", "mh_init_scale_factor", "order", "use_univariate_filters_if_singularity_is_detected",
     "rescale_prediction_error_covariance", "cova_compute", "mh_conf_sig", "optim_opt", "gstep", "Harvey_scale_factor",
     "lyapunov_complex_threshold", "mode_check.status", "nodiagnostic",
-    "smoother", "filtered_vars", "filter_step_ahead", "filter_covariance", "smoothed_state_uncertainty"])
+    "smoother", "filtered_vars", "filter_step_ahead", "filter_covariance", "smoothed_state_uncertainty", "forecast", "forecasts.conf_sig"])
 const _EST_DEFAULTS = Dict{String,Any}("datafile" => nothing, "first_obs" => 1, "nobs" => nothing, "loglinear" => false,
     "logdata" => false, "prefilter" => 0, "presample" => 0, "lik_init" => 1, "diffuse_filter" => false, "kalman_algo" => 0,
     "kalman_tol" => 1e-10, "diffuse_kalman_tol" => 1e-6, "riccati_tol" => 1e-6, "prior_trunc" => 0.0, "mode_compute" => 5,
@@ -1446,7 +1446,9 @@ struct EstimationResult
     marginal_density_mhm::Float64
     posterior::Union{Nothing,Dict{String,Any}}   # posterior statistics from the draws
     smoother::Any                      # SmootherResult at the mode (smoother, filtered_vars, filter_step_ahead options), else nothing
+    forecast::Any                      # ForecastResult of the `forecast` option (oo_.forecast; src/forecast.jl), else nothing
 end
+EstimationResult(est, x0, mode, mcmc, lp, lap, mhm, post, sm) = EstimationResult(est, x0, mode, mcmc, lp, lap, mhm, post, sm, nothing)
 
 """
     posterior_statistics(est, mc; mh_conf_sig=est.options["mh_conf_sig"]) -> Dict
@@ -1502,7 +1504,26 @@ function estimate(m::Model; seed=0, rng=Random.default_rng(), kw...)
         theta = mode === nothing ? est.x0 : mode.x
         sm = smooth(m; estimation=est, theta=theta)
     end
-    EstimationResult(est, est.x0, mode, mc, lp, lap, mhm, post, sm)
+    fc = nothing
+    nf = Int(something(get(o, "forecast", 0), 0))
+    if nf > 0
+        # dynare_estimation_1.m: the classical forecast from the smoother at the mode; with mode_compute=0 only when the
+        # smoother option is set; over the posterior draws (mh_replic > 0) not implemented
+        mc !== nothing && throw(EstimationError("forecast with mh_replic > 0 (forecasts over the posterior draws) is not implemented"))
+        if mode !== nothing || sm !== nothing
+            sm === nothing && (sm = smooth(m; estimation=est, theta=mode.x))
+            fc = forecast(sm, m; periods=nf, conf_sig=Float64(get(o, "forecasts.conf_sig", 0.9)), var_list=_estimation_var_list(m, kw))
+        end
+    end
+    EstimationResult(est, est.x0, mode, mc, lp, lap, mhm, post, sm, fc)
+end
+
+"Variables listed after the estimation statement (Dynare's var_list_)."
+function _estimation_var_list(m::Model, kw)
+    ests = [st for st in m.statements if get(st, "statementName", "") == "estimation"]
+    isempty(ests) && return String[]
+    k = get(kw, :statement, nothing)
+    String.(get_or(ests[k === nothing ? end : k], "symbol_list", String[]))
 end
 
 """

@@ -385,6 +385,10 @@ function _pf_histval!(m::Model, ws::PFWorkspace, st)
     for a in get_or(m.raw, "aux_vars", [])
         name = m.endo_names[Int(a["endo_index"])]
         mo = match(_PF_SIMPLE_AUX, string(get(defs, name, "")))
+        if get(a, "type", -1) in (0, 2) && !(mo !== nothing && haskey(series, mo.captures[1]))
+            series[name] = zeros(L)      # a lead auxiliary variable is never lagged: its period-0 value plays no role
+            continue
+        end
         (get(a, "type", -1) in (0, 1, 2, 3) && mo !== nothing && haskey(series, mo.captures[1])) ||
             throw(ModelError("histval with the auxiliary variable $name = $(get(defs, name, nothing)) is not supported"))
         src, shift = series[mo.captures[1]], mo.captures[2] === nothing ? 0 : parse(Int, mo.captures[2])
