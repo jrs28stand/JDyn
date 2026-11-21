@@ -128,7 +128,8 @@ end
 Solve `fp E y(+1) + f0 y + fm y(-1) + fu u = 0` for `y = G y(-1) + H u` (Dynare's algorithm: static
 variables removed by QR, ordered QZ on the dynamic block).
 """
-function solve_linear_re(fm, f0, fp, fu; qz_criterium=QZ_CRITERIUM, lag=nothing, lead=nothing)
+function solve_linear_re(fm, f0, fp, fu; qz_criterium=QZ_CRITERIUM, lag=nothing, lead=nothing,
+                         qz_zero_threshold=QZ_ZERO_THRESHOLD)
     lag = lag === nothing ? vec(any(fm .!= 0; dims=1)) : lag
     lead = lead === nothing ? vec(any(fp .!= 0; dims=1)) : lead
     n = size(f0, 1)
@@ -165,7 +166,7 @@ function solve_linear_re(fm, f0, fp, fu; qz_criterium=QZ_CRITERIUM, lag=nothing,
             E[ndyn+r, nspred+r] = 1.0
         end
         S, T, w, alpha, beta, sdim = _ordered_qz(E, D, qz_criterium)
-        if any((abs.(alpha) .<= QZ_ZERO_THRESHOLD) .& (abs.(beta) .<= QZ_ZERO_THRESHOLD))
+        if any((abs.(alpha) .<= qz_zero_threshold) .& (abs.(beta) .<= qz_zero_threshold))
             throw(BlanchardKahnError("one of the generalised eigenvalues is close to 0/0 (the model has a singularity: Dynare's error 7)"))
         end
         eig = alpha ./ beta
@@ -240,8 +241,13 @@ First-order solution at the steady state (computed unless `ys` is given). `qz_cr
 function first_order(m::Model; ys=nothing, params=nothing, qz_criterium=nothing, loglinear=nothing)
     so = stoch_options(m)
     loglinear = loglinear === nothing ? get(so, "loglinear", false) == true : loglinear
-    for key in ("partial_information", "aim_solver", "dr", "dr_cycle_reduction_tol", "sylvester")
-        haskey(so, key) && warn_once(m, "the .mod file sets $key: JDyn always uses its QZ-based solver")
+    # solver choices: the preprocessor writes dr=cycle_reduction as dr_cycle_reduction=true, etc. (pydyn looked
+    # for a "dr" key that the JSON never has, so it missed them). The solution is the same up to the
+    # solver's tolerance, except for partial_information, which solves a different problem.
+    for key in ("partial_information", "aim_solver", "dr", "dr_cycle_reduction", "dr_logarithmic_reduction",
+                "dr_cycle_reduction_tol", "dr_cycle_reduction_maxiter", "dr_logarithmic_reduction_tol",
+                "dr_logarithmic_reduction_maxiter", "sylvester", "sylvester_fixed_point_tol")
+        (haskey(so, key) && so[key] !== false) && warn_once(m, "the .mod file sets $key: JDyn always uses its QZ-based solver")
     end
     if ys === nothing
         ys, params = steady_state(m; params=params)
@@ -260,7 +266,7 @@ function first_order(m::Model; ys=nothing, params=nothing, qz_criterium=nothing,
     fm, f0, fp, fu = J[:, 1:n], J[:, n+1:2n], J[:, 2n+1:3n], J[:, 3n+1:end]
     lli = m.lead_lag_incidence
     G, H, eig = solve_linear_re(fm, f0, fp, fu; qz_criterium=JDyn.qz_criterium(m, qz_criterium),
-                                lag=lli[:, 1] .> 0, lead=lli[:, 3] .> 0)
+                                qz_zero_threshold=JDyn.qz_zero_threshold(m), lag=lli[:, 1] .> 0, lead=lli[:, 3] .> 0)
     order_var, state_var, _ = dr_ordering(lli)
     nonstate = trues(n); nonstate[state_var] .= false
     G[:, nonstate] .= 0.0                              # clean numerical noise in columns of non-states

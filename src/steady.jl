@@ -224,7 +224,24 @@ function stoch_options(m::Model)
     end
     out
 end
-qz_criterium(m::Model, value=nothing; default=1.0 + 1e-6) = value !== nothing ? Float64(value) : Float64(get(stoch_options(m), "qz_criterium", default))
+"""
+Option `name` of the model's solution commands, else a value the .mod file assigned to `options_.name` in
+MATLAB code (Dynare's commands read that field too, e.g. select_qz_criterium_value.m), else `default`.
+"""
+function solver_option(m::Model, name::AbstractString, default)
+    so = stoch_options(m)
+    haskey(so, name) && return so[name]
+    if haskey(m.matlab_options, name)
+        v = m.matlab_options[name]
+        try
+            return scalar(v, "options_.$name")
+        catch
+        end
+    end
+    default
+end
+qz_criterium(m::Model, value=nothing; default=1.0 + 1e-6) = value !== nothing ? Float64(value) : Float64(solver_option(m, "qz_criterium", default))
+qz_zero_threshold(m::Model) = Float64(solver_option(m, "qz_zero_threshold", QZ_ZERO_THRESHOLD))
 
 "Warn (once per model) about options of `statement` that `what` does not act on."
 function warn_unused(m::Model, statement, honoured, what; extra=Set{String}())
