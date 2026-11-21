@@ -1,0 +1,709 @@
+#id	tests	extras	should_fail	dynare_args	env
+particle/dsge_base2.mod	particle/dsge_base2.mod	particle/mysample.m;particle/dsge_base.inc	0		
+estimation/dsmh/dsge_base_DSMH.mod	estimation/dsmh/dsge_base_DSMH.mod	particle/mysample.m;particle/dsge_base.inc	0		
+particle/dsge_base_HSSMC.mod	particle/dsge_base_HSSMC.mod	particle/mysample.m;particle/dsge_base.inc	0		
+particle/dsge_base_Liu_West.mod	particle/dsge_base_Liu_West.mod	particle/mysample.m;particle/dsge_base.inc	0		
+particle/dsge_base_apf.mod	particle/dsge_base_apf.mod	particle/mysample.m;particle/dsge_base.inc	0		
+particle/dsge_base_cpf.mod	particle/dsge_base_cpf.mod	particle/mysample.m;particle/dsge_base.inc	0		
+particle/dsge_base_gf.mod	particle/dsge_base_gf.mod	particle/mysample.m;particle/dsge_base.inc	0		
+particle/dsge_base_gmf.mod	particle/dsge_base_gmf.mod	particle/mysample.m;particle/dsge_base.inc	0		
+particle/dsge_base_nlkf.mod	particle/dsge_base_nlkf.mod	particle/mysample.m;particle/dsge_base.inc	0		
+particle/dsge_base_sis.mod	particle/dsge_base_sis.mod	particle/mysample.m;particle/dsge_base.inc	0		
+particle/first_spec_hssmc.mod	particle/first_spec_hssmc.mod	particle/first_spec_common.inc	0		
+particle/local_state_space_iteration_3_test.mod	particle/first_spec.mod;particle/local_state_space_iteration_k_test.mod;particle/local_state_space_iteration_3_test.mod	particle/first_spec_common.inc	0		
+particle/first_spec_MCMC.mod	particle/first_spec_MCMC.mod	particle/first_spec_common.inc	0		
+occbin/ppf/swpkfppf.mod	occbin/ppf/swpkfppf.mod	occbin/ppf/swpkfest_mh_mode.mat;occbin/ppf/usdata_pkf.mat;occbin/ppf/swpkfest/metropolis/swpkfest_mh1_blck1.mat;occbin/ppf/swpkfest/metropolis/swpkfest_mh1_blck2.mat;occbin/ppf/swpkfest/metropolis/swpkfest_mh1_blck3.mat;occbin/ppf/swpkfest/metropolis/swpkfest_mh1_blck4.mat;occbin/ppf/swpkfest/metropolis/swpkfest_mh_history_0.mat;occbin/ppf/swpkfest/metropolis/swpkfest_mh_history_1.mat;occbin/ppf/swpkfest/metropolis/swpkfest_mh_history_2.mat	0		
+decision_rules/first_order/walsh.mod	decision_rules/first_order/walsh.mod	decision_rules/first_order/+matlab/+namespace/y_k.m	0		
+occbin/model_irrcap_twoconstraints/dynrbc_0_std_shocks.mod	occbin/model_irrcap_twoconstraints/dynrbc.mod;occbin/model_irrcap_twoconstraints/dynrbc_0_std_shocks.mod	occbin/model_irrcap_twoconstraints/dynrbc_common.inc	0		
+occbin/model_borrcon/borrcon_0_std_shocks.mod	occbin/model_borrcon/borrcon.mod;occbin/model_borrcon/borrcon_0_std_shocks.mod	occbin/model_borrcon/borrcon_common.inc	0		
+occbin/filter/NKM.mod	occbin/filter/NKM.mod	occbin/filter/dataobsfile.mat;occbin/filter/NKM_mh_mode_saved.mat;occbin/filter/NKM_common.inc	0		
+occbin/filter/NKM_non_restrict_state_space.mod	occbin/filter/NKM_non_restrict_state_space.mod	occbin/filter/dataobsfile.mat;occbin/filter/NKM_mh_mode_saved.mat;occbin/filter/NKM_common.inc	0		
+occbin/filter/NKM_calib_smoother.mod	occbin/filter/NKM_calib_smoother.mod	occbin/filter/dataobsfile.mat	0		
+occbin/filter/NKM_0_std_shocks.mod	occbin/filter/NKM_0_std_shocks.mod	occbin/filter/dataobsfile.mat;occbin/filter/NKM_mh_mode_saved.mat	0		
+moments/example1_hp_test.mod	moments/example1_hp_test.mod	moments/example1_common.inc	0		
+moments/fs2000_post_moments.mod	moments/fs2000_post_moments.mod	fs2000/fsdat_simul.m	0		
+moments/example1_order2_pruning.mod	moments/example1_order2_pruning.mod		0		
+lmmcp/rbcii.mod	lmmcp/rbcii.mod		0		
+lmmcp/purely_backward.mod	lmmcp/purely_backward.mod		0		
+lmmcp/purely_forward.mod	lmmcp/purely_forward.mod		0		
+lmmcp/MCP_ramsey.mod	lmmcp/MCP_ramsey.mod		0		
+lmmcp/SMOPEC.mod	lmmcp/SMOPEC.mod		0		
+estimation/TaRB/fs2000_tarb.mod	estimation/TaRB/fs2000_tarb.mod	estimation/fsdat_simul.m	0		
+estimation/pct/runpcttests.m	estimation/pct/runpcttests.m	estimation/pct/SW_2007_fmincon_parallel.mod;estimation/pct/fs2000.mod;estimation/pct/fs2000_data.m;estimation/pct/usmodel_data.mat;estimation/pct/tParallel.m	0		
+parallel/serial_vs_pct.mod	parallel/ls2003.mod;parallel/serial_mhblocks_1.mod;parallel/serial_mhblocks_2.mod;parallel/pct_mhblocks_1.mod;parallel/pct_mhblocks_2.mod;parallel/serial_vs_pct.mod	parallel/_estimation_commands_with_different_seeds.inc;parallel/_ls2003.inc;parallel/data_ca1.m;parallel/folder/endovars.mod	0		
+observation_trends_and_prefiltering/MCMC/Trend_loglin_no_prefilt_first_obs_MC.mod	observation_trends_and_prefiltering/MCMC/Trend_loglinear_no_prefilter_MC.mod;observation_trends_and_prefiltering/MCMC/Trend_no_prefilter_first_obs_MC.mod;observation_trends_and_prefiltering/MCMC/Trend_no_prefilter_MC.mod;observation_trends_and_prefiltering/MCMC/Trend_loglinear_prefilter_MC.mod;observation_trends_and_prefiltering/MCMC/Trend_loglin_prefilt_first_obs_MC.mod;observation_trends_and_prefiltering/MCMC/Trend_prefilter_first_obs_MC.mod;observation_trends_and_prefiltering/MCMC/Trend_prefilter_MC.mod;observation_trends_and_prefiltering/MCMC/Trend_loglin_no_prefilt_first_obs_MC.mod	observation_trends_and_prefiltering/Trend_exp_model_no_prefilter_common.inc;observation_trends_and_prefiltering/Trend_exp_model_prefilter_common.inc;observation_trends_and_prefiltering/Trend_model_no_prefilter_common.inc;observation_trends_and_prefiltering/Trend_model_prefilter_common.inc;observation_trends_and_prefiltering/Trend_load_data_common.inc;observation_trends_and_prefiltering/Trend_diagnostics_MCMC_common.inc;observation_trends_and_prefiltering/generate_trend_stationary_AR1.m	0		
+dates/dseries_interact.mod	dates/dseries_interact.mod	dates/data_uav.xlsx	0		
+dates/fs2000.mod	dates/fs2000.mod	dates/fsdat_simul.m	0		
+optimizers/fs2000_1.mod	optimizers/fs2000_1.mod	optimizers/fs2000.common.inc;optimizers/optimizer_function_count.inc;fs2000/fsdat_simul.m	0		
+optimizers/fs2000_2.mod	optimizers/fs2000_2.mod	optimizers/fs2000.common.inc;optimizers/optimizer_function_count.inc;fs2000/fsdat_simul.m	0		
+optimizers/fs2000_3.mod	optimizers/fs2000_3.mod	optimizers/fs2000.common.inc;optimizers/optimizer_function_count.inc;fs2000/fsdat_simul.m	0		
+optimizers/fs2000_4.mod	optimizers/fs2000_4.mod	optimizers/fs2000.common.inc;optimizers/optimizer_function_count.inc;fs2000/fsdat_simul.m	0		
+optimizers/fs2000_4_with_optim.mod	optimizers/fs2000_4_with_optim.mod	optimizers/fs2000.common.inc;fs2000/fsdat_simul.m	0		
+optimizers/fs2000_5.mod	optimizers/fs2000_5.mod	optimizers/fs2000.common.inc;optimizers/optimizer_function_count.inc;fs2000/fsdat_simul.m	0		
+optimizers/fs2000_6.mod	optimizers/fs2000_6.mod	optimizers/fs2000.common.inc;optimizers/optimizer_function_count.inc;fs2000/fsdat_simul.m	0		
+optimizers/fs2000_7.mod	optimizers/fs2000_7.mod	optimizers/fs2000.common.inc;optimizers/optimizer_function_count.inc;fs2000/fsdat_simul.m	0		
+optimizers/fs2000_8.mod	optimizers/fs2000_8.mod	optimizers/fs2000.common.inc;optimizers/optimizer_function_count.inc;fs2000/fsdat_simul.m	0		
+optimizers/fs2000_8_with_optim.mod	optimizers/fs2000_8_with_optim.mod	optimizers/fs2000.common.inc;fs2000/fsdat_simul.m	0		
+optimizers/fs2000_9.mod	optimizers/fs2000_9.mod	optimizers/fs2000.common.inc;optimizers/optimizer_function_count.inc;fs2000/fsdat_simul.m	0		
+optimizers/fs2000_10.mod	optimizers/fs2000_10.mod	optimizers/fs2000.common.inc;optimizers/optimizer_function_count.inc;fs2000/fsdat_simul.m	0		
+optimizers/fs2000_101.mod	optimizers/fs2000_101.mod	optimizers/fs2000.common.inc;optimizers/optimizer_function_count.inc;fs2000/fsdat_simul.m	0		
+optimizers/fs2000_102.mod	optimizers/fs2000_102.mod	optimizers/fs2000.common.inc;optimizers/optimizer_function_count.inc;fs2000/fsdat_simul.m	0		
+optimizers/fs2000_w.mod	optimizers/fs2000_w.mod	optimizers/fs2000.common.inc;optimizers/optimizer_function_count.inc;optimizers/optimizer_function_wrapper.m;fs2000/fsdat_simul.m	0		
+estimation/slice/fs2000_slice.mod	estimation/slice/fs2000_slice.mod	estimation/slice/fs2000.inc;estimation/fsdat_simul.m	0		
+estimation/slice/fs2000_slice_use_prior.mod	estimation/slice/fs2000_slice_use_prior.mod	estimation/slice/fs2000.inc;estimation/fsdat_simul.m	0		
+estimation/slice/bf.mod	estimation/slice/bf.mod	estimation/slice/datafile.mat	0		
+estimation/slice/fs2000_estimate_initial_states_log.mod	estimation/slice/fs2000_estimate_initial_states_log.mod	estimation/slice/fs2000.inc;estimation/fsdat_simul.m	0		
+estimation/slice/fs2000_estimate_initial_states.mod	estimation/slice/fs2000_estimate_initial_states.mod	estimation/slice/fs2000.inc	0		
+analytic_derivatives/fs2000_analytic_derivation.mod	analytic_derivatives/fs2000_analytic_derivation.mod	analytic_derivatives/fs2000.inc	0		
+analytic_derivatives/fs2000_analytic_derivation_diag_H.mod	analytic_derivatives/fs2000_analytic_derivation_diag_H.mod	analytic_derivatives/fs2000.inc	0		
+analytic_derivatives/fs2000_analytic_derivation_newrat.mod	analytic_derivatives/fs2000_analytic_derivation_newrat.mod		0		
+analytic_derivatives/BrockMirman_PertParamsDerivs.mod	analytic_derivatives/BrockMirman_PertParamsDerivs.mod	analytic_derivatives/nBrockMirmanSYM.mat	0		
+analytic_derivatives/burnside_3_order_PertParamsDerivs.mod	analytic_derivatives/burnside_3_order_PertParamsDerivs.mod		0		
+stochastic_simulations/pruning/AS_pruned_state_space_red_shock.mod	stochastic_simulations/pruning/AnSchorfheide_pruned_state_space.mod;stochastic_simulations/pruning/AS_pruned_state_space_red_shock.mod	stochastic_simulations/pruning/Andreasen_et_al_2018_Dynare44Pruning_v2.mat	0		
+stochastic_simulations/pruning/fs2000_pruning.mod	stochastic_simulations/pruning/fs2000_pruning.mod		0		
+measurement_errors/fs2000_corr_me_ml_mcmc/fs2000_corr_ME.mod	measurement_errors/fs2000_corr_me_ml_mcmc/fs2000_corr_ME.mod		0		
+TeX/fs2000_corr_ME.mod	TeX/fs2000_corr_ME.mod	fs2000/fsdat_simul.m	0		
+estimation/MH_recover/fs2000_recover_tarb.mod	estimation/MH_recover/fs2000_recover.mod;estimation/MH_recover/fs2000_recover_tarb.mod	estimation/MH_recover/fs2000.common.inc;estimation/fsdat_simul.m	0		
+estimation/MH_recover/fs2000_recover_2.mod	estimation/MH_recover/fs2000_recover_2.mod	estimation/MH_recover/fs2000.common.inc;estimation/fsdat_simul.m	0		
+estimation/MH_recover/fs2000_recover_3.mod	estimation/MH_recover/fs2000_recover_3.mod	estimation/MH_recover/fs2000.common.inc;estimation/fsdat_simul.m	0		
+estimation/MH_recover/fs2000_slice_recover.mod	estimation/MH_recover/fs2000_slice_recover.mod	estimation/MH_recover/fs2000_slice_recover_mh_tmp_blck1.mat;estimation/fsdat_simul.m	0		
+estimation/MH_recover/fs2000_recover_tmp.mod	estimation/MH_recover/fs2000_recover_tmp.mod	estimation/MH_recover/fs2000_recover_tmp_mh_tmp_blck1.mat;estimation/MH_recover/fs2000_recover_tmp_mode.mat;estimation/MH_recover/fs2000.common.inc;estimation/fsdat_simul.m	0		
+estimation/fs2000.mod	estimation/fs2000.mod	estimation/fsdat_simul.m	0		
+estimation/dime_mcmc/fs2000.mod	estimation/dime_mcmc/fs2000.mod	estimation/fsdat_simul.m	0		
+estimation/hssmc/fs2000.mod	estimation/hssmc/fs2000.mod	estimation/fsdat_simul.m	0		
+estimation/hssmc/dsge_base_hssmc.mod	estimation/hssmc/dsge_base_hssmc.mod	particle/mysample.m;particle/dsge_base.inc	0		
+gsa/ls2003a.mod	gsa/ls2003a.mod	gsa/data_ca1.m;gsa/ls2003_model.inc	0		
+gsa/ls2003.mod	gsa/ls2003.mod	gsa/data_ca1.m;gsa/ls2003_model.inc	0		
+gsa/ls2003scr.mod	gsa/ls2003scr.mod	gsa/data_ca1.m;gsa/ls2003_model.inc	0		
+gsa/ls2003ide.mod	gsa/ls2003ide.mod	gsa/data_ca1.m;gsa/ls2003_model.inc	0		
+gsa/ls2003prior.mod	gsa/ls2003prior.mod	gsa/data_ca1.m;gsa/ls2003_model.inc	0		
+gsa/cod_ML_morris/cod_ML_morris.mod	gsa/cod_ML_morris/cod_ML_morris.mod		0		
+gsa/morris/nk_est.mod	gsa/morris/nk_est.mod	gsa/morris/nk_est_data.m	0		
+estimation/fs2000_MCMC_jumping_covariance.mod	estimation/fs2000_MCMC_jumping_covariance.mod	estimation/fsdat_simul.m	0		
+ms-sbvar/test_ms_variances_repeated_runs.mod	ms-sbvar/test_ms_variances_repeated_runs.mod	ms-sbvar/msdata.m	0		
+fs2000/fs2000.mod	fs2000/fs2000.mod	fs2000/fsdat_simul.m	0		
+ls2003/ls2003_hessian_zero.mod	ls2003/ls2003_hessian_zero.mod		0		
+exogenous-observed-variables/preprocessor.mod	exogenous-observed-variables/preprocessor.mod		0		
+estimation/fs2000_with_weibull_prior.mod	estimation/fs2000_with_weibull_prior.mod	estimation/fsdat_simul.m	0		
+estimation/fs2000_model_comparison.mod	estimation/fs2000.mod;estimation/fs2000_initialize_from_calib.mod;estimation/fs2000_calibrated_covariance.mod;estimation/fs2000_model_comparison.mod	estimation/fsdat_simul.m	0		
+estimation/fs2000_estimated_params_init.mod	estimation/fs2000_estimated_params_init.mod		0		
+estimation/fs2000_estimated_params_remove.mod	estimation/fs2000_estimated_params_remove.mod	estimation/fsdat_simul.m	0		
+estimation/fs2000_fast.mod	estimation/fs2000_fast.mod	estimation/fsdat_simul.m	0		
+estimation/fs2000_init_from_previous.mod	estimation/fs2000.mod;estimation/fs2000_init_from_previous.mod	estimation/fsdat_simul.m	0		
+estimation/ls2003_endog_prior_restrict_estimation.mod	estimation/ls2003_endog_prior_restrict_estimation.mod	gsa/data_ca1.m	0		
+estimation/independent_mh/fs2000_independent_mh.mod	estimation/independent_mh/fs2000_independent_mh.mod	estimation/fsdat_simul.m	0		
+estimation/heteroskedastic_shocks/fs2000_het.mod	estimation/heteroskedastic_shocks/fs2000_het.mod	estimation/heteroskedastic_shocks/fs2000_het_model.inc;estimation/heteroskedastic_shocks/fs2000_het_check.inc;estimation/fsdat_simul.m	0		
+estimation/heteroskedastic_shocks/fs2000_het_corr.mod	estimation/heteroskedastic_shocks/fs2000_het_corr.mod	estimation/heteroskedastic_shocks/fs2000_het_model.inc;estimation/heteroskedastic_shocks/fs2000_het_check.inc;estimation/fsdat_simul.m	0		
+estimation/heteroskedastic_shocks/fs2000_het_sample_restriction.mod	estimation/heteroskedastic_shocks/fs2000_het_sample_restriction.mod	estimation/heteroskedastic_shocks/fs2000_het_model.inc;estimation/fsdat_simul.m	0		
+estimation/heteroskedastic_shocks/fs2000_het_dates.mod	estimation/heteroskedastic_shocks/fs2000_het_dates.mod	estimation/heteroskedastic_shocks/fs2000_het_model.inc;estimation/fsdat_simul.m	0		
+estimation/t_proposal/fs2000_student.mod	estimation/t_proposal/fs2000_student.mod	estimation/fsdat_simul.m	0		
+estimation/tune_mh_jscale/fs2000.mod	estimation/tune_mh_jscale/fs2000.mod	estimation/tune_mh_jscale/fs2000.inc;estimation/fsdat_simul.m	0		
+estimation/method_of_moments/AnScho/AnScho_matched_moments.mod	estimation/method_of_moments/AnScho/AnScho_matched_moments.mod	estimation/method_of_moments/AnScho/AnScho_MoM_common.inc;estimation/method_of_moments/AnScho/AnScho_MoM_data_2.mat	0		
+estimation/method_of_moments/AnScho/AnScho_GMM_estimParams0.mod	estimation/method_of_moments/AnScho/AnScho_GMM_estimParams0.mod	estimation/method_of_moments/AnScho/AnScho_MoM_common.inc;estimation/method_of_moments/AnScho/AnScho_MoM_data_2.mat	0		
+estimation/method_of_moments/AnScho/AnScho_GMM_estimParams1.mod	estimation/method_of_moments/AnScho/AnScho_GMM_estimParams1.mod	estimation/method_of_moments/AnScho/AnScho_MoM_common.inc;estimation/method_of_moments/AnScho/AnScho_MoM_data_2.mat	0		
+estimation/method_of_moments/AnScho/AnScho_GMM_estimParams2.mod	estimation/method_of_moments/AnScho/AnScho_GMM_estimParams2.mod	estimation/method_of_moments/AnScho/AnScho_MoM_common.inc;estimation/method_of_moments/AnScho/AnScho_MoM_data_2.mat	0		
+estimation/method_of_moments/AnScho/AnScho_SMM_estimParams0.mod	estimation/method_of_moments/AnScho/AnScho_SMM_estimParams0.mod	estimation/method_of_moments/AnScho/AnScho_MoM_common.inc;estimation/method_of_moments/AnScho/AnScho_MoM_data_2.mat	0		
+estimation/method_of_moments/AnScho/AnScho_SMM_estimParams1.mod	estimation/method_of_moments/AnScho/AnScho_SMM_estimParams1.mod	estimation/method_of_moments/AnScho/AnScho_MoM_common.inc;estimation/method_of_moments/AnScho/AnScho_MoM_data_2.mat	0		
+estimation/method_of_moments/AnScho/AnScho_SMM_estimParams2.mod	estimation/method_of_moments/AnScho/AnScho_SMM_estimParams2.mod	estimation/method_of_moments/AnScho/AnScho_MoM_common.inc;estimation/method_of_moments/AnScho/AnScho_MoM_data_2.mat	0		
+estimation/method_of_moments/RBC/RBC_MoM_Andreasen.mod	estimation/method_of_moments/RBC/RBC_MoM_Andreasen.mod	estimation/method_of_moments/RBC/RBC_MoM_common.inc;estimation/method_of_moments/RBC/RBC_Andreasen_Data_2.mat;estimation/method_of_moments/RBC/RBC_MoM_steady_helper.m	0		
+estimation/method_of_moments/RBC/RBC_MoM_SMM_ME.mod	estimation/method_of_moments/RBC/RBC_MoM_SMM_ME.mod	estimation/method_of_moments/RBC/RBC_MoM_common.inc;estimation/method_of_moments/RBC/RBC_MoM_steady_helper.m	0		
+estimation/method_of_moments/RBC/RBC_MoM_prefilter.mod	estimation/method_of_moments/RBC/RBC_MoM_prefilter.mod	estimation/method_of_moments/RBC/RBC_MoM_common.inc;estimation/method_of_moments/RBC/RBC_MoM_steady_helper.m	0		
+estimation/method_of_moments/RBC/RBC_MoM_SMM_ME_filter.mod	estimation/method_of_moments/RBC/RBC_MoM_SMM_ME_filter.mod	estimation/method_of_moments/RBC/RBC_MoM_common.inc;estimation/method_of_moments/RBC/RBC_MoM_steady_helper.m	0		
+estimation/method_of_moments/RBC/RBC_MoM_optimizer.mod	estimation/method_of_moments/RBC/RBC_MoM_optimizer.mod	estimation/method_of_moments/RBC/RBC_MoM_common.inc;estimation/method_of_moments/RBC/RBC_Andreasen_Data_2.mat;estimation/method_of_moments/RBC/RBC_MoM_steady_helper.m	0		
+estimation/method_of_moments/RBC/RBC_MoM_GMM_gradient_optim.mod	estimation/method_of_moments/RBC/RBC_MoM_GMM_gradient_optim.mod	estimation/method_of_moments/RBC/RBC_MoM_common.inc;estimation/method_of_moments/RBC/RBC_Andreasen_Data_2.mat;estimation/method_of_moments/RBC/RBC_MoM_steady_helper.m	0		
+estimation/method_of_moments/AFVRR/AFVRR_M0.mod	estimation/method_of_moments/AFVRR/AFVRR_M0.mod	estimation/method_of_moments/AFVRR/AFVRR_common.inc;estimation/method_of_moments/AFVRR/AFVRR_data.mat;estimation/method_of_moments/AFVRR/AFVRR_steady_helper.m	0		
+estimation/method_of_moments/AFVRR/AFVRR_MFB.mod	estimation/method_of_moments/AFVRR/AFVRR_MFB.mod	estimation/method_of_moments/AFVRR/AFVRR_common.inc;estimation/method_of_moments/AFVRR/AFVRR_data.mat;estimation/method_of_moments/AFVRR/AFVRR_steady_helper.m	0		
+estimation/method_of_moments/AFVRR/AFVRR_MFB_RRA.mod	estimation/method_of_moments/AFVRR/AFVRR_MFB_RRA.mod	estimation/method_of_moments/AFVRR/AFVRR_common.inc;estimation/method_of_moments/AFVRR/AFVRR_data.mat;estimation/method_of_moments/AFVRR/AFVRR_steady_helper.m	0		
+estimation/method_of_moments/CET/cet_interface.mod	estimation/method_of_moments/CET/cet_interface.mod	estimation/method_of_moments/CET/cet_data.mat;estimation/method_of_moments/CET/cet_irf_matching_file.m;estimation/method_of_moments/CET/cet_model.inc;estimation/method_of_moments/CET/cet_original_mode.mat;estimation/method_of_moments/CET/cet_steady_helper.m	0		
+estimation/method_of_moments/CET/cet_imh.mod	estimation/method_of_moments/CET/cet_imh.mod	estimation/method_of_moments/CET/cet_data.mat;estimation/method_of_moments/CET/cet_irf_matching_file.m;estimation/method_of_moments/CET/cet_model.inc;estimation/method_of_moments/CET/cet_original_mode.mat;estimation/method_of_moments/CET/cet_steady_helper.m	0		
+estimation/method_of_moments/CET/cet_mle.mod	estimation/method_of_moments/CET/cet_mle.mod	estimation/method_of_moments/CET/cet_data.mat;estimation/method_of_moments/CET/cet_irf_matching_file.m;estimation/method_of_moments/CET/cet_model.inc;estimation/method_of_moments/CET/cet_original_mode.mat;estimation/method_of_moments/CET/cet_steady_helper.m	0		
+estimation/method_of_moments/CET/cet_rwmh.mod	estimation/method_of_moments/CET/cet_rwmh.mod	estimation/method_of_moments/CET/cet_data.mat;estimation/method_of_moments/CET/cet_irf_matching_file.m;estimation/method_of_moments/CET/cet_model.inc;estimation/method_of_moments/CET/cet_original_mode.mat;estimation/method_of_moments/CET/cet_steady_helper.m	0		
+estimation/method_of_moments/CET/cet_mh_posterior_mode.mod	estimation/method_of_moments/CET/cet_mh_posterior_mode.mod	estimation/method_of_moments/CET/cet_data.mat;estimation/method_of_moments/CET/cet_irf_matching_file.m;estimation/method_of_moments/CET/cet_model.inc;estimation/method_of_moments/CET/cet_original_mode.mat;estimation/method_of_moments/CET/cet_steady_helper.m	0		
+estimation/method_of_moments/CET/cet_slice.mod	estimation/method_of_moments/CET/cet_slice.mod	estimation/method_of_moments/CET/cet_data.mat;estimation/method_of_moments/CET/cet_irf_matching_file.m;estimation/method_of_moments/CET/cet_model.inc;estimation/method_of_moments/CET/cet_original_mode.mat;estimation/method_of_moments/CET/cet_steady_helper.m	0		
+estimation/method_of_moments/CET/cet_tarb.mod	estimation/method_of_moments/CET/cet_tarb.mod	estimation/method_of_moments/CET/cet_data.mat;estimation/method_of_moments/CET/cet_irf_matching_file.m;estimation/method_of_moments/CET/cet_model.inc;estimation/method_of_moments/CET/cet_original_mode.mat;estimation/method_of_moments/CET/cet_steady_helper.m	0		
+estimation/conditional-likelihood/1/fs2000_estimation_conditional.mod	estimation/conditional-likelihood/1/fs2000_estimation_exact.mod;estimation/conditional-likelihood/1/fs2000_estimation_conditional.mod	estimation/fsdat_simul.m	0		
+estimation/system_prior_restriction/Gali_2015.mod	estimation/system_prior_restriction/Gali_2015.mod	estimation/system_prior_restriction/Gali_2015_PC_slope.m;estimation/system_prior_restriction/Gali_2015_prior_restrictions.m	0		
+estimation/no_init_estimation_check_first_obs/fs2000_init_check.mod	estimation/no_init_estimation_check_first_obs/fs2000_init_check.mod	estimation/no_init_estimation_check_first_obs/fsdat_mat.m;estimation/no_init_estimation_check_first_obs/fsdat_simul.m	0		
+estimation/univariate/nls/staticmodel.mod	estimation/univariate/nls/staticmodel.mod		0		
+estimation/univariate/nls/dynamicmodel1.mod	estimation/univariate/nls/dynamicmodel1.mod		0		
+estimation/univariate/nls/dynamicmodel2.mod	estimation/univariate/nls/dynamicmodel2.mod		0		
+model_info/NKM_3_back.mod	model_info/NKM_3_back.mod		0		
+model_info/NKM_3_forward.mod	model_info/NKM_3_forward.mod		0		
+model_info/bkk.mod	model_info/bkk.mod		0		
+moments/example1_var_decomp.mod	moments/example1_var_decomp.mod	moments/example1_common.inc	0		
+moments/example1_bp_test.mod	moments/example1_bp_test.mod	moments/example1_common.inc	0		
+moments/example1_theoretical_simulated.mod	moments/example1_theoretical_simulated.mod	moments/example1_common.inc	0		
+moments/test_AR1_spectral_density.mod	moments/test_AR1_spectral_density.mod		0		
+moments/example1_one_sided_hp_test.mod	moments/example1_one_sided_hp_test.mod	moments/example1_common.inc	0		
+on-the-fly/ex1.mod	on-the-fly/ex1.mod		0		
+on-the-fly/ex2.mod	on-the-fly/ex2.mod		0		
+on-the-fly/ex3.mod	on-the-fly/ex3.mod		0		
+on-the-fly/ex4.mod	on-the-fly/ex4.mod		0		
+on-the-fly/ex5.mod	on-the-fly/ex5.mod		0		
+on-the-fly/ex6.mod	on-the-fly/ex6.mod		0		
+equation_tags/example1_with_tags.mod	equation_tags/example1_with_tags.mod		0		
+equation_tags/ramst_static_tag.mod	equation_tags/ramst_static_tag.mod		0		
+equation_tags/ramst_static_tag_block.mod	equation_tags/ramst_static_tag_block.mod		0		
+stochastic_simulations/example1.mod	stochastic_simulations/example1.mod		0		
+stochastic_simulations/example1_irf_shocks.mod	stochastic_simulations/example1_irf_shocks.mod		0		
+stochastic_simulations/example2long_use_dll.mod	stochastic_simulations/example1long.mod;stochastic_simulations/example2long.mod;stochastic_simulations/example2long_use_dll.mod		0		
+stochastic_simulations/example2_simul_replic.mod	stochastic_simulations/example2_simul_replic.mod		0		
+stochastic_simulations/histval_sto.mod	stochastic_simulations/histval_sto.mod		0		
+stochastic_simulations/histval_predetermined.mod	stochastic_simulations/histval_predetermined.mod		0		
+macro_processor/test_ifndef.mod	macro_processor/test_ifndef.mod		0		
+macro_processor/example1_macro.mod	macro_processor/example1_macro.mod		0		
+irfs/example1_unit_std.mod	irfs/example1_unit_std.mod		0		
+optimal_policy/OSR/osr_example.mod	optimal_policy/OSR/osr_example.mod		0		
+optimal_policy/OSR/osr_example_objective_correctness.mod	optimal_policy/OSR/osr_example_objective_correctness.mod		0		
+optimal_policy/OSR/osr_objective_correctness_anal_deriv.mod	optimal_policy/OSR/osr_objective_correctness_anal_deriv.mod		0		
+optimal_policy/OSR/osr_example_obj_corr_non_stat_vars.mod	optimal_policy/OSR/osr_example_obj_corr_non_stat_vars.mod		0		
+optimal_policy/OSR/osr_example_param_bounds.mod	optimal_policy/OSR/osr_example_param_bounds.mod		0		
+optimal_policy/OSR/osr_obj_corr_algo_1.mod	optimal_policy/OSR/osr_obj_corr_algo_1.mod		0		
+optimal_policy/OSR/osr_obj_corr_algo_3.mod	optimal_policy/OSR/osr_obj_corr_algo_3.mod		0		
+optimal_policy/OSR/osr_obj_corr_algo_4.mod	optimal_policy/OSR/osr_obj_corr_algo_4.mod		0		
+optimal_policy/OSR/osr_obj_corr_algo_7.mod	optimal_policy/OSR/osr_obj_corr_algo_7.mod		0		
+optimal_policy/OSR/osr_obj_corr_algo_8.mod	optimal_policy/OSR/osr_obj_corr_algo_8.mod		0		
+optimal_policy/OSR/osr_obj_corr_algo_9.mod	optimal_policy/OSR/osr_obj_corr_algo_9.mod		0		
+optimal_policy/OSR/OSR_planner_objective.mod	optimal_policy/OSR/OSR_planner_objective.mod		0		
+optimal_policy/ramsey_.mod	optimal_policy/ramsey_.mod		0		
+optimal_policy/nk_ramsey.mod	optimal_policy/nk_ramsey.mod		0		
+optimal_policy/nk_ramsey_model.mod	optimal_policy/nk_ramsey_model.mod		0		
+optimal_policy/nk_ramsey_det.mod	optimal_policy/nk_ramsey_det.mod		0		
+optimal_policy/neo_ramsey_det_bytecode.mod	optimal_policy/neo_ramsey_det_bytecode.mod		0		
+optimal_policy/nk_ramsey_expectation_a.mod	optimal_policy/nk_ramsey_expectation.mod;optimal_policy/nk_ramsey_expectation_a.mod		0		
+optimal_policy/mult_elimination_test.mod	optimal_policy/mult_elimination_test.mod		0		
+optimal_policy/neo_growth_ramsey.mod	optimal_policy/neo_growth.mod;optimal_policy/neo_growth_ramsey.mod	optimal_policy/neo_growth_common.inc;optimal_policy/neo_growth_ramsey_common.inc	0		
+optimal_policy/neo_growth_ramsey_k_order.mod	optimal_policy/neo_growth_k_order.mod;optimal_policy/neo_growth_ramsey_k_order.mod	optimal_policy/neo_growth_common.inc;optimal_policy/neo_growth_ramsey_common.inc	0		
+optimal_policy/Ramsey/ramsey_ex.mod	optimal_policy/Ramsey/ramsey_ex_initval.mod;optimal_policy/Ramsey/ramsey_ex.mod	optimal_policy/Ramsey/find_c.m	0		
+optimal_policy/Ramsey/ramsey_ex_initval_AR2.mod	optimal_policy/Ramsey/ramsey_ex_initval_AR2.mod		0		
+optimal_policy/Ramsey/ramsey_ex_aux.mod	optimal_policy/Ramsey/ramsey_ex_aux.mod	optimal_policy/Ramsey/find_c.m	0		
+optimal_policy/Ramsey/ramsey_histval.mod	optimal_policy/Ramsey/ramsey_histval.mod	optimal_policy/Ramsey/find_c.m	0		
+optimal_policy/Ramsey/Gali_commitment.mod	optimal_policy/Ramsey/Gali_commitment.mod		0		
+optimal_policy/RamseyConstraints/test1.mod	optimal_policy/RamseyConstraints/test1.mod		0		
+optimal_policy/Ramsey/Ramsey_Example_estimation.mod	optimal_policy/Ramsey/Ramsey_Example_estimation.mod		0		
+discretionary_policy/dennis_1_estim_MoM.mod	discretionary_policy/dennis_1.mod;discretionary_policy/dennis_1_estim.mod;discretionary_policy/dennis_1_estim_MoM.mod		0		
+discretionary_policy/Gali_discretion.mod	discretionary_policy/Gali_discretion.mod		0		
+discretionary_policy/NK_discretion_forward.mod	discretionary_policy/NK_discretion_forward.mod		0		
+discretionary_policy/Gali_2015_chapter_3_nonlinear.mod	discretionary_policy/Gali_2015_chapter_3.mod;discretionary_policy/Gali_2015_chapter_3_nonlinear.mod		0		
+histval_initval_file/ramst_initval_file.mod	histval_initval_file/ramst_data_generate.mod;histval_initval_file/ramst_initval_file_data.m;histval_initval_file/ramst_initval_file.mod	histval_initval_file/ramst_data.xlsx	0		
+histval_initval_file/ramst_initval_file_with_dseries.mod	histval_initval_file/ramst_initval_file_with_dseries.mod		0		
+histval_initval_file/ramst_datafile.mod	histval_initval_file/ramst_initval_file_data.m;histval_initval_file/ramst_datafile.mod		0		
+histval_initval_file/sim_exo_lead_lag_initvalf.mod	histval_initval_file/sim_exo_lead_lag.mod;histval_initval_file/sim_exo_lead_lag_initvalf.mod		0		
+stat_functions/ramst_normcdf_and_friends_mfile.mod	stat_functions/ramst_normcdf_and_friends_mfile.mod	stat_functions/ramst_normcdf_and_friends.inc	0		
+stat_functions/ramst_normcdf_and_friends_use_dll.mod	stat_functions/ramst_normcdf_and_friends_use_dll.mod	stat_functions/ramst_normcdf_and_friends.inc	0		
+stat_functions/ramst_normcdf_and_friends_bytecode.mod	stat_functions/ramst_normcdf_and_friends_bytecode.mod	stat_functions/ramst_normcdf_and_friends.inc	0		
+stat_functions/example1_abs_sign.mod	stat_functions/example1_abs_sign.mod		0		
+preprocessor_checks/comments.mod	preprocessor_checks/comments.mod		0		
+preprocessor_checks/example1_mlv.mod	preprocessor_checks/example1_mlv.mod		0		
+preprocessor_checks/ramst_model_edit.mod	deterministic_simulations/ramst.mod;preprocessor_checks/ramst_model_edit.mod		0		
+auxiliary_variables/test1.mod	auxiliary_variables/test1.mod		0		
+expectations/expectation.mod	expectations/expectation.mod		0		
+expectations/expectation_ss.mod	expectations/expectation_ss.mod		0		
+expectations/expectation_ss_old.mod	expectations/expectation_ss_old.mod	expectations/expectation_ss_old_steadystate.m	0		
+expectations/expectation_nested.mod	expectations/expectation_nested.mod		0		
+steady_state/walsh1_initval.mod	steady_state/walsh1_initval.mod		0		
+steady_state/walsh1_old_ss.mod	steady_state/walsh1_old_ss.mod	steady_state/walsh1_old_ss_steadystate.m	0		
+steady_state/walsh1_ssm.mod	steady_state/walsh1_ssm.mod		0		
+steady_state/walsh1_ssm_block.mod	steady_state/walsh1_ssm_block.mod		0		
+steady_state/multi_leads.mod	steady_state/multi_leads.mod		0		
+steady_state/example1_trust_region.mod	steady_state/example1_trust_region.mod		0		
+steady_state/example1_block_trust_region.mod	steady_state/example1_block_trust_region.mod		0		
+steady_state/Gali_2015_chapter_6_4.mod	steady_state/Gali_2015_chapter_6_4.mod		0		
+steady_state/ramst_solve_algo_0.mod	steady_state/ramst_solve_algo_0.mod		0		
+steady_state/fs2000_ssfile.mod	steady_state/fs2000_ssfile.mod	steady_state/fs2000_ssfile_aux.m	0		
+steady_state_operator/standard.mod	steady_state_operator/standard.mod		0		
+steady_state_operator/use_dll.mod	steady_state_operator/use_dll.mod		0		
+steady_state_operator/block.mod	steady_state_operator/block.mod		0		
+steady_state_operator/bytecode_test.mod	steady_state_operator/bytecode_test.mod		0		
+block_bytecode/ireland.mod	block_bytecode/ireland.mod		0		
+block_bytecode/lola_solve_one_boundary_mfs3.mod	block_bytecode/lola_solve_one_boundary.mod;block_bytecode/lola_solve_one_boundary_mfs1.mod;block_bytecode/lola_solve_one_boundary_mfs2.mod;block_bytecode/lola_solve_one_boundary_mfs3.mod	block_bytecode/lola_common.inc;block_bytecode/lola_data.mat	0		
+decision_rules/k_order/fs2000k3_m.mod	decision_rules/k_order/fs2000k2a.mod;decision_rules/k_order/fs2000k2_use_dll.mod;decision_rules/k_order/fs2000k_1_use_dll.mod;decision_rules/k_order/fs2000k3_use_dll.mod;decision_rules/k_order/fs2000k2_m.mod;decision_rules/k_order/fs2000k_1_m.mod;decision_rules/k_order/fs2000k3_m.mod		0		
+stochastic_simulations/pruning/fs2000k3_p.mod	stochastic_simulations/pruning/fs2000k3_p.mod		0		
+decision_rules/k_order/burnside_k_order.mod	decision_rules/k_order/burnside_k_order.mod		0		
+stochastic_simulations/fs2000_k_order_simul.mod	stochastic_simulations/fs2000_k_order_simul.mod		0		
+partial_information/PItest3aHc0PCLsimModPiYrVarobsAll.mod	partial_information/PItest3aHc0PCLsimModPiYrVarobsAll.mod		0		
+partial_information/PItest3aHc0PCLsimModPiYrVarobsCNR.mod	partial_information/PItest3aHc0PCLsimModPiYrVarobsCNR.mod		0		
+partial_information/Partial_ramsey.mod	partial_information/Partial_ramsey.mod		0		
+partial_information/Partial_steady_state_model.mod	partial_information/Partial_steady_state_model.mod		0		
+arima/mod1c.mod	arima/mod1.mod;arima/mod1a.mod;arima/mod1b.mod;arima/mod1c.mod		0		
+arima/mod2c.mod	arima/mod2.mod;arima/mod2a.mod;arima/mod2b.mod;arima/mod2c.mod		0		
+data/mod1a.mod	data/mod1a.mod	data/test.xlsx	0		
+fs2000/fs2000a.mod	fs2000/fs2000a.mod	fs2000/fsdat_simul.m	0		
+fs2000/fs2000c.mod	fs2000/fs2000c.mod		0		
+fs2000/fs2000_calib.mod	fs2000/fs2000_calib.mod	fs2000/fsdat_simul.m	0		
+fs2000/fs2000_calib_dseries.mod	fs2000/fs2000_calib_dseries.mod	fs2000/fsdat_simul.m	0		
+fs2000/fs2000_missing_data.mod	fs2000/fs2000_missing_data.mod	fs2000/fsdat_simul_missing_obs.m	0		
+fs2000/fs2000_dseries_a.mod	fs2000/fs2000_dseries_a.mod	fs2000/fsdat_simul_dseries.m	0		
+fs2000/fs2000_dseries_b.mod	fs2000/fs2000_dseries_b.mod	fs2000/fsdat_simul_dseries.m	0		
+steady_state/homotopy/homotopy1_test.mod	steady_state/homotopy/homotopy1_test.mod	steady_state/homotopy/common.mod	0		
+steady_state/homotopy/homotopy2_test.mod	steady_state/homotopy/homotopy2_test.mod	steady_state/homotopy/common.mod	0		
+steady_state/homotopy/homotopy3_test.mod	steady_state/homotopy/homotopy3_test.mod	steady_state/homotopy/common.mod	0		
+steady_state/homotopy/homotopy_from_initval_to_endval.mod	steady_state/homotopy/homotopy_from_initval_to_endval.mod	steady_state/homotopy/common.mod	0		
+bvar_a_la_sims/bvar_standalone.mod	bvar_a_la_sims/bvar_standalone.mod	bvar_a_la_sims/bvar_sample.m	0		
+bvar_a_la_sims/bvar_and_dsge.mod	bvar_a_la_sims/bvar_and_dsge.mod	bvar_a_la_sims/bvar_sample.m	0		
+AIM/fs2000x10L9_L_AIM.mod	AIM/fs2000x10L9_L.mod;AIM/fs2000x10L9_L_AIM.mod		0		
+AIM/fs2000x10_L9_L_AIM.mod	AIM/fs2000x10_L9_L.mod;AIM/fs2000x10_L9_L_AIM.mod		0		
+AIM/fs2000_b1L1L_AIM.mod	AIM/fs2000_b1L1L.mod;AIM/fs2000_b1L1L_AIM.mod		0		
+AIM/ls2003_2L0L_AIM.mod	AIM/ls2003_2L0L.mod;AIM/ls2003_2L0L_AIM.mod		0		
+AIM/ls2003_2L2L_AIM.mod	AIM/ls2003_2L2L.mod;AIM/ls2003_2L2L_AIM.mod		0		
+conditional_variance_decomposition/example1.mod	conditional_variance_decomposition/example1.mod		0		
+conditional_variance_decomposition/example3.mod	conditional_variance_decomposition/example3.mod	conditional_variance_decomposition/example3_steady_state_helper.m	0		
+dsge-var/dsgevar_forward_estimated_lambda.mod	dsge-var/simul_hybrid.mod;dsge-var/dsgevar_forward_calibrated_lambda.mod;dsge-var/dsgevar_forward_estimated_lambda.mod		0		
+external_function/extfun_in_mlv.mod	external_function/benchmark.mod;external_function/first_deriv_given.mod;external_function/first_deriv_given_dll.mod;external_function/first_and_2nd_deriv_given.mod;external_function/first_and_2nd_deriv_given_namespace.mod;external_function/first_and_2nd_deriv_given_dll.mod;external_function/first_and_2nd_deriv_given_dll_namespace.mod;external_function/no_deriv_given.mod;external_function/no_deriv_given_dll.mod;external_function/extfun_in_mlv.mod	external_function/extFunDeriv.m;external_function/extFunNoDerivs.m;external_function/extFunWithFirstAndSecondDerivs.m;external_function/+matlab/+namespace/extFunWithFirstAndSecondDerivsNamespace.m	0		
+minimal_state_space_system/as2007_minimal.mod	minimal_state_space_system/as2007_minimal.mod		0		
+minimal_state_space_system/sw_minimal.mod	minimal_state_space_system/sw_minimal.mod		0		
+identification/kim/kim2.mod	identification/kim/kim2.mod		0		
+identification/as2007/as2007.mod	identification/as2007/as2007.mod		0		
+identification/as2007/as2007_kronflags.mod	identification/as2007/as2007_kronflags.mod		0		
+identification/as2007/as2007_QT.mod	identification/as2007/as2007_QT.mod	identification/as2007/G_QT.mat	0		
+identification/as2007/as2007_QT_equal_autocorr.mod	identification/as2007/as2007_QT_equal_autocorr.mod		0		
+identification/as2007/as2007_order_1_2_3.mod	identification/as2007/as2007_order_1_2_3.mod		0		
+identification/as2007/as2007_order3_no_stoch_simul.mod	identification/as2007/as2007_order3_no_stoch_simul.mod		0		
+identification/BrockMirman/BrockMirman.mod	identification/BrockMirman/BrockMirman.mod		0		
+identification/cgg/cgg_criteria_differ.mod	identification/cgg/cgg_criteria_differ.mod		0		
+identification/ident_unit_root/ident_unit_root.mod	identification/ident_unit_root/ident_unit_root.mod		0		
+identification/rbc_ident/rbc_ident_varexo_only.mod	identification/rbc_ident/rbc_ident_std_as_structural_par.mod;identification/rbc_ident/rbc_ident_varexo_only.mod		0		
+identification/correlated_errors/fs2000_corr.mod	identification/correlated_errors/fs2000_corr.mod		0		
+identification/forward_looking/forward_looking_empty_ghx.mod	identification/forward_looking/forward_looking_empty_ghx.mod	identification/forward_looking/forward_looking_common.inc	0		
+identification/forward_looking/forward_looking_varobs_x.mod	identification/forward_looking/forward_looking_varobs_x.mod	identification/forward_looking/forward_looking_common.inc	0		
+model_diagnostics/example2_block_model_diag.mod	model_diagnostics/example2_block_model_diag.mod		0		
+deterministic_simulations/initval_endval_blocks/initval_endval_test.mod	deterministic_simulations/initval_endval_blocks/initval_endval_test.mod		0		
+deterministic_simulations/initval_endval_blocks/histval_initval_test.mod	deterministic_simulations/initval_endval_blocks/histval_initval_test.mod		0		
+conditional_forecasts/1/fs2000_cal.mod	conditional_forecasts/1/fs2000_cal.mod		0		
+conditional_forecasts/2/fs2000_est.mod	conditional_forecasts/2/fs2000_est.mod	conditional_forecasts/2/fsdat_simul.m	0		
+conditional_forecasts/3/fs2000_conditional_forecast_initval.mod	conditional_forecasts/3/fs2000_conditional_forecast_initval.mod		0		
+conditional_forecasts/4/fs2000_conditional_forecast_histval.mod	conditional_forecasts/4/fs2000_conditional_forecast_histval.mod		0		
+conditional_forecasts/6/fs2000_cal.mod	conditional_forecasts/6/fs2000_cal.mod		0		
+conditional_forecasts/fs2000_calib_smoother_cf.mod	conditional_forecasts/fs2000_calib_smoother_cf.mod	conditional_forecasts/2/fsdat_simul.m	0		
+recursive/ls2003.mod	recursive/ls2003.mod	recursive/data_ca1.m	0		
+recursive/ls2003_bayesian.mod	recursive/ls2003_bayesian.mod	recursive/data_ca1.m	0		
+recursive/ls2003_bayesian_xls.mod	recursive/ls2003_bayesian_xls.mod	recursive/data_ca1_xls.xlsx	0		
+recursive/ls2003_bayesian_csv.mod	recursive/ls2003_bayesian_csv.mod	recursive/data_ca1_csv.csv	0		
+ms-sbvar/test_exclusions.mod	ms-sbvar/test_exclusions.mod	ms-sbvar/msdata.m	0		
+ms-sbvar/test_exclusions_nc.mod	ms-sbvar/test_exclusions_nc.mod	ms-sbvar/msdata.m	0		
+ms-sbvar/test_lower_cholesky.mod	ms-sbvar/test_lower_cholesky.mod	ms-sbvar/msdata.m	0		
+ms-sbvar/test_lower_cholesky_a.mod	ms-sbvar/test_lower_cholesky_a.mod	ms-sbvar/msdata.m	0		
+ms-sbvar/test_lower_cholesky_nc.mod	ms-sbvar/test_lower_cholesky_nc.mod	ms-sbvar/msdata.m	0		
+ms-sbvar/test_upper_cholesky.mod	ms-sbvar/test_upper_cholesky.mod	ms-sbvar/msdata.m	0		
+ms-sbvar/test_upper_cholesky_nc.mod	ms-sbvar/test_upper_cholesky_nc.mod	ms-sbvar/msdata.m	0		
+ms-sbvar/test_ms_variances.mod	ms-sbvar/test_ms_variances.mod	ms-sbvar/msdata.m	0		
+ms-sbvar/BVAR_contemp_reduced_form.mod	ms-sbvar/BVAR_contemp_reduced_form.mod	ms-sbvar/MacroData.mat	0		
+ms-dsge/test_ms_dsge.mod	ms-dsge/test_ms_dsge.mod		0		
+kalman/lyapunov/fs2000_lyap.mod	kalman/lyapunov/fs2000_lyap.mod	fs2000/fsdat_simul.m	0		
+kalman/lik_init/fs2000_ns_lik_init_2.mod	kalman/lik_init/fs2000_ns_lik_init_2.mod	kalman/lik_init/fs2000_ns_common.inc;fs2000/fsdat_simul.m	0		
+kalman/lik_init/fs2000_ns_lik_init_3.mod	kalman/lik_init/fs2000_ns_lik_init_3.mod	kalman/lik_init/fs2000_ns_common.inc;fs2000/fsdat_simul.m	0		
+kalman/lik_init/fs2000_ns_lik_init_5.mod	kalman/lik_init/fs2000_ns_lik_init_5.mod	kalman/lik_init/fs2000_ns_common.inc;fs2000/fsdat_simul.m	0		
+kalman/lik_init/fs2000_lik_init_1.mod	kalman/lik_init/fs2000_lik_init_1.mod	kalman/lik_init/fs2000_common.inc;fs2000/fsdat_simul.m	0		
+kalman/lik_init/fs2000_lik_init_2.mod	kalman/lik_init/fs2000_lik_init_2.mod	kalman/lik_init/fs2000_common.inc;fs2000/fsdat_simul.m	0		
+kalman/lik_init/fs2000_lik_init_3.mod	kalman/lik_init/fs2000_lik_init_3.mod	kalman/lik_init/fs2000_common.inc;fs2000/fsdat_simul.m	0		
+kalman/lik_init/fs2000_lik_init_4.mod	kalman/lik_init/fs2000_lik_init_4.mod	kalman/lik_init/fs2000_common.inc;fs2000/fsdat_simul.m	0		
+kalman/lik_init/fs2000_lik_init_5.mod	kalman/lik_init/fs2000_lik_init_5.mod	kalman/lik_init/fs2000_common.inc;fs2000/fsdat_simul.m	0		
+kalman/block/fs2000.mod	kalman/block/fs2000.mod	fs2000/fsdat_simul.m	0		
+kalman/block/fs2000_missing_data.mod	kalman/block/fs2000_missing_data.mod	fs2000/fsdat_simul_missing_obs.m	0		
+kalman_initial_state/fs2000_smoother_only_initial_state.mod	kalman_initial_state/fs2000_smoother_only_initial_state.mod	kalman_initial_state/fs2000_common.inc;fs2000/fsdat_simul.m	0		
+kalman_initial_state/fs2000_ns_smoother_only_initial_state.mod	kalman_initial_state/fs2000_ns_smoother_only_initial_state.mod	fs2000/fsdat_simul.m	0		
+kalman_initial_state/fs2000_kalman_initial.mod	kalman_initial_state/fs2000_kalman_initial.mod	kalman_initial_state/fs2000_common.inc;fs2000/fsdat_simul.m	0		
+kalman_initial_state/fs2000_kalman_initial_2_lag.mod	kalman_initial_state/fs2000_kalman_initial_2_lag.mod	fs2000/fsdat_simul.m	0		
+kalman_filter_smoother/fs2000a.mod	kalman_filter_smoother/gen_data.mod;kalman_filter_smoother/algo1.mod;kalman_filter_smoother/algo2.mod;kalman_filter_smoother/algo3.mod;kalman_filter_smoother/algo4.mod;kalman_filter_smoother/algo4a.mod;kalman_filter_smoother/algo4b.mod;kalman_filter_smoother/algoH1.mod;kalman_filter_smoother/algoH2.mod;kalman_filter_smoother/algoH3.mod;kalman_filter_smoother/fs2000.mod;kalman_filter_smoother/fs2000_1.mod;kalman_filter_smoother/fs2000_2.mod;kalman_filter_smoother/fs2000a.mod	kalman_filter_smoother/fsdat_simul.m	0		
+kalman_filter_smoother/fs2000_smoother_only.mod	kalman_filter_smoother/fs2000_smoother_only.mod	kalman_filter_smoother/fsdat_simul.m	0		
+kalman_filter_smoother/fs2000_smoother_only_ns.mod	kalman_filter_smoother/fs2000_smoother_only_ns.mod	kalman_filter_smoother/fsdat_simul.m	0		
+kalman_filter_smoother/fs2000_smoother_redux.mod	kalman_filter_smoother/fs2000_smoother_redux.mod	kalman_filter_smoother/fsdat_simul.m	0		
+kalman_filter_smoother/trend_cycle_smoother_redux.mod	kalman_filter_smoother/trend_cycle_smoother_redux.mod	filter_step_ahead/trend_cycle_decomposition_data.m	0		
+kalman_filter_smoother/test_compute_Pinf_Pstar.mod	kalman_filter_smoother/test_compute_Pinf_Pstar_data.mod;kalman_filter_smoother/test_compute_Pinf_Pstar.mod		0		
+kalman_filter_smoother/SOE.mod	kalman_filter_smoother/SOE.mod	kalman_filter_smoother/SOE_data_file.m	0		
+kalman_filter_smoother/check_variable_dimensions/fs2000.mod	kalman_filter_smoother/check_variable_dimensions/fs2000.mod	kalman_filter_smoother/fsdat_simul.m	0		
+kalman_filter_smoother/check_variable_dimensions/fs2000_ML.mod	kalman_filter_smoother/check_variable_dimensions/fs2000_ML.mod	kalman_filter_smoother/fsdat_simul.m	0		
+kalman_filter_smoother/rbc_non_stationary_obs.mod	kalman_filter_smoother/rbc_non_stationary_obs.mod	kalman_filter_smoother/data_rbc_non_stationary_obs.m	0		
+kalman/likelihood_from_dynare/fs2000_uncorr_ME_missing.mod	kalman/likelihood_from_dynare/fs2000_uncorr_ME.mod;kalman/likelihood_from_dynare/fs2000_corr_ME.mod;kalman/likelihood_from_dynare/fs2000_corr_ME_missing.mod;kalman/likelihood_from_dynare/fs2000_uncorr_ME_missing.mod	kalman/likelihood_from_dynare/fs2000_model.inc;kalman/likelihood_from_dynare/fs2000_estimation_check.inc	0		
+kalman/likelihood_from_dynare/fs2000ns_uncorr_ME_missing.mod	kalman/likelihood_from_dynare/fs2000ns_uncorr_ME.mod;kalman/likelihood_from_dynare/fs2000ns_corr_ME.mod;kalman/likelihood_from_dynare/fs2000ns_corr_ME_missing.mod;kalman/likelihood_from_dynare/fs2000ns_uncorr_ME_missing.mod	kalman/likelihood_from_dynare/fs2000ns_model.inc;kalman/likelihood_from_dynare/fs2000ns_estimation_check.inc	0		
+decision_rules/second_order/burnside_1.mod	decision_rules/second_order/burnside_1.mod		0		
+kalman_filter_smoother/compare_results_simulation/fs2000_ML.mod	kalman_filter_smoother/compare_results_simulation/fs2000_ML.mod	kalman_filter_smoother/compare_results_simulation/fsdat_simul_logged.m	0		
+kalman_filter_smoother/compare_results_simulation/fs2000_ML_loglinear.mod	kalman_filter_smoother/compare_results_simulation/fs2000_ML_loglinear.mod	kalman_filter_smoother/fsdat_simul.m;kalman_filter_smoother/compare_results_simulation/fsdat_simul_logged.m	0		
+kalman_filter_smoother/compare_results_simulation/fs2000.mod	kalman_filter_smoother/compare_results_simulation/fs2000.mod	kalman_filter_smoother/compare_results_simulation/fsdat_simul_logged.m	0		
+kalman_filter_smoother/compare_results_simulation/fs2000_loglinear.mod	kalman_filter_smoother/compare_results_simulation/fs2000_loglinear.mod	kalman_filter_smoother/fsdat_simul.m;kalman_filter_smoother/compare_results_simulation/fsdat_simul_logged.m	0		
+kalman_skewed/ireland2004_bayes.mod	kalman_skewed/skew_in_shocks_block.mod;kalman_skewed/skew_in_estimated_params.mod;kalman_skewed/ireland2004_stoch_simul.mod;kalman_skewed/ireland2004_ml.mod;kalman_skewed/ireland2004_bayes.mod	kalman_skewed/ireland2004_model.inc;kalman_skewed/ireland2004_post1980.csv	0		
+decision_rules/second_order/burnside_1.mod	decision_rules/second_order/burnside_1.mod		0		
+decision_rules/second_order/ds2.mod	decision_rules/second_order/ds1.mod;decision_rules/second_order/ds2.mod		0		
+ep/rbc2.mod	ep/rbc2.mod		0		
+ep/rbc_mc.mod	ep/rbc_mc.mod		0		
+ep/ar_backward_xfail.mod	ep/ar_backward_xfail.mod		1		
+ep/pfm_xfail.mod	ep/pfm_xfail.mod		1		
+ep/ar_backward.mod	ep/ar_backward.mod		0		
+ep/rbcii_MCP.mod	ep/rbcii.mod;ep/rbcii_MCP.mod	ep/rbcii-calibration.inc;ep/rbcii_steadystate.m	0		
+ep/zeroshocks/rs.mod	ep/zeroshocks/rsTrue.mod;ep/zeroshocks/rs.mod		0		
+ep/zeroshocks/rs.mod	ep/zeroshocks/rsTrue.mod;ep/zeroshocks/rs.mod		0		
+ep/linearmodel0.mod	ep/linearmodel0.mod		0		
+ep/linearmodel1.mod	ep/linearmodel1.mod		0		
+ep/rbc_bytecode.mod	ep/rbc_bytecode.mod		0		
+ep/burnside.mod	ep/burnside.mod		0		
+ep/hybrid/burnside_xfail.mod	ep/hybrid/burnside_xfail.mod		1		
+ep/hybrid/rs.mod	ep/hybrid/rs.mod		0		
+ep/integration/burnside.mod	ep/integration/burnside.mod		0		
+ep/integration/burnside2.mod	ep/integration/burnside2.mod		0		
+stochastic_simulations/example1_noprint.mod	stochastic_simulations/example1_noprint.mod		0		
+stochastic_simulations/example_seeds.mod	stochastic_simulations/example_seeds.mod		0		
+stochastic-backward-models/solow_cd.mod	stochastic-backward-models/solow_cd.mod		0		
+stochastic-backward-models/solow_ces.mod	stochastic-backward-models/solow_ces.mod		0		
+stochastic-backward-models/solow_cd_with_steadystate.mod	stochastic-backward-models/solow_cd_with_steadystate.mod		0		
+deterministic_simulations/ramst.mod	deterministic_simulations/ramst.mod		0		
+deterministic_simulations/ramst_dseries.mod	deterministic_simulations/ramst_dseries.mod		0		
+deterministic_simulations/ramst_a.mod	deterministic_simulations/ramst_a.mod		0		
+deterministic_simulations/ramst_mshocks.mod	deterministic_simulations/ramst_mshocks.mod		0		
+deterministic_simulations/ramst_mshocks_vec.mod	deterministic_simulations/ramst_mshocks_vec.mod		0		
+deterministic_simulations/ramst_mshocks_relative_to_initval.mod	deterministic_simulations/ramst_mshocks_relative_to_initval.mod		0		
+deterministic_simulations/predetermined_variables.mod	deterministic_simulations/predetermined_variables.mod		0		
+deterministic_simulations/histval_det.mod	deterministic_simulations/histval_det.mod		0		
+deterministic_simulations/ramst_vec.mod	deterministic_simulations/ramst_vec.mod		0		
+deterministic_simulations/Solow_no_varexo.mod	deterministic_simulations/Solow_no_varexo.mod		0		
+deterministic_simulations/simul_ZLB_purely_forward.mod	deterministic_simulations/simul_ZLB_purely_forward.mod		0		
+deterministic_simulations/simul_ZLB_purely_forward_xfail.mod	deterministic_simulations/simul_ZLB_purely_forward_xfail.mod		1		
+deterministic_simulations/Irreversible_investment_leadlag.mod	deterministic_simulations/Irreversible_investment.mod;deterministic_simulations/Irreversible_investment_leadlag.mod		0		
+deterministic_simulations/linear_state_space_arma.mod	deterministic_simulations/linear_state_space_arma.mod		0		
+deterministic_simulations/linear_state_space_arma_condpaths.mod	deterministic_simulations/linear_state_space_arma_condpaths.mod		0		
+deterministic_simulations/purely_forward/ar1.mod	deterministic_simulations/purely_forward/ar1.mod		0		
+deterministic_simulations/purely_forward/nk.mod	deterministic_simulations/purely_forward/nk.mod		0		
+deterministic_simulations/purely_backward/ar1.mod	deterministic_simulations/purely_backward/ar1.mod		0		
+deterministic_simulations/purely_static/toto.mod	deterministic_simulations/purely_static/toto.mod		0		
+deterministic_simulations/rbc_det1.mod	deterministic_simulations/rbc_det1.mod		0		
+deterministic_simulations/rbc_det2.mod	deterministic_simulations/rbc_det2.mod		0		
+deterministic_simulations/rbc_det3.mod	deterministic_simulations/rbc_det3.mod		0		
+deterministic_simulations/rbc_det4.mod	deterministic_simulations/rbc_det4.mod		0		
+deterministic_simulations/rbc_det4_endval_initval_xfail.mod	deterministic_simulations/rbc_det4_endval_initval_xfail.mod		1		
+deterministic_simulations/rbc_det5.mod	deterministic_simulations/rbc_det5.mod		0		
+deterministic_simulations/rbc_det6.mod	deterministic_simulations/rbc_det6.mod		0		
+deterministic_simulations/homotopy.mod	deterministic_simulations/homotopy.mod		0		
+deterministic_simulations/homotopy_histval.mod	deterministic_simulations/homotopy_histval.mod		0		
+deterministic_simulations/homotopy_endval_steady_linearization.mod	deterministic_simulations/homotopy_endval_steady_linearization.mod	deterministic_simulations/homotopy_linearization.inc	0		
+deterministic_simulations/homotopy_marginal_linearization.mod	deterministic_simulations/homotopy_marginal_linearization.mod	deterministic_simulations/homotopy_linearization.inc	0		
+deterministic_simulations/homotopy_linearization_condpaths.mod	deterministic_simulations/homotopy_linearization_condpaths.mod	deterministic_simulations/homotopy_linearization.inc	0		
+deterministic_simulations/homotopy_marglinearization_condpaths.mod	deterministic_simulations/homotopy_marglinearization_condpaths.mod	deterministic_simulations/homotopy_linearization.inc	0		
+deterministic_simulations/homotopy_exclude_varexo.mod	deterministic_simulations/homotopy_exclude_varexo.mod		0		
+deterministic_simulations/rbc_det_exo_lag_2c.mod	deterministic_simulations/rbc_det_exo_lag_2a.mod;deterministic_simulations/rbc_det_exo_lag_2b.mod;deterministic_simulations/rbc_det_exo_lag_2c.mod		0		
+deterministic_simulations/multiple_lead_lags/sim_lead_lag.mod	deterministic_simulations/multiple_lead_lags/sim_base.mod;deterministic_simulations/multiple_lead_lags/sim_exo_lead_lag_aux_vars.mod;deterministic_simulations/multiple_lead_lags/sim_exo_lead_lag.mod;deterministic_simulations/multiple_lead_lags/sim_endo_lead_lag_aux_vars.mod;deterministic_simulations/multiple_lead_lags/sim_endo_lead_lag.mod;deterministic_simulations/multiple_lead_lags/sim_lead_lag_aux_vars.mod;deterministic_simulations/multiple_lead_lags/sim_lead_lag.mod		0		
+deterministic_simulations/ramst_block_mfs1.mod	deterministic_simulations/ramst_block_mfs1.mod		0		
+deterministic_simulations/linear_approximation/sw.mod	deterministic_simulations/linear_approximation/sw.mod		0		
+deterministic_simulations/multiple_lead_lags/AR2.mod	deterministic_simulations/multiple_lead_lags/AR2.mod		0		
+deterministic_simulations/multiple_lead_lags/AR2_forward.mod	deterministic_simulations/multiple_lead_lags/AR2_forward.mod		0		
+deterministic_simulations/multiple_lead_lags/ramst_augmented_histval.mod	deterministic_simulations/ramst.mod;deterministic_simulations/multiple_lead_lags/ramst_augmented_histval.mod		0		
+deterministic_simulations/rbc_det_stack_solve_algo_7_exo_lead.mod	deterministic_simulations/rbc_det.mod;deterministic_simulations/rbc_det_stack_solve_algo_7.mod;deterministic_simulations/rbc_det_stack_solve_algo_7_exo_lag.mod;deterministic_simulations/rbc_det_stack_solve_algo_7_exo_lead.mod		0		
+deterministic_simulations/pfwee.mod	deterministic_simulations/pfwee.mod	deterministic_simulations/pfwee.csv	0		
+deterministic_simulations/pfwee_constant_sim_length.mod	deterministic_simulations/pfwee_constant_sim_length.mod	deterministic_simulations/pfwee.csv	0		
+deterministic_simulations/pfwee_learnt_in.mod	deterministic_simulations/pfwee_learnt_in.mod	deterministic_simulations/pfwee_learnt_in.inc	0		
+deterministic_simulations/pfwee_learnt_in_bare_1st_period.mod	deterministic_simulations/pfwee_learnt_in_bare_1st_period.mod	deterministic_simulations/pfwee_learnt_in.inc	0		
+deterministic_simulations/pfwee_learnt_in_dseries.mod	deterministic_simulations/pfwee_learnt_in_dseries.mod	deterministic_simulations/pfwee_learnt_in.inc	0		
+deterministic_simulations/pfwee_learnt_in_dseries_bare_1st_period.mod	deterministic_simulations/pfwee_learnt_in_dseries_bare_1st_period.mod	deterministic_simulations/pfwee_learnt_in.inc	0		
+deterministic_simulations/pfwee_multiple_shocks.mod	deterministic_simulations/pfwee_multiple_shocks.mod		0		
+deterministic_simulations/pfwee_homotopy_linearization.mod	deterministic_simulations/pfwee_homotopy_linearization.mod	deterministic_simulations/pfwee_homotopy.inc	0		
+deterministic_simulations/pfwee_homotopy_marginal_linearization.mod	deterministic_simulations/pfwee_homotopy_marginal_linearization.mod	deterministic_simulations/pfwee_homotopy.inc	0		
+deterministic_simulations/pfwee_homotopy_linearization_condpaths.mod	deterministic_simulations/pfwee_homotopy_linearization_condpaths.mod	deterministic_simulations/pfwee_homotopy.inc	0		
+deterministic_simulations/pfwee_homotopy_marglin_condpaths.mod	deterministic_simulations/pfwee_homotopy_marglin_condpaths.mod	deterministic_simulations/pfwee_homotopy.inc	0		
+deterministic_simulations/pfwee_marginal_linearization.mod	deterministic_simulations/pfwee_marginal_linearization.mod		0		
+deterministic_simulations/ramst_shock_paths.mod	deterministic_simulations/ramst_shock_paths.mod		0		
+deterministic_simulations/ramst_shock_paths_pfwee.mod	deterministic_simulations/ramst_shock_paths_pfwee.mod		0		
+deterministic_simulations/ramst_shock_paths_controlled.mod	deterministic_simulations/ramst_shock_paths_controlled.mod		0		
+deterministic_simulations/lbj/rbc.mod	deterministic_simulations/lbj/rbc.mod		0		
+lmmcp/rbc.mod	lmmcp/rbc.mod		0		
+lmmcp/sw_newton.mod	lmmcp/sw_lmmcp.mod;lmmcp/sw_newton.mod	lmmcp/sw-common-header.inc;lmmcp/sw-common-footer.inc	0		
+trend_var/fs2000_nonstationary.mod	trend_var/fs2000_nonstationary.mod		0		
+trend_var/fs2000_log_nonstationary.mod	trend_var/fs2000_log_nonstationary.mod		0		
+decision_rules/third_order/FV2011.mod	decision_rules/third_order/FV2011.mod	decision_rules/third_order/comparison_policy_functions_dynare_mathematica.m;decision_rules/third_order/FV_2011_policyfunctions.mat	0		
+decision_rules/example1_use_dll.mod	decision_rules/example1.mod;decision_rules/example1_use_dll.mod	decision_rules/example1_results_dyn_432.mat	0		
+decision_rules/ar_qz_test.mod	decision_rules/ar_qz_test.mod		0		
+shock_decomposition/example1_calib_shock_decomp.mod	shock_decomposition/example1_calib_shock_decomp.mod	shock_decomposition/example1_calib_shock_decomp_data.mat	0		
+shock_decomposition/fs2000_est.mod	shock_decomposition/fs2000_est.mod	shock_decomposition/fsdat_simul.m;shock_decomposition/fs2000.inc	0		
+shock_decomposition/fs2000_est_varlist.mod	shock_decomposition/fs2000_est_varlist.mod	shock_decomposition/fsdat_simul.m;shock_decomposition/fs2000.inc	0		
+shock_decomposition/fs2000_cal_groups.mod	shock_decomposition/fs2000_cal_groups.mod	shock_decomposition/fsdat_simul.m;shock_decomposition/fs2000.inc	0		
+shock_decomposition/fs2000_forecasts.mod	shock_decomposition/fs2000_forecasts.mod	shock_decomposition/fsdat_simul.m;shock_decomposition/fs2000.inc	0		
+shock_decomposition/ls2003_plot.mod	shock_decomposition/ls2003_plot.mod	ls2003/data_ca1.m	0		
+shock_decomposition/shock_decomp_backward.mod	shock_decomposition/shock_decomp_backward.mod		0		
+stochastic_purely_forward/stochastic_purely_forward.mod	stochastic_purely_forward/stochastic_purely_forward.mod		0		
+stochastic_purely_forward/stochastic_purely_forward_with_static.mod	stochastic_purely_forward/stochastic_purely_forward_with_static.mod		0		
+forecast/forecast_test_AR1.mod	forecast/forecast_test_AR1.mod		0		
+forecast/forecast_test_AR1_order_2.mod	forecast/forecast_test_AR1_order_2.mod		0		
+forecast/forecast_test_AR1_varexo_det.mod	forecast/forecast_test_AR1_varexo_det.mod		0		
+forecast/fs2000_forecast.mod	forecast/fs2000_forecast.mod		0		
+forecast/fs2000_forecast_varexo_det.mod	forecast/fs2000_forecast_varexo_det.mod		0		
+forecast/forecast_test_AR1_varexo_det_order_2.mod	forecast/forecast_test_AR1_varexo_det_order_2.mod		0		
+forecast/fs2000_forecast.mod	forecast/fs2000_forecast.mod		0		
+forecast/fs2000_forecast_varexo_det.mod	forecast/fs2000_forecast_varexo_det.mod		0		
+forecast/example1_varexo_det.mod	forecast/example1_varexo_det.mod		0		
+forecast/Hansen_exo_det_forecast.mod	forecast/Hansen_exo_det_forecast.mod		0		
+forecast/rbc_basic_forecast_varexo_det.mod	forecast/rbc_basic_forecast_varexo_det.mod		0		
+forecast/linear_exo_det_forecast.mod	forecast/linear_exo_det_forecast.mod		0		
+forecast/ls2003_rolling_window_forecast.mod	forecast/ls2003_rolling_window_forecast.mod	recursive/data_ca1.m	0		
+gradient/fs2000_numgrad_13.mod	gradient/fs2000_numgrad_13.mod	fs2000/fsdat_simul.m	0		
+gradient/fs2000_numgrad_15.mod	gradient/fs2000_numgrad_15.mod	fs2000/fsdat_simul.m	0		
+gradient/fs2000_numgrad_2.mod	gradient/fs2000_numgrad_2.mod	fs2000/fsdat_simul.m	0		
+gradient/fs2000_numgrad_3.mod	gradient/fs2000_numgrad_3.mod	fs2000/fsdat_simul.m	0		
+gradient/fs2000_numgrad_5.mod	gradient/fs2000_numgrad_5.mod	fs2000/fsdat_simul.m	0		
+filter_step_ahead/fs2000_filter_step_ahead_bayesian.mod	filter_step_ahead/fs2000_filter_step_ahead_bayesian.mod	fs2000/fsdat_simul.m	0		
+filter_step_ahead/fs2000_filter_step_ahead_ML.mod	filter_step_ahead/fs2000_filter_step_ahead_ML.mod	fs2000/fsdat_simul.m	0		
+filter_step_ahead/trend_cycle_decomposition.mod	filter_step_ahead/trend_cycle_decomposition.mod	filter_step_ahead/trend_cycle_decomposition_data.m	0		
+loglinear/example4_loglinear.mod	loglinear/example4_exp.mod;loglinear/example4_loglinear.mod		0		
+loglinear/example4_loglinear_lagged_exogenous_a.mod	loglinear/example4_loglinear_lagged_exogenous.mod;loglinear/example4_loglinear_lagged_exogenous_a.mod		0		
+loglinear/example4_loglinear_histval.mod	loglinear/example4_exp_histval.mod;loglinear/example4_loglinear_histval.mod		0		
+smoother2histval/fs2000_simul.mod	smoother2histval/fs2000_smooth.mod;smoother2histval/fs2000_simul.mod	smoother2histval/fsdat_simul.m	0		
+smoother2histval/fs2000_smooth_stoch_simul.mod	smoother2histval/fs2000_smooth_stoch_simul.mod	smoother2histval/fsdat_simul.m	0		
+smoother2histval/fs2000_smooth_forecast.mod	smoother2histval/fs2000_smooth_forecast.mod	smoother2histval/fsdat_simul.m	0		
+smoother2histval/fs2000_calib_smoother.mod	smoother2histval/fs2000_calib_smoother.mod	smoother2histval/fsdat_simul.m	0		
+epilogue/example1.mod	epilogue/example1.mod		0		
+differentiate_forward_vars/RBC_differentiate_forward.mod	differentiate_forward_vars/RBC_differentiate_forward.mod		0		
+partitioning/partitions.mod	partitioning/partitions.mod		0		
+prior_posterior_function/fs2000_prior_posterior_function.mod	prior_posterior_function/fs2000_prior_posterior_function.mod	fs2000/fsdat_simul.m;prior_posterior_function/posterior_function_demo.m	0		
+observation_trends_and_prefiltering/ML/Trend_loglinear_no_prefilter_first_obs.mod	observation_trends_and_prefiltering/ML/Trend_loglinear_no_prefilter.mod;observation_trends_and_prefiltering/ML/Trend_loglinear_no_prefilter_first_obs.mod	observation_trends_and_prefiltering/Trend_exp_model_no_prefilter_common.inc;observation_trends_and_prefiltering/Trend_load_data_common.inc;observation_trends_and_prefiltering/Trend_diagnostics_ML_common.inc;observation_trends_and_prefiltering/Trend_no_prefilter_conditional_forecast.inc;observation_trends_and_prefiltering/generate_trend_stationary_AR1.m	0		
+observation_trends_and_prefiltering/ML/Trend_loglinear_prefilter.mod	observation_trends_and_prefiltering/ML/Trend_loglinear_prefilter.mod	observation_trends_and_prefiltering/Trend_exp_model_prefilter_common.inc;observation_trends_and_prefiltering/Trend_load_data_common.inc;observation_trends_and_prefiltering/Trend_diagnostics_ML_common.inc;observation_trends_and_prefiltering/generate_trend_stationary_AR1.m	0		
+observation_trends_and_prefiltering/ML/Trend_loglinear_prefilter_first_obs.mod	observation_trends_and_prefiltering/ML/Trend_loglinear_prefilter_first_obs.mod	observation_trends_and_prefiltering/Trend_exp_model_prefilter_common.inc;observation_trends_and_prefiltering/Trend_load_data_common.inc;observation_trends_and_prefiltering/Trend_diagnostics_ML_common.inc;observation_trends_and_prefiltering/generate_trend_stationary_AR1.m	0		
+observation_trends_and_prefiltering/ML/Trend_no_prefilter_first_obs.mod	observation_trends_and_prefiltering/ML/Trend_no_prefilter.mod;observation_trends_and_prefiltering/ML/Trend_no_prefilter_first_obs.mod	observation_trends_and_prefiltering/Trend_model_no_prefilter_common.inc;observation_trends_and_prefiltering/Trend_load_data_common.inc;observation_trends_and_prefiltering/Trend_diagnostics_ML_common.inc;observation_trends_and_prefiltering/Trend_no_prefilter_conditional_forecast.inc;observation_trends_and_prefiltering/generate_trend_stationary_AR1.m	0		
+observation_trends_and_prefiltering/ML/Trend_prefilter.mod	observation_trends_and_prefiltering/ML/Trend_prefilter.mod	observation_trends_and_prefiltering/Trend_model_prefilter_common.inc;observation_trends_and_prefiltering/Trend_load_data_common.inc;observation_trends_and_prefiltering/Trend_diagnostics_ML_common.inc;observation_trends_and_prefiltering/generate_trend_stationary_AR1.m	0		
+observation_trends_and_prefiltering/ML/Trend_prefilter_first_obs.mod	observation_trends_and_prefiltering/ML/Trend_prefilter_first_obs.mod	observation_trends_and_prefiltering/Trend_model_prefilter_common.inc;observation_trends_and_prefiltering/Trend_load_data_common.inc;observation_trends_and_prefiltering/Trend_diagnostics_ML_common.inc;observation_trends_and_prefiltering/generate_trend_stationary_AR1.m	0		
+observation_trends_and_prefiltering/ML/Trend_no_prefilter_selected_var.mod	observation_trends_and_prefiltering/ML/Trend_no_prefilter_selected_var.mod	observation_trends_and_prefiltering/generate_trend_stationary_AR1.m	0		
+observation_trends_and_prefiltering/calib_smoother/Tr_prefilt_first_obs_cal_smooth.mod	observation_trends_and_prefiltering/calib_smoother/Tr_no_prefilter_calib_smoother.mod;observation_trends_and_prefiltering/calib_smoother/Tr_no_prefil_f_obs_loglin_cal_smoother.mod;observation_trends_and_prefiltering/calib_smoother/Tr_no_prefilter_loglin_calib_smoother.mod;observation_trends_and_prefiltering/calib_smoother/Tr_no_prefilt_first_obs_cal_smooth.mod;observation_trends_and_prefiltering/calib_smoother/Tr_prefil_f_obs_loglin_cal_smoother.mod;observation_trends_and_prefiltering/calib_smoother/Tr_prefilter_calib_smoother.mod;observation_trends_and_prefiltering/calib_smoother/Tr_prefilter_loglin_calib_smoother.mod;observation_trends_and_prefiltering/calib_smoother/Tr_prefilt_first_obs_cal_smooth.mod	observation_trends_and_prefiltering/Trend_exp_model_calib_no_prefilter_common.inc;observation_trends_and_prefiltering/Trend_exp_model_calib_prefilter_common.inc;observation_trends_and_prefiltering/Trend_model_calib_no_prefilter_common.inc;observation_trends_and_prefiltering/Trend_model_calib_prefilter_common.inc;observation_trends_and_prefiltering/Trend_load_data_common.inc;observation_trends_and_prefiltering/Trend_diagnostics_calib_common.inc;observation_trends_and_prefiltering/generate_trend_stationary_AR1.m	0		
+bgp/solow-1/solow.mod	bgp/solow-1/solow.mod		0		
+bgp/nk-1/nk.mod	bgp/nk-1/nk.mod		0		
+bgp/ramsey-1/ramsey.mod	bgp/ramsey-1/ramsey.mod		0		
+model-inversion/bk-1/solow_ces.mod	model-inversion/bk-1/solow_ces.mod		0		
+model-inversion/bk-2/solow_ces.mod	model-inversion/bk-2/solow_ces.mod		0		
+model-inversion/bk-3a/varmodel.mod	model-inversion/bk-3a/varmodel.mod		0		
+model-inversion/bk-3a-nlsolve/varmodel.mod	model-inversion/bk-3a-nlsolve/varmodel.mod		0		
+model-inversion/bk-3b/varmodel.mod	model-inversion/bk-3b/varmodel.mod		0		
+model-inversion/bk-3b-nlsolve/varmodel.mod	model-inversion/bk-3b-nlsolve/varmodel.mod		0		
+model-inversion/bk-4/varmodel.mod	model-inversion/bk-4/varmodel.mod		0		
+model-inversion/bk-4-nlsolve/varmodel.mod	model-inversion/bk-4-nlsolve/varmodel.mod		0		
+model-inversion/bk-5/varmodel.mod	model-inversion/bk-5/varmodel.mod		0		
+model-inversion/bk-5-nlsolve/varmodel.mod	model-inversion/bk-5-nlsolve/varmodel.mod		0		
+model-inversion/bk-6/varmodel.mod	model-inversion/bk-6/varmodel.mod		0		
+model-inversion/bk-7/varmodel.mod	model-inversion/bk-7/varmodel.mod		0		
+model-inversion/bk-8/varmodel.mod	model-inversion/bk-8/varmodel.mod		0		
+model-inversion/bk-9/msm1.mod	model-inversion/bk-9/msm1.mod		0		
+model-inversion/bk-9/msm2.mod	model-inversion/bk-9/msm2.mod		0		
+model-inversion/bk-diff-1/varmodel.mod	model-inversion/bk-diff-1/varmodel.mod		0		
+model-inversion/bk-diff-2/varmodel.mod	model-inversion/bk-diff-2/varmodel.mod		0		
+model-inversion/bk-diff-3/varmodel.mod	model-inversion/bk-diff-3/varmodel.mod		0		
+model-inversion/bk-diff-4/varmodel.mod	model-inversion/bk-diff-4/varmodel.mod		0		
+model-inversion/bk-diff-5/varmodel.mod	model-inversion/bk-diff-5/varmodel.mod		0		
+model-inversion/nk-1/invert.mod	model-inversion/nk-1/simulate.mod;model-inversion/nk-1/invert.mod		0		
+model-inversion/nk-2/z_check_inversion.mod	model-inversion/nk-2/simulate.mod;model-inversion/nk-2/invert.mod;model-inversion/nk-2/z_check_inversion.mod		0		
+dynare-command-options/ramst.mod	dynare-command-options/ramst.mod		0		
+log_transform/example1.mod	log_transform/example1.mod		0		
+log_transform/ramst.mod	deterministic_simulations/ramst.mod;log_transform/ramst.mod		0		
+log_transform/fs2000_nonstationary.mod	log_transform/fs2000_nonstationary.mod		0		
+log_transform/nk_ramsey.mod	log_transform/nk_ramsey.mod		0		
+solve_algo_12_14/simul_backward_14.mod	solve_algo_12_14/simul_backward_reference.mod;solve_algo_12_14/simul_backward_12.mod;solve_algo_12_14/simul_backward_14.mod	solve_algo_12_14/simul_backward_common.inc;solve_algo_12_14/backward_model.inc	0		
+solve_algo_12_14/purely_backward_14.mod	solve_algo_12_14/purely_backward_reference.mod;solve_algo_12_14/purely_backward_12.mod;solve_algo_12_14/purely_backward_14.mod	solve_algo_12_14/purely_backward_common.inc;solve_algo_12_14/backward_model.inc	0		
+solve_algo_12_14/purely_static_14.mod	solve_algo_12_14/purely_static_reference.mod;solve_algo_12_14/purely_static_12.mod;solve_algo_12_14/purely_static_14.mod	solve_algo_12_14/purely_static_common.inc	0		
+solve_algo_12_14/purely_forward_14.mod	solve_algo_12_14/purely_forward_reference.mod;solve_algo_12_14/purely_forward_12.mod;solve_algo_12_14/purely_forward_14.mod	solve_algo_12_14/purely_forward_common.inc	0		
+deprecated/ramsey_ex.mod	optimal_policy/Ramsey/ramsey_ex_initval.mod;deprecated/ramsey_ex.mod		0		
+deprecated/ramst.mod	deterministic_simulations/ramst.mod;deprecated/ramst.mod		0		
+deterministic_simulations/ramst_pf_controlled_paths_check.mod	deterministic_simulations/ramst_pf_controlled_paths.mod;deterministic_simulations/ramst_pf_controlled_paths_lbj.mod;deterministic_simulations/ramst_pf_controlled_paths_ssa7.mod;deterministic_simulations/ramst_pf_controlled_paths_check.mod	deterministic_simulations/ramst_pf_controlled_paths_common.inc	0		
+deterministic_simulations/ramst_pfwee_controlled_paths.mod	deterministic_simulations/ramst_pfwee_controlled_paths.mod	deterministic_simulations/ramst_pf_controlled_paths_common.inc	0		
+var-expectations/1/example1.mod	var-expectations/1/example1.mod		0		
+var-expectations/1-with-time-shift-a/example1.mod	var-expectations/1-with-time-shift-a/example1.mod		0		
+var-expectations/2/example1.mod	var-expectations/2/example1.mod		0		
+var-expectations/2-with-time-shift/example1.mod	var-expectations/2-with-time-shift/example1.mod		0		
+var-expectations/4/example1.mod	var-expectations/3/example1.mod;var-expectations/4/example1.mod		0		
+var-expectations/4-with-time-shift/example1.mod	var-expectations/3-with-time-shift/example1.mod;var-expectations/4-with-time-shift/example1.mod		0		
+var-expectations/5/example1.mod	var-expectations/5/example1.mod		0		
+var-expectations/5-with-time-shift/example1.mod	var-expectations/5-with-time-shift/example1.mod		0		
+var-expectations/6/substitution.mod	var-expectations/6/example1.mod;var-expectations/6/substitution.mod		0		
+var-expectations/6-with-time-shift/substitution.mod	var-expectations/6-with-time-shift/example1.mod;var-expectations/6-with-time-shift/substitution.mod		0		
+var-expectations/7/substitution.mod	var-expectations/7/example1.mod;var-expectations/7/substitution.mod		0		
+var-expectations/8/substitution.mod	var-expectations/8/example1.mod;var-expectations/8/substitution.mod		0		
+var-expectations/9/example1.mod	var-expectations/9/example1.mod		0		
+var-expectations/10/example1.mod	var-expectations/10/example1.mod		0		
+var-expectations/11/example1.mod	var-expectations/11/example1.mod		0		
+var-expectations/12/example1.mod	var-expectations/12/example1.mod		0		
+trend-component-and-var-models/vm1.mod	trend-component-and-var-models/vm1.mod		0		
+trend-component-and-var-models/vm2.mod	trend-component-and-var-models/vm2.mod		0		
+trend-component-and-var-models/vm3.mod	trend-component-and-var-models/vm3.mod		0		
+trend-component-and-var-models/vm4.mod	trend-component-and-var-models/vm4.mod		0		
+trend-component-and-var-models/vm5.mod	trend-component-and-var-models/vm5.mod		0		
+trend-component-and-var-models/tcm1.mod	trend-component-and-var-models/tcm1.mod		0		
+trend-component-and-var-models/tcm2.mod	trend-component-and-var-models/tcm2.mod		0		
+trend-component-and-var-models/tcm3.mod	trend-component-and-var-models/tcm3.mod		0		
+trend-component-and-var-models/tcm4.mod	trend-component-and-var-models/tcm4.mod		0		
+trend-component-and-var-models/tcm5.mod	trend-component-and-var-models/tcm5.mod		0		
+trend-component-and-var-models/tcm8.mod	trend-component-and-var-models/tcm6.mod;trend-component-and-var-models/tcm7.mod;trend-component-and-var-models/tcm8.mod		0		
+trend-component-and-var-models/tcm9.mod	trend-component-and-var-models/tcm9.mod		0		
+trend-component-and-var-models/tcm10.mod	trend-component-and-var-models/tcm10.mod		0		
+trend-component-and-var-models/tcm11.mod	trend-component-and-var-models/tcm11.mod		0		
+trend-component-and-var-models/tcm12.mod	trend-component-and-var-models/tcm12.mod		0		
+trend-component-and-var-models/legacy/vm1.mod	trend-component-and-var-models/legacy/vm1.mod		0		
+trend-component-and-var-models/legacy/vm2.mod	trend-component-and-var-models/legacy/vm2.mod		0		
+trend-component-and-var-models/legacy/vm3.mod	trend-component-and-var-models/legacy/vm3.mod		0		
+trend-component-and-var-models/legacy/tcm1.mod	trend-component-and-var-models/legacy/tcm1.mod		0		
+trend-component-and-var-models/legacy/tcm2.mod	trend-component-and-var-models/legacy/tcm2.mod		0		
+trend-component-and-var-models/legacy/tcm3.mod	trend-component-and-var-models/legacy/tcm3.mod		0		
+trend-component-and-var-models/legacy/tcm4.mod	trend-component-and-var-models/legacy/tcm4.mod		0		
+trend-component-and-var-models/legacy/tcm5.mod	trend-component-and-var-models/legacy/tcm5.mod		0		
+pac/var-1/example1.mod	pac/var-1/example1.mod		0		
+pac/var-2/example1.mod	pac/var-2/example1.mod		0		
+pac/var-3/example1.mod	pac/var-3/example1.mod		0		
+pac/var-4/example1.mod	pac/var-4/example1.mod		0		
+pac/var-5/substitution.mod	pac/var-5/example1.mod;pac/var-5/substitution.mod		0		
+pac/var-6/substitution.mod	pac/var-6/example1.mod;pac/var-6/substitution.mod		0		
+pac/var-7/substitution.mod	pac/var-7/example1.mod;pac/var-7/substitution.mod		0		
+pac/var-8/substitution.mod	pac/var-8/example1.mod;pac/var-8/substitution.mod		0		
+pac/var-8e/example1.mod	pac/var-8e/example1.mod		0		
+pac/var-9/substitution.mod	pac/var-9/example1.mod;pac/var-9/substitution.mod		0		
+pac/var-9e/example1.mod	pac/var-9e/example1.mod		0		
+pac/var-10e/example2.mod	pac/var-10e/example1.mod;pac/var-10e/example2.mod		0		
+pac/var-11e/example1.mod	pac/var-11e/example1.mod		0		
+pac/var-12/example1.mod	pac/var-12/example1.mod		0		
+pac/var-12/example2.mod	pac/var-12/example2.mod		0		
+pac/var-12/example3.mod	pac/var-12/example3.mod		0		
+pac/var-12/example4.mod	pac/var-12/example4.mod		0		
+pac/var-12/example5.mod	pac/var-12/example5.mod		0		
+pac/var-12/example11.mod	pac/var-12/example11.mod		0		
+pac/var-12/example12.mod	pac/var-12/example12.mod		0		
+pac/trend-component-1/example1.mod	pac/trend-component-1/example1.mod		0		
+pac/trend-component-2/example1.mod	pac/trend-component-2/example1.mod		0		
+pac/trend-component-3/example1.mod	pac/trend-component-3/example1.mod		0		
+pac/trend-component-4/example1.mod	pac/trend-component-4/example1.mod		0		
+pac/trend-component-5/example1.mod	pac/trend-component-5/example1.mod		0		
+pac/trend-component-6/example1.mod	pac/trend-component-6/example1.mod		0		
+pac/trend-component-7/example1.mod	pac/trend-component-7/example1.mod		0		
+pac/trend-component-9/example1.mod	pac/trend-component-9/example1.mod		0		
+pac/trend-component-10/example1.mod	pac/trend-component-10/example1.mod		0		
+pac/trend-component-11/example1.mod	pac/trend-component-11/example1.mod		0		
+pac/trend-component-12/example1.mod	pac/trend-component-12/example1.mod		0		
+pac/trend-component-13a/example1.mod	pac/trend-component-13a/example1.mod		0		
+pac/trend-component-13b/example1.mod	pac/trend-component-13b/example1.mod		0		
+pac/trend-component-14/substitution.mod	pac/trend-component-14/example1.mod;pac/trend-component-14/substitution.mod		0		
+pac/trend-component-15/example1.mod	pac/trend-component-15/example1.mod		0		
+pac/trend-component-16/example1.mod	pac/trend-component-16/example1.mod		0		
+pac/trend-component-17/example1.mod	pac/trend-component-17/example1.mod		0		
+pac/trend-component-18/example1.mod	pac/trend-component-18/example1.mod		0		
+pac/trend-component-19/example1.mod	pac/trend-component-19/example1.mod		0		
+pac/trend-component-19/example2.mod	pac/trend-component-19/example2.mod		0		
+pac/trend-component-19/example3.mod	pac/trend-component-19/example3.mod		0		
+pac/trend-component-19-growth-lin-comb/example1.mod	pac/trend-component-19-growth-lin-comb/example1.mod		0		
+pac/trend-component-1-mce/example_det.mod	pac/trend-component-1-mce/example_det.mod		0		
+pac/trend-component-1-mce/example_sto.mod	pac/trend-component-1-mce/example_sto.mod		0		
+pac/trend-component-2-mce/example_det.mod	pac/trend-component-2-mce/example_det.mod		0		
+pac/trend-component-2-mce/example_sto.mod	pac/trend-component-2-mce/example_sto.mod		0		
+pac/trend-component-20-1/example1.mod	pac/trend-component-20-1/example1.mod		0		
+pac/trend-component-20-2/example1.mod	pac/trend-component-20-2/example1.mod		0		
+pac/trend-component-20-3/example1.mod	pac/trend-component-20-3/example1.mod		0		
+pac/trend-component-20-4/example1.mod	pac/trend-component-20-4/example1.mod		0		
+pac/trend-component-21/example1.mod	pac/trend-component-21/example1.mod		0		
+pac/trend-component-22/example1.mod	pac/trend-component-22/example1.mod		0		
+pac/trend-component-23/example1.mod	pac/trend-component-23/example1.mod		0		
+pac/trend-component-24/example1.mod	pac/trend-component-24/example1.mod		0		
+pac/trend-component-25/example1.mod	pac/trend-component-25/example1.mod		0		
+pac/trend-component-26/example1.mod	pac/trend-component-26/example1.mod		0		
+pac/trend-component-27/example1.mod	pac/trend-component-27/example1.mod		0		
+pac/trend-component-28/example1.mod	pac/trend-component-28/example1.mod		0		
+pac/trend-component-28/example2.mod	pac/trend-component-28/example2.mod		0		
+pac/trend-component-28/example3.mod	pac/trend-component-28/example3.mod		0		
+pac/trend-component-28/example4.mod	pac/trend-component-28/example4.mod		0		
+pac/trend-component-28/example5.mod	pac/trend-component-28/example5.mod		0		
+pac/trend-component-28/example6.mod	pac/trend-component-28/example6.mod		0		
+pac/trend-component-29/example1.mod	pac/trend-component-29/example1.mod		0		
+pac/trend-component-29/example2.mod	pac/trend-component-29/example2.mod		0		
+pac/trend-component-30/example1.mod	pac/trend-component-30/example1.mod		0		
+write/example1.mod	write/example1.mod		0		
+ecb/backward-models/irf/solow_1.mod	ecb/backward-models/irf/solow_1.mod		0		
+ecb/backward-models/irf/solow_2.mod	ecb/backward-models/irf/solow_2.mod		0		
+ecb/cherrypick/test1.mod	ecb/cherrypick/test1.mod		0		
+ecb/cherrypick/test2.mod	ecb/cherrypick/test2.mod		0		
+ecb/contribution-plots/contrib1.mod	ecb/contribution-plots/contrib1.mod		0		
+ecb/contribution-plots/contrib2.mod	ecb/contribution-plots/contrib2.mod		0		
+estimation/univariate/bayesian.mod	estimation/univariate/bayesian.mod	estimation/univariate/data.csv	0		
+estimation/univariate/bayesian_param_names.mod	estimation/univariate/bayesian_param_names.mod	estimation/univariate/data.csv	0		
+ecb/SURGibbs/fulton_fish.mod	ecb/SURGibbs/fulton_fish.mod	ecb/SURGibbs/fishdata.csv	0		
+estimation/univariate/ols/ols_wc_1.mod	estimation/univariate/ols/ols_wc_1.mod	estimation/univariate/ols/mc-ols.inc	0		
+estimation/univariate/ols/ols_wc_2.mod	estimation/univariate/ols/ols_wc_2.mod	estimation/univariate/ols/mc-ols.inc	0		
+estimation/univariate/ols/ols_wc_3.mod	estimation/univariate/ols/ols_wc_3.mod	estimation/univariate/ols/mc-ols.inc	0		
+estimation/univariate/ols/ols_date_range.mod	estimation/univariate/ols/ols_date_range.mod	estimation/univariate/ols/mc-ols.inc	0		
+estimation/univariate/ols/ols_param_names.mod	estimation/univariate/ols/ols_param_names.mod	estimation/univariate/ols/mc-ols.inc	0		
+estimation/univariate/ols/ols_base.mod	estimation/univariate/ols/ols_base.mod	estimation/univariate/ols/mc-ols.inc	0		
+ecb/SUR/sur_noniterative.mod	ecb/SUR/sur_noniterative.mod		0		
+ecb/SUR/sur_params_noniterative.mod	ecb/SUR/sur_params_noniterative.mod		0		
+ecb/SUR/panel_var_diff_NB_simulation_test.mod	ecb/SUR/panel_var_diff_NB_simulation_test.mod		0		
+ecb/SUR/panel_var_diff_NB_simulation_zero_eq.mod	ecb/SUR/panel_var_diff_NB_simulation_zero_eq.mod		0		
+ecb/pooled_ols/panel_var_diff_NB_simulation_test.mod	ecb/pooled_ols/panel_var_diff_NB_simulation_test.mod		0		
+ecb/pooled_ols/test_param_names.mod	ecb/pooled_ols/test_param_names.mod		0		
+ecb/pooled_fgls/panel_var_diff_NB_simulation_test.mod	ecb/pooled_fgls/panel_var_diff_NB_simulation_test.mod		0		
+ecb/pooled_fgls/test_param_names.mod	ecb/pooled_fgls/test_param_names.mod		0		
+heterogeneity/ks.mod	heterogeneity/ks.mod	heterogeneity/ks.mat;heterogeneity/expect_error.m;heterogeneity/print_test_summary.m;heterogeneity/run_test.m;heterogeneity/test_solve_functionality.m;heterogeneity/test_simulate_stochastic.m;heterogeneity/test_check_steady_state.m;heterogeneity/test_field_validation.m;heterogeneity/test_permutation.m	0		
+heterogeneity/hank_1a.mod	heterogeneity/hank_1a.mod	heterogeneity/hank_1a.mat;heterogeneity/print_test_summary.m;heterogeneity/run_test.m;heterogeneity/test_simulate_stochastic.m	0		
+heterogeneity/hank_1a.mod	heterogeneity/hank_1a.mod	heterogeneity/hank_1a.mat;heterogeneity/print_test_summary.m;heterogeneity/run_test.m;heterogeneity/test_simulate_news_shocks.m	0	-DDET_SHOCKS=1	
+heterogeneity/hank_2a.mod	heterogeneity/hank_2a.mod	heterogeneity/hank_2a.mat;heterogeneity/print_test_summary.m;heterogeneity/run_test.m;heterogeneity/test_simulate_stochastic.m;heterogeneity/test_permutation.m	0		
+heterogeneity/ks_commands.mod	heterogeneity/ks_commands.mod	heterogeneity/ks.mat	0		
+heterogeneity/ks_commands.mod	heterogeneity/ks_commands.mod	heterogeneity/ks.mat	0	-DDET_SHOCKS=1	
+heterogeneity/ks_news_shocks_stochastic_options_xfail.mod	heterogeneity/ks_news_shocks_stochastic_options_xfail.mod	heterogeneity/ks.mat	1	-DTEST_OPTION="periods"	
+heterogeneity/ks_news_shocks_stochastic_options_xfail.mod	heterogeneity/ks_news_shocks_stochastic_options_xfail.mod	heterogeneity/ks.mat	1	-DTEST_OPTION="irf"	
+heterogeneity/ks_news_shocks_stochastic_options_xfail.mod	heterogeneity/ks_news_shocks_stochastic_options_xfail.mod	heterogeneity/ks.mat	1	-DTEST_OPTION="irf_shocks"	
+heterogeneity/ks_news_shocks_stochastic_options_xfail.mod	heterogeneity/ks_news_shocks_stochastic_options_xfail.mod	heterogeneity/ks.mat	1	-DTEST_OPTION="relative_irf"	
+heterogeneity/ks_news_shocks_stochastic_options_xfail.mod	heterogeneity/ks_news_shocks_stochastic_options_xfail.mod	heterogeneity/ks.mat	1	-DTEST_OPTION="combined"	
+heterogeneity/nonseparable_het_lead_lag_xfail.mod	heterogeneity/nonseparable_het_lead_lag_xfail.mod		1		
+heterogeneity/het_exo_lag_xfail.mod	heterogeneity/het_exo_lag_xfail.mod		1		
+heterogeneity/het_exo_lead_xfail.mod	heterogeneity/het_exo_lead_xfail.mod		1		
+heterogeneity/het_endo_lag_deep_xfail.mod	heterogeneity/het_endo_lag_deep_xfail.mod		1		
+heterogeneity/het_endo_lead_deep_xfail.mod	heterogeneity/het_endo_lead_deep_xfail.mod		1		
+heterogeneity/analytical_rbc.mod	heterogeneity/analytical_rbc.mod		0		
+heterogeneity/analytical_rbc_2capital.mod	heterogeneity/analytical_rbc_2capital.mod		0		
+heterogeneity/ks_two_shocks.mod	heterogeneity/ks_two_shocks.mod	heterogeneity/ks_two_shocks.mat	0		
+heterogeneity/ks_steady_state.mod	heterogeneity/ks_steady_state.mod	heterogeneity/ks_sp.mat	0		
+heterogeneity/ks_steady_state_dense.mod	heterogeneity/ks_steady_state_dense.mod	heterogeneity/ks_sp_dense.mat	0		
+heterogeneity/hank_1a_steady_state.mod	heterogeneity/hank_1a_steady_state.mod	heterogeneity/hank_1a_sp.mat	0		
+heterogeneity/hank_2a_steady_state.mod	heterogeneity/hank_2a_steady_state.mod	heterogeneity/hank_2a_sp.mat	0		
+heterogeneity/large_file_download/ks_ssj.mod	heterogeneity/large_file_download/ks_ssj.mod	heterogeneity/large_file_download/print_test_summary.m;heterogeneity/large_file_download/run_test.m;heterogeneity/large_file_download/test_solve_with_custom_impulse_responses.m	0		
+heterogeneity/large_file_download/hank_1a_ssj.mod	heterogeneity/large_file_download/hank_1a_ssj.mod	heterogeneity/large_file_download/print_test_summary.m;heterogeneity/large_file_download/run_test.m;heterogeneity/large_file_download/test_solve_functionality.m;heterogeneity/large_file_download/test_solve_with_custom_impulse_responses.m;heterogeneity/large_file_download/test_simulate_stochastic.m	0		
+heterogeneity/large_file_download/hank_2a_ssj.mod	heterogeneity/large_file_download/hank_2a_ssj.mod	heterogeneity/large_file_download/print_test_summary.m;heterogeneity/large_file_download/run_test.m;heterogeneity/large_file_download/test_solve_functionality.m;heterogeneity/large_file_download/test_solve_with_custom_impulse_responses.m	0		
+preprocessor_checks/ramst_all_values_required_xfail.mod	preprocessor_checks/ramst_all_values_required_xfail.mod		1		
+preprocessor_checks/example1_undeclared_vars_xfail.mod	preprocessor_checks/example1_undeclared_vars_xfail.mod		1		
+estimation/estim_param_in_shock_value_xfail.mod	estimation/estim_param_in_shock_value_xfail.mod	estimation/fsdat_simul.m	1		
+optimal_policy/Ramsey/ramsey_ex_wrong_ss_file_xfail.mod	optimal_policy/Ramsey/ramsey_ex_wrong_ss_file_xfail.mod	optimal_policy/Ramsey/find_c.m	1		
+estimation/fs2000_mixed_ML_xfail.mod	estimation/fs2000_mixed_ML_xfail.mod	estimation/fsdat_simul.m	1		
+estimation/fs2000_stochastic_singularity_xfail.mod	estimation/fs2000_stochastic_singularity_xfail.mod	estimation/fsdat_simul.m	1		
+estimation/heteroskedastic_shocks/fs2000_het_XFAIL.mod	estimation/heteroskedastic_shocks/fs2000_het_XFAIL.mod	estimation/heteroskedastic_shocks/fs2000_het_model.inc;estimation/fsdat_simul.m	1		
+estimation/heteroskedastic_shocks/fs2000_het_XFAIL2.mod	estimation/heteroskedastic_shocks/fs2000_het_XFAIL2.mod	estimation/heteroskedastic_shocks/fs2000_het_model.inc;estimation/fsdat_simul.m	1		
+identification/ident_unit_root/ident_unit_root_xfail.mod	identification/ident_unit_root/ident_unit_root_xfail.mod		1		
+identification/LindeTrabandt/LindeTrabandt2019_xfail.mod	identification/LindeTrabandt/LindeTrabandt2019_xfail.mod		1		
+steady_state/Linear_steady_state_xfail.mod	steady_state/Linear_steady_state_xfail.mod		1		
+optimal_policy/Ramsey/ramsey_histval_xfail.mod	optimal_policy/Ramsey/ramsey_histval_xfail.mod	optimal_policy/Ramsey/find_c.m	1		
+occbin/model_irrcap_twoconstraints/dynrbc_token_xfail.mod	occbin/model_irrcap_twoconstraints/dynrbc_token_xfail.mod		1		
+particle/first_spec_xfail_0.mod	particle/first_spec_xfail_0.mod	particle/first_spec_common.inc	1		
+particle/first_spec_xfail_1.mod	particle/first_spec_xfail_1.mod	particle/first_spec_common.inc	1		
+kalman_initial_state/fs2000_kalman_initial_xfail.mod	kalman_initial_state/fs2000_kalman_initial_xfail.mod	kalman_initial_state/fs2000_common.inc;fs2000/fsdat_simul.m	1		
+preprocessor_checks/example1_extra_exo_xfail.mod	preprocessor_checks/example1_extra_exo_xfail.mod		1		
+estimation/tune_mh_jscale/fs2000_1_xfail.mod	estimation/tune_mh_jscale/fs2000_1_xfail.mod	estimation/tune_mh_jscale/fs2000.inc;estimation/fsdat_simul.m	1		
+estimation/tune_mh_jscale/fs2000_2_xfail.mod	estimation/tune_mh_jscale/fs2000_2_xfail.mod	estimation/tune_mh_jscale/fs2000.inc;estimation/fsdat_simul.m	1		
+estimation/no_init_estimation_check_first_obs/fs2000_init_check_XFAIL.mod	estimation/no_init_estimation_check_first_obs/fs2000_init_check_XFAIL.mod	estimation/no_init_estimation_check_first_obs/fsdat_mat.m;estimation/no_init_estimation_check_first_obs/fsdat_simul.m	1		
+estimation/no_init_estimation_check_first_obs/fs2000_init_check_XFAIL2.mod	estimation/no_init_estimation_check_first_obs/fs2000_init_check_XFAIL2.mod	estimation/no_init_estimation_check_first_obs/fsdat_mat_XFAIL.m;estimation/no_init_estimation_check_first_obs/fsdat_simul.m	1		
+var-expectations/1-with-time-shift-b/example1.mod	var-expectations/1-with-time-shift-b/example1.mod		1		
+estimation/univariate/nls/staticmodelx.mod	estimation/univariate/nls/staticmodelx.mod		1		
+run_all_unit_tests.m	run_all_unit_tests.m		0		
+histval_initval_file_unit_tests.m	histval_initval_file_unit_tests.m	histval_initval_file/my_assert.m	0		
+run_kronecker_tests.m	run_kronecker_tests.m	kronecker/test_kron.m;kronecker/nash_matrices.mat	0		
+nonlinearsolvers.m	nonlinearsolvers.m	solver-test-functions/brown.m;solver-test-functions/broydenbanded.m;solver-test-functions/broydentridiagonal.m;solver-test-functions/chebyquad.m;solver-test-functions/discreteboundaryvalue.m;solver-test-functions/discreteintegralequation.m;solver-test-functions/helicalvalley.m;solver-test-functions/powell1.m;solver-test-functions/powell2.m;solver-test-functions/rosenbrock.m;solver-test-functions/trigonometric.m;solver-test-functions/variablydimensioned.m;solver-test-functions/watson.m;solver-test-functions/wood.m	0		
+cyclereduction.m	cyclereduction.m		0		
+logarithmicreduction.m	logarithmicreduction.m		0		
+kalman/likelihood/test_kalman_mex.m	kalman/likelihood/test_kalman_mex.m		0		
+contribs.m	contribs.m	sandbox.mod;simulateddata.m	0		
+run_block_bytecode_tests.m	run_block_bytecode_tests.m	block_bytecode/run_ls2003.m;block_bytecode/ls2003.mod	0		HAS_PARU=x;HAS_PARDISO=x
+run_reporting_tests.m	run_reporting_tests.m	reporting/AnnualTable.m;reporting/CommResidTablePage.m;reporting/CountryGraphPage.m;reporting/CountryTablePage.m;reporting/db_a.csv;reporting/db_q.csv;reporting/dc_a.csv;reporting/dc_q.csv;reporting/ResidTablePage.m;reporting/runDynareReport.m	0		
+../examples/stochastic_simulations/aguiar_gopinath_2007_trend.mod	../examples/stochastic_simulations/aguiar_gopinath_2007_trend.mod		0		
+../examples/stochastic_simulations/collard_2001_theoretical_moments.mod	../examples/stochastic_simulations/collard_2001_theoretical_moments.mod		0		
+../examples/stochastic_simulations/collard_2001_simulated_moments.mod	../examples/stochastic_simulations/collard_2001_simulated_moments.mod		0		
+../examples/stochastic_simulations/collard_2001_analytical_steady_state.mod	../examples/stochastic_simulations/collard_2001_analytical_steady_state.mod	../examples/stochastic_simulations/collard_2001_analytical_steady_state_helper.m	0		
+../examples/stochastic_simulations/schorfheide_2000_nonstationary.mod	../examples/stochastic_simulations/schorfheide_2000_nonstationary.mod		0		
+../examples/stochastic_simulations/nk_baseline.mod	../examples/stochastic_simulations/nk_baseline.mod	../examples/stochastic_simulations/nk_baseline_steadystate.m	0		
+../examples/estimation/schorfheide_2000.mod	../examples/estimation/schorfheide_2000.mod	../examples/estimation/schorfheide_2000_data.m	0		
+../examples/estimation/gali_2015.mod	../examples/estimation/gali_2015.mod	../examples/estimation/gali_2015_phillips_curve_slope.m;../examples/estimation/gali_2015_prior_restrictions.m	0		
+../examples/estimation/rbc_irf_matching.mod	../examples/estimation/rbc_irf_matching.mod	../examples/estimation/rbc_irf_matching_data.csv;../examples/estimation/rbc_irf_matching_transformations.m	0		
+../examples/perfect_foresight/perfect_foresight_rbc.mod	../examples/perfect_foresight/perfect_foresight_rbc.mod		0		
+../examples/perfect_foresight/perfect_foresight_expectation_errors.mod	../examples/perfect_foresight/perfect_foresight_expectation_errors.mod		0		
+../examples/optimal_policy/nk_ramsey_osr.mod	../examples/optimal_policy/nk_ramsey_osr.mod		0		
+../examples/optimal_policy/nk_ramsey_steady_file.mod	../examples/optimal_policy/nk_ramsey_steady_file.mod	../examples/optimal_policy/nk_ramsey_steady_file_steadystate.m	0		
+../examples/heterogeneity/hank_one_asset.mod	../examples/heterogeneity/hank_one_asset.mod	../examples/heterogeneity/hank_one_asset.mat	0		
+../examples/heterogeneity/hank_one_asset_steady_state.mod	../examples/heterogeneity/hank_one_asset_steady_state.mod		0		
+../examples/heterogeneity/hank_two_assets.mod	../examples/heterogeneity/hank_two_assets.mod	../examples/heterogeneity/hank_two_assets.mat	0		
+../examples/heterogeneity/hank_two_assets_steady_state.mod	../examples/heterogeneity/hank_two_assets_steady_state.mod		0		
+../examples/heterogeneity/krusell_smith_1998.mod	../examples/heterogeneity/krusell_smith_1998.mod	../examples/heterogeneity/krusell_smith_1998.mat	0		
+../examples/heterogeneity/krusell_smith_1998_steady_state.mod	../examples/heterogeneity/krusell_smith_1998_steady_state.mod		0		
+../examples/occbin/rbc_occbin.mod	../examples/occbin/rbc_occbin.mod		0		
+../examples/macroprocessor/bkk_1992.mod	../examples/macroprocessor/bkk_1992.mod		0		
+../examples/reporting/collard_2001_reporting.mod	../examples/reporting/collard_2001_reporting.mod		0		
+../examples/semistructural/pac_model.mod	../examples/semistructural/pac_model.mod		0		
