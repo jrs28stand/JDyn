@@ -1464,7 +1464,7 @@ function posterior_statistics(est::Estimation, mc::MCMCResult; mh_conf_sig=est.o
 end
 
 """
-    estimate(m::Model; statement=nothing, allow_unsupported=false, seed=0, rng, data=nothing, options...) -> EstimationResult
+    estimate(m::Model; statement=nothing, allow_unsupported=false, seed=<model seed>, rng=<model stream>, data=nothing, options...) -> EstimationResult
 
 Run what the .mod file's `estimation` statement asks for within the implemented scope (first order): the posterior mode with
 csminwel unless `mode_compute=0`, the Hessian, the Laplace approximation, and a random-walk Metropolis-Hastings run when
@@ -1474,7 +1474,9 @@ options; the model is not modified. Options for outputs not implemented (forecas
 The `smoother` (and `filtered_vars`, `filter_step_ahead`) options run `smooth` at the mode (at the initial values with
 `mode_compute=0`) and return it in the `smoother` field; with `mh_replic > 0` they are refused.
 """
-function estimate(m::Model; seed=0, rng=Random.default_rng(), kw...)
+function estimate(m::Model; seed=nothing, rng=nothing, kw...)
+    seed === nothing && (seed = _streams(m).seed)          # the model's seed (set_dynare_seed; default 0) seeds the chains
+    rng === nothing && (rng = dynare_rng(m))
     est = Estimation(m; kw...)
     o = est.options
     initial_estimation_checks(est)

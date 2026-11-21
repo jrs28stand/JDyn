@@ -818,7 +818,7 @@ function stoch_simul_moments(m::Model; var_list=nothing, dr=nothing, shocks=noth
     periods <= o["drop"] && throw(ArgumentError("STOCH_SIMUL error: The horizon of simulation is shorter than the number of observations to be dropped. Either increase periods or decrease drop."))
     Sigma = m.Sigma_e
     if shocks === nothing
-        rng = rng === nothing ? Random.default_rng() : rng
+        rng = rng === nothing ? dynare_rng(m) : rng
         iv = findall(!=(0), diag(Sigma))
         shocks = zeros(periods, size(Sigma, 1))
         shocks[:, iv] .= randn(rng, periods, length(iv)) * Matrix(cholesky(Symmetric(Sigma[iv, iv])).L)'

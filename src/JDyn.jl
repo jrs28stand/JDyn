@@ -41,6 +41,7 @@ include("perfect_foresight.jl")
 include("plotting.jl")
 include("occbin.jl")
 include("results.jl")
+include("seeds.jl")
 
 export run_preprocessor, load, Model, ModelError, steady_state, SteadyStateError, first_order, FirstOrderSolution,
        BlanchardKahnError, ghx, ghu, irf, simulate, set_param!, set_params!, get_param, set_shock_stderr!,

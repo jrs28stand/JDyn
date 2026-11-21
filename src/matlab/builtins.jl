@@ -124,6 +124,12 @@ end
 bi!("rand", "randn", "randi", "randperm", "normrnd", "unifrnd", "mvnrnd", "gamrnd", "betarnd") do I, a, nout
     throw(Unsupported("random numbers are not reproduced by JDyn", "random"))
 end
+# set_dynare_seed(n | 'default' | 'clock' | 'reset' | algo, n): seeds the model's own stream (src/seeds.jl)
+bi!("set_dynare_seed") do I, a, nout
+    nout > 0 && merr("set_dynare_seed: too many output arguments")
+    _matlab_set_dynare_seed(I, a)
+    Any[]
+end
 bi!("i", "j", "complex", "imag", "angle") do I, a, nout
     _unsup("complex numbers")
 end
@@ -920,7 +926,7 @@ function _noop(I, argnodes, sc, nout)
     Any[]
 end
 lazy!(_noop, "disp", "display", "fprintf", "printf", "fdisp", "dprintf", "skipline", "warning", "more", "beep", "fflush",
-      "set_dynare_seed", "rng", "tic", "format", "clc", "diary", "echo", "commandwindow", "dbstop", "profile",
+      "rng", "tic", "format", "clc", "diary", "echo", "commandwindow", "dbstop", "profile",
       "close", "hold", "drawnow", "pause", "fclose", "print_info")
 
 const PLOT_FUNCS = split("figure plot subplot title legend xlabel ylabel zlabel axis print saveas line bar histogram hist grid box " *
