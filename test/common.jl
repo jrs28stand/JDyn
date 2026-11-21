@@ -3,7 +3,12 @@
 # Dynare 7.2 source tree (for the MATLAB corpus) and DYNARE_PREPROCESSOR to the 7.2 preprocessor.
 using Test, JDyn, MAT, LinearAlgebra, Logging
 
-const REF = get(ENV, "JDYN_REF", joinpath(@__DIR__, "..", "..", "jrs28stand", "pydyn", "reference"))
+const REF = get(ENV, "JDYN_REF") do
+    cands = [joinpath(@__DIR__, "..", "..", "jrs28stand", "pydyn", "reference"),
+             joinpath(@__DIR__, "..", "..", "..", "jrs28stand", "pydyn", "reference"),
+             "/home/claude/jrs28stand/pydyn/reference"]
+    normpath(something(findfirst(isdir, cands) |> i -> i === nothing ? nothing : cands[i], cands[1]))
+end
 const DYNARE_SRC = get(ENV, "JDYN_DYNARE_SRC", "/root/ref/dynare-7.2")
 const EXAMPLES = get(ENV, "JDYN_EXAMPLES", joinpath(DYNARE_SRC, "examples"))
 const SS = joinpath(EXAMPLES, "stochastic_simulations")
