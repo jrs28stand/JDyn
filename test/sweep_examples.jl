@@ -86,7 +86,16 @@ function check_example(mod::AbstractString; ref_file=nothing, label=nothing)
         end
     end
     if !isempty(intersect(kinds, ["perfect_foresight_solver", "perfect_foresight_with_expectation_errors_solver"]))
-        out["status"], out["detail"] = "not implemented", "perfect foresight (outside the first-order stream)"
+        try
+            pf = with_logger(lg) do
+                JDyn.perfect_foresight(m)                    # Dynare's own tolerances (tolf 1e-5 unless the file sets it)
+            end
+            d = haskey(ref, "endo_simul") ? maximum(abs, pf.endo_simul .- _mat(ref["endo_simul"], size(pf.endo_simul))) : NaN
+            out["status"] = d < 1e-6 ? MATCH : "MISMATCH"
+            out["detail"] = @sprintf("perfect foresight path %.1e (%d Newton steps)", d, pf.iterations)
+        catch e
+            out["status"], out["detail"] = "solution failed", _short(e)
+        end
         return out
     end
     local sol

@@ -9,6 +9,7 @@ No MATLAB or Octave is needed at run time.
 module JDyn
 
 using LinearAlgebra
+using SparseArrays
 using LinearAlgebra: lu, issuccess, schur, ordschur!, qr, UpperTriangular, opnorm, pinv
 using Printf
 using Logging
@@ -28,10 +29,12 @@ include("steady.jl")
 include("perturbation.jl")
 include("simulate.jl")
 include("moments.jl")
+include("perfect_foresight.jl")
 include("plotting.jl")
 
 export run_preprocessor, load, Model, ModelError, steady_state, SteadyStateError, first_order, FirstOrderSolution,
        BlanchardKahnError, ghx, ghu, irf, simulate, set_param!, set_params!, get_param, set_shock_stderr!,
-       stoch_simul_moments, theoretical_moments, plot_irfs, irf_figures, irf_table, write_csv, pltorg, IRFResult, IRFFigure
+       stoch_simul_moments, theoretical_moments, plot_irfs, irf_figures, irf_table, write_csv, pltorg, IRFResult, IRFFigure,
+       perfect_foresight, PerfectForesightResult, PerfectForesightError, unanticipated_shocks
 
 end

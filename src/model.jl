@@ -537,6 +537,9 @@ function _exec_statement!(m::Model, st)
     kind = st["statementName"]
     if kind == "param_init"
         m.params[m.ip[st["name"]]] = _value(m, st["value"])
+    elseif kind == "endval" && haskey(st, "learnt_in")
+        # endval(learnt_in=...) is news for perfect_foresight_with_expectation_errors, not a terminal condition
+        # (perfect_foresight.jl reads these blocks from the statements)
     elseif kind == "initval" || kind == "endval"
         target = kind == "initval" ? m.initval : m.endval
         for d in st["vals"]
