@@ -6,7 +6,9 @@
 
 struct MatlabError <: Exception
     msg::String
+    id::String          # the identifier of error('pkg:id', ...), else ""
 end
+MatlabError(msg::AbstractString) = MatlabError(String(msg), "")
 Base.showerror(io::IO, e::MatlabError) = print(io, "MatlabError: ", e.msg)
 
 "The interpreter cannot evaluate this code; `kind` classifies the reason."
@@ -25,7 +27,8 @@ Base.showerror(io::IO, e::ParseError) = print(io, "ParseError: ", e.msg)
 "Struct-like views of the model (M_, options_, oo_) provided by the Dynare session."
 abstract type HostStruct end
 
-const MAX_STEPS = 20_000_000
+"Evaluation steps allowed per interpreter (endless-loop guard); a Ref so that tests can lower it."
+const MAX_STEPS = Ref(20_000_000)
 const MAX_ELEMENTS = 20_000_000
 
 _cplx() = throw(Unsupported("the result is a complex number in MATLAB; complex numbers are not supported", "complex"))
@@ -513,6 +516,7 @@ function assign_index(v, args, rhs)
         k = _lin_index(args[1], length(a); grow=true)
         if deleting
             (minimum(size(a)) > 1 && args[1] !== COLON) && _unsup("deleting elements of a matrix with a linear index")
+            any(>(length(a)), k) && merr("matrix index is out of range for deletion")
             keep = trues(length(a))
             keep[k] .= false
             out = vec(a)[keep]
@@ -545,6 +549,8 @@ function assign_index(v, args, rhs)
         ri = args[1] === COLON ? nothing : _lin_index(args[1], size(a, 1); grow=true)
         ci = args[2] === COLON ? nothing : _lin_index(args[2], size(a, 2); grow=true)
         if deleting
+            (ci !== nothing && any(>(size(a, 2)), ci)) && merr("matrix index is out of range for deletion")
+            (ri !== nothing && any(>(size(a, 1)), ri)) && merr("matrix index is out of range for deletion")
             if ri === nothing && ci !== nothing
                 keep = trues(size(a, 2)); keep[ci] .= false
                 return ret(a[:, keep])

@@ -131,7 +131,7 @@ need_host(I::Interp, what) = I.host === nothing ? throw(Unsupported("$what needs
 
 function tick(I::Interp)
     I.steps += 1
-    I.steps > MAX_STEPS && _unsup("step limit exceeded (endless loop?)")
+    I.steps > MAX_STEPS[] && _unsup("step limit exceeded (endless loop?)")
 end
 
 # ---- variables
@@ -554,7 +554,7 @@ function mexec(I::Interp, s, sc)
             resize!(I.end_stack, saved_end)
             I.depth = saved_depth
             if s.ident !== nothing
-                setvar(I, sc, s.ident, MStruct(["message" => e.msg, "identifier" => "", "stack" => MStruct()]))
+                setvar(I, sc, s.ident, MStruct(["message" => e.msg, "identifier" => e.id, "stack" => MStruct()]))
             end
             return exec_block(I, s.handler, sc)
         end
