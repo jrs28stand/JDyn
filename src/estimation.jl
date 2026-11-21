@@ -530,14 +530,15 @@ end
     Estimation(m::Model; data=nothing, allow_unsupported=false, options...)
 
 Estimation problem for the first-order approximation of `m`, which needs a `varobs` statement and an
-`estimated_params` block. Options are those of the `estimation` statement of the .mod file (the last one), overridden
+`estimated_params` block. For a model with `occbin_constraints` the likelihood is OccBin's (piecewise Kalman filter, or the
+inversion filter; `occbin=Dict(...)` overrides the options of `occbin_setup`, see src/occbin_estimation.jl). Options are those of the `estimation` statement of the .mod file (the last one), overridden
 by keyword arguments with Dynare's names (`first_obs`, `nobs`, `loglinear`, `logdata`, `prefilter`, `presample`,
 `lik_init`, `diffuse_filter`, `kalman_algo`, `kalman_tol`, `riccati_tol`, `prior_trunc`, `mode_compute`, `mh_replic`,
 `mh_nblck`, `mh_jscale`, `mh_drop`, ...). `data` is a Dict, a matrix (columns in `varobs` order) or a file name,
 default the `datafile` option. Options the code does not act on raise an `EstimationError` (listing them) unless
 `allow_unsupported=true`, which turns the error into one warning.
 """
-function Estimation(m::Model; data=nothing, allow_unsupported::Bool=false, statement=nothing, options...)
+function Estimation(m::Model; data=nothing, allow_unsupported::Bool=false, statement=nothing, occbin=nothing, options...)
     raw = Dict{String,Any}()
     ests = [st for st in m.statements if get(st, "statementName", "") == "estimation"]
     if statement === nothing
@@ -629,6 +630,7 @@ function Estimation(m::Model; data=nothing, allow_unsupported::Bool=false, state
     _setup_state_space!(est)
     _setup_trends!(est)
     _setup_data!(est, data)
+    _setup_occbin!(est, occbin)                  # OccBin models: piecewise Kalman or inversion filter (src/occbin_estimation.jl)
     if opts["prefilter"] != 0
         centred = try
             check_prefilter(est)
@@ -1024,6 +1026,7 @@ function _dsge_likelihood(est::Estimation, theta::AbstractVector; bounds=(est.lb
     if !isempty(est.groups.cn) && !_ispd(Hm[est.H_check, est.H_check])
         return reject(44, _ispd_penalty(Hm[est.H_check, est.H_check]), "covariance matrix of the measurement errors is not positive definite (info 44)")
     end
+    get(o, "occbin", nothing) === nothing || return _occbin_likelihood(est, theta, with_lik)    # src/occbin_estimation.jl
     local ys, G, Hs, params
     try
         ys, G, Hs, params = solve(est, theta)
