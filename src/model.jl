@@ -100,8 +100,58 @@ const RUNTIME_DEFS = quote
     erf(x::Real) = $(SpecialFunctions.erf)(x)
     erfc(x::Real) = $(SpecialFunctions.erfc)(x)
     ln(x::Real) = log(x)
-    cbrt(x::Real) = Base.cbrt(x)
+    cbrt(x::Real) = $(Base.cbrt)(x)
 end
+
+# ---------------------------------------------------------------------- the steady_state_model module
+# The preprocessor's Julia text of a steady_state_model block runs in a bare module: no Base, so a MATLAB function
+# name that Julia also has cannot get Julia's meaning (round(2.5) is 3, mod(x, 0) is x) and one that only Julia has
+# (exit, sleep, ...) is undefined, which sends the block to the interpreter (src/matlab), where it is unknown. What
+# the module sees is listed here: the operators and types of the generated text, and MATLAB's functions.
+_ssm_round(x::Real) = _mround(Float64(x))
+_ssm_sign(x::Real) = (y = Float64(x); y == 0 ? 0.0 : _msign(y))
+_ssm_mod(x::Real, y::Real) = _mmod1(Float64(x), Float64(y), false)
+_ssm_rem(x::Real, y::Real) = _mmod1(Float64(x), Float64(y), true)
+_ssm_pow(x::Real, y::Real) = Base.:^(Float64(x), Float64(y))      # a negative base with a fractional exponent: DomainError
+_ssm_periodic(f) = x -> (y = Float64(x); isinf(y) ? NaN : f(y))
+_ssm_gamma(x::Real) = _mgamma(Float64(x))
+_ssm_gammaln(x::Real) = _mgammaln(Float64(x))
+_ssm_atan2(y::Real, x::Real) = Base.atan(Float64(y), Float64(x))
+_ssm_fix(x::Real) = Base.trunc(Float64(x))
+
+const SSM_NAMES = Dict{Symbol,Any}(
+    # syntax the generated text uses
+    :+ => Base.:+, :- => Base.:-, :* => Base.:*, :/ => Base.:/, :^ => _ssm_pow, :(:) => Base.:(:),
+    :< => Base.:<, :> => Base.:>, :<= => Base.:<=, :>= => Base.:>=, :(==) => Base.:(==), :(!=) => Base.:(!=),
+    :! => Base.:!, :Real => Base.Real, :Vector => Base.Vector, :Inf => Base.Inf, :NaN => Base.NaN, :pi => Base.pi,
+    :Integer => Base.Integer, :Bool => Base.Bool, :Float64 => Base.Float64, :Int => Base.Int,
+    # MATLAB functions: the same on real arguments in Julia (a complex result is a DomainError: the interpreter decides)
+    :exp => Base.exp, :log => Base.log, :log10 => Base.log10, :log2 => Base.log2, :log1p => Base.log1p,
+    :expm1 => Base.expm1, :sqrt => Base.sqrt, :cbrt => Base.cbrt, :abs => Base.abs, :asin => Base.asin,
+    :acos => Base.acos, :atan => Base.atan, :sinh => Base.sinh, :cosh => Base.cosh, :tanh => Base.tanh,
+    :asinh => Base.asinh, :acosh => Base.acosh, :atanh => Base.atanh, :floor => Base.floor, :ceil => Base.ceil,
+    :hypot => Base.hypot, :isnan => Base.isnan, :isinf => Base.isinf, :isfinite => Base.isfinite,
+    # MATLAB's own semantics where Julia differs
+    :round => _ssm_round, :fix => _ssm_fix, :sign => _ssm_sign, :mod => _ssm_mod, :rem => _ssm_rem,
+    :sin => _ssm_periodic(Base.sin), :cos => _ssm_periodic(Base.cos), :tan => _ssm_periodic(Base.tan),
+    :gamma => _ssm_gamma, :lgamma => _ssm_gammaln, :gammaln => _ssm_gammaln, :atan2 => _ssm_atan2,
+    :power => _ssm_pow)
+
+"A module with only what a steady_state_model block may use (see SSM_NAMES), the functions of RUNTIME_DEFS, and `helpers`."
+function steady_state_module(helpers=Dict{String,Any}())
+    mod = Module(gensym(:JDynSSM), false, false)
+    for (n, f) in SSM_NAMES
+        Core.eval(mod, Expr(:const, Expr(:(=), n, QuoteNode(f))))
+    end
+    Core.eval(mod, :(macro inbounds(ex); return $(GlobalRef(Base, :esc))(ex); end))
+    Core.eval(mod, RUNTIME_DEFS)                      # max, min (NaN operands ignored), normcdf, normpdf, erf, erfc, ln, cbrt
+    for (name, f) in helpers
+        Core.eval(mod, Expr(:const, Expr(:(=), Symbol(name), QuoteNode(f))))
+    end
+    mod
+end
+"Names the steady-state module defines itself: a helper function of the same name (it takes precedence in MATLAB) forces the interpreter."
+const SSM_RESERVED = Set(vcat(string.(keys(SSM_NAMES)), ["max", "min", "normcdf", "normpdf", "erf", "erfc", "ln", "cbrt", "get_power_deriv", "steady_state!"]))
 
 "Compiled residual and derivative functions of a model, with the sparse layout of the derivatives."
 mutable struct ModelFunctions
@@ -172,13 +222,16 @@ function load_model_functions(json_dir::AbstractString, raw::Dict{String,Any}; h
         Core.eval(mod, :($(Symbol(name))(args...) = $(f)(args...)))
     end
     files = readdir(jdir)
+    ssm_ok = !any(n -> n in SSM_RESERVED, keys(helpers))
+    ssmod = steady_state_module(ssm_ok ? helpers : Dict{String,Any}())
     for f in files
         endswith(f, ".jl") || continue
         if f == "SteadyState2.jl"
+            ssm_ok || continue
             # the steady_state_model block: the 7.2 preprocessor writes invalid Julia for a call with several
             # outputs ([ys_[1], kk, info] = f(...)); such a block is interpreted instead (steady.jl)
             try
-                Base.include(_matlab_comparisons, mod, joinpath(jdir, f))
+                Base.include(_matlab_comparisons, ssmod, joinpath(jdir, f))
             catch e
                 e isa LoadError || rethrow()
             end
@@ -186,7 +239,7 @@ function load_model_functions(json_dir::AbstractString, raw::Dict{String,Any}; h
         end
         Base.include(_matlab_comparisons, mod, joinpath(jdir, f))
     end
-    get(n) = Base.invokelatest(isdefined, mod, Symbol(n)) ? Base.invokelatest(getfield, mod, Symbol(n)) : nothing
+    get(n, m=mod) = Base.invokelatest(isdefined, m, Symbol(n)) ? Base.invokelatest(getfield, m, Symbol(n)) : nothing
     req(n) = (f = get(n); f === nothing ? throw(ModelError("generated function $n is missing")) : f)
     dtmp = Int.(get_or(raw, "dynamic_tmp_nbr", [0, 0, 0, 0]))
     stmp = Int.(get_or(raw, "static_tmp_nbr", [0, 0, 0, 0]))
@@ -196,7 +249,7 @@ function load_model_functions(json_dir::AbstractString, raw::Dict{String,Any}; h
                    req("SparseDynamicG1TT!"), get("SparseDynamicG2!"), get("SparseDynamicG2TT!"),
                    get("SparseDynamicG3!"), get("SparseDynamicG3TT!"),
                    req("SparseStaticResid!"), req("SparseStaticResidTT!"), req("SparseStaticG1!"), req("SparseStaticG1TT!"),
-                   get("steady_state!"), dtmp, stmp, g1r, g1c, sg1r, sg1c,
+                   get("steady_state!", ssmod), dtmp, stmp, g1r, g1c, sg1r, sg1c,
                    _idx_matrix(get_or(raw, "dynamic_g2_sparse_indices", []), 3),
                    _idx_matrix(get_or(raw, "dynamic_g3_sparse_indices", []), 4))
 end
