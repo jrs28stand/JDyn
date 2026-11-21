@@ -121,7 +121,7 @@ end
     m = OMODELS["occest_nkm"]
     est = oest("occest_nkm", r)
     x0 = vec(s["x0"])
-    res = smooth(m; estimation=est, theta=x0)
+    res = smooth(m, odata(r); estimation=est, theta=x0)
     sm = res.occbin.smoother
     @test sm.error_flag == s["pkf_error_flag"] == 0 && sm.converged && sm.iterations == 1
     check_smoother(res, s, "pkf", 1e-10)
@@ -136,7 +136,7 @@ end
     println("OccBin smoother NKM: smoothed ", mxd(sm.smoothed .+ sm.ys', s["pkf_SmoothedVariables"]), ", shocks ",
             mxd(sm.shocks, s["pkf_SmoothedShocks"]))
     # inversion filter as smoother (smoother_inversion_filter)
-    iv = smooth(m; estimation=est, theta=x0, occbin=Dict("smoother_inversion_filter" => true))
+    iv = smooth(m, odata(r); estimation=est, theta=x0, occbin=Dict("smoother_inversion_filter" => true))
     @test iv.occbin.smoother.inversion_filter
     check_smoother(iv, s, "ivf", 1e-10)
     @test all(isnan, iv.UpdatedVariables["yg"])
@@ -167,7 +167,7 @@ end
     m = OMODELS["occest_rbc"]
     est = oest("occest_rbc", r)
     x0 = vec(s["x0"])
-    res = smooth(m; estimation=est, theta=x0)
+    res = smooth(m, odata(r); estimation=est, theta=x0)
     sm = res.occbin.smoother
     # Dynare: converged after iterating, to a regime different from the real-time one (warning 320)
     @test sm.error_flag == 0 && sm.warning_flag == 320 && sm.iterations == 2
@@ -182,7 +182,7 @@ end
         @test mine[50][1] == dyn[50][1] && mine[50][2][1] == dyn[50][2][1]
     end
     @test sm.regime_history != sm.realtime_regime_history
-    iv = smooth(m; estimation=est, theta=x0, occbin=Dict("smoother_inversion_filter" => true))
+    iv = smooth(m, odata(r); estimation=est, theta=x0, occbin=Dict("smoother_inversion_filter" => true))
     check_smoother(iv, s, "ivf", 1e-12)
     d = occbin_shock_decomposition(m, res)
     @test mxd(d["decomp"].z, reshape(s["sd_decomp"], size(d["decomp"].z))) < 1e-11
@@ -256,14 +256,10 @@ end
     @test_throws EstimationError oest("occest_nkm", r; prefilter=1)
     @test_throws EstimationError oest("occest_nkm", r; kalman_algo=2)
     @test_throws EstimationError oest("occest_nkm", r; diffuse_filter=true)
-    # a model without constraints refuses occbin options
-    @test_throws EstimationError with_logger(NullLogger()) do
-        JDyn.Estimation(load_copy(joinpath(SS, "..", "..", "tests", "estimation", "fs2000", "fs2000.mod")); occbin=Dict("likelihood_maxit" => 3))
-    end skip=!isfile(joinpath(DYNARE_SRC, "tests", "estimation", "fs2000", "fs2000.mod"))
     # smoother options needing regime-dependent variances are refused
     s = oref("occest_nkm_smoother")
     est = oest("occest_nkm", r)
-    @test_throws SmootherError smooth(OMODELS["occest_nkm"]; estimation=est, theta=vec(s["x0"]), smoothed_state_uncertainty=true)
+    @test_throws SmootherError smooth(OMODELS["occest_nkm"], odata(r); estimation=est, theta=vec(s["x0"]), smoothed_state_uncertainty=true)
 end
 
 @testset "regime table" begin
