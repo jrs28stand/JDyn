@@ -216,14 +216,8 @@ const COSMETIC = Set(["nograph", "nodisplay", "graph_format", "noprint", "nocorr
     "nodiagnostic", "console_mode", "silent_optimizer", "debug", "plot_priors", "no_graph.plot_shock_decomposition",
     "graph_save_formats", "sub_draws", "irf_plot_threshold", "dirname", "verbosity", "simul.debug"])
 
-"Options of the model's solution commands, later commands taking precedence as in Dynare."
-function stoch_options(m::Model)
-    out = Dict{String,Any}()
-    for kind in ("check", "stoch_simul", "estimation", "calib_smoother")
-        merge!(out, get(m.options, kind, Dict{String,Any}()))
-    end
-    out
-end
+"Options of the model's solution commands: those of every `check`, `stoch_simul`, `estimation` and `calib_smoother` statement in file order, later ones taking precedence (Dynare's `options_` persists)."
+stoch_options(m::Model) = copy(get(m.options, "options_", Dict{String,Any}()))
 """
 Option `name` of the model's solution commands, else a value the .mod file assigned to `options_.name` in
 MATLAB code (Dynare's commands read that field too, e.g. select_qz_criterium_value.m), else `default`.

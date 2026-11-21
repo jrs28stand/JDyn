@@ -124,7 +124,7 @@ end
             """)
         set_shock_stderr!(m, "u", 3.0)
         # Dynare 7.2 (Octave) after set_shock_stderr_value('u', 3): Sigma_e = [1 1; 1 9]
-        @test_broken m.Sigma_e[1, 2] == 1.0 && m.Sigma_e[2, 1] == 1.0 && m.Sigma_e[2, 2] == 9.0
+        @test m.Sigma_e[1, 2] == 1.0 && m.Sigma_e[2, 1] == 1.0 && m.Sigma_e[2, 2] == 9.0
         # the same call from MATLAB code in the .mod file does keep the covariance (this part is right):
         m2 = build("""
             var y x; varexo e u; parameters a; a = 0.5;
@@ -145,7 +145,7 @@ end
             set_params!(m, ["alpha" => 0.9, "nonexistent" => 1.0])
         catch
         end
-        @test_broken get_param(m, "alpha") == 0.5
+        @test get_param(m, "alpha") == 0.5
     end
 
     # ------------------------------------------------------------------ R13 steady_state_model calling a Julia Base function
@@ -179,7 +179,7 @@ end
         catch e
             e
         end
-        @test_broken !(r isa DomainError)
+        @test !(r isa DomainError)
     end
 
     # ------------------------------------------------------------------ R15 spurious warning
@@ -218,7 +218,7 @@ end
             JDyn.irf_figures(m)
         end
         @test res.order == 1                                  # (what is documented in the docstring)
-        @test_broken any(l -> occursin(r"order", string(l.message)), logger.logs)
+        @test any(l -> occursin(r"order", string(l.message)), logger.logs)
     end
 
     # ------------------------------------------------------------------ R17 load() cannot pass macro variables
@@ -232,7 +232,7 @@ end
         catch e
             e
         end
-        @test_broken m isa JDyn.Model && isapprox(m.params[1], 0.2)
+        @test m isa JDyn.Model && isapprox(m.params[1], 0.2)
     end
 
     # ------------------------------------------------------------------ R18 refusals that are raw Julia exceptions
@@ -245,7 +245,7 @@ end
             catch e
                 e
             end
-            @test_broken r isa ModelError         # JDyn: LoadError: syntax: invalid assignment location "[TEF_0, TEFD_0, TEFDD_0]"
+            @test r isa ModelError         # JDyn: LoadError: syntax: invalid assignment location "[TEF_0, TEFD_0, TEFDD_0]"
         end
         dts = joinpath(DYNARE_SRC, "tests", "deterministic_simulations", "ramst_dseries.mod")
         if isfile(dts)
@@ -255,7 +255,7 @@ end
             catch e
                 e
             end
-            @test_broken r === nothing || r isa ModelError    # JDyn: ArgumentError: cannot parse "dates('2000Q2')" as Float64
+            @test r === nothing || r isa ModelError    # JDyn: ArgumentError: cannot parse "dates('2000Q2')" as Float64
         end
     end
 
@@ -286,6 +286,6 @@ end
         catch e
             e
         end
-        @test_broken r isa AbstractDict                             # JDyn: KOrderError "steady state, parameters or Sigma_e contain NaN or Inf"
+        @test r isa AbstractDict                             # JDyn: KOrderError "steady state, parameters or Sigma_e contain NaN or Inf"
     end
 end

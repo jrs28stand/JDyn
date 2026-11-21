@@ -87,6 +87,8 @@ responses are those of the first-order solution (`order` of the result is 1).
 function irf_figures(m, sol=first_order(m); var_list=nothing, shocks=nothing, periods=nothing, threshold=nothing,
                      relative=nothing)
     o = _stoch_simul_options(m)
+    ord = try Int(_opt(o, "order", 1)) catch; 1 end
+    ord > 1 && warn_once(m, "irf_figures computes first-order impulse responses, but the .mod file's stoch_simul asks for order $ord (Dynare's IRFs are then averages over simulations): the responses returned are those of the first-order solution (result.order == 1)")
     periods = Int(periods === nothing ? _opt(o, "irf", 40) : periods)
     threshold = Float64(threshold === nothing ? _opt(o, "impulse_responses.plot_threshold", 1e-10) : threshold)
     relative = relative === nothing ? _truthy(_opt(o, "relative_irf", false)) : relative

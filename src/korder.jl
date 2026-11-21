@@ -87,8 +87,10 @@ function k_order(m::Model; order=nothing, ys=nothing, params=nothing, pruning=no
     end
     params = Vector{Float64}(params === nothing ? m.params : params)
     ys = Vector{Float64}(ys)
-    (all(isfinite, ys) && all(isfinite, params) && all(isfinite, m.Sigma_e)) ||
-        throw(KOrderError("steady state, parameters or Sigma_e contain NaN or Inf"))
+    # As in Dynare, only what the derivatives depend on matters: a parameter that was never set (NaN) but appears in no
+    # equation is harmless; one that does appear is caught by the derivative check below.
+    (all(isfinite, ys) && all(isfinite, m.Sigma_e)) ||
+        throw(KOrderError("steady state or Sigma_e contain NaN or Inf"))
     n, nx = m.n_endo, m.n_exo
     order_var, state_var, cnt = dr_ordering(m.lead_lag_incidence)
     yy, x0 = repeat(ys, 3), exo_steady(m)
@@ -105,13 +107,19 @@ function k_order(m::Model; order=nothing, ys=nothing, params=nothing, pruning=no
         append!(cols, Int32.(vec(permutedims(c .- 1))))
         append!(vals, v)
     end
+    if !all(isfinite, vals)
+        bad = [m.param_names[i] for i in eachindex(params) if !isfinite(params[i])]
+        throw(KOrderError("the derivatives of the model contain NaN or Inf" *
+                          (isempty(bad) ? "" : " (parameters without a value: $(join(bad, ", ")))")))
+    end
+    params_c = replace(params, NaN => 0.0, Inf => 0.0, -Inf => 0.0)       # not used by the solver itself
     sigma = Matrix{Float64}(m.Sigma_e)
     dr = Int32.(order_var .- 1)
     h = lock(_korder_lock) do
         ccall(_ksym(:jdyn_korder_solve), Ptr{Cvoid},
               (Cint, Cint, Cint, Cint, Cint, Cint, Cint, Ptr{Float64}, Ptr{Float64}, Ptr{Float64}, Ptr{Cint},
                Ptr{Cint}, Ptr{Cint}, Ptr{Cint}, Ptr{Float64}, Float64, Cint, Cint),
-              order, cnt.nstatic, cnt.npred, cnt.nboth, cnt.nfwrd, nx, length(params), ys, sigma, params, dr,
+              order, cnt.nstatic, cnt.npred, cnt.nboth, cnt.nfwrd, nx, length(params), ys, sigma, params_c, dr,
               nnz, rows, cols, vals, qz, Int(pruning), threads)
     end
     try

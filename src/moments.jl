@@ -136,6 +136,15 @@ function baxter_king_filter(y::AbstractMatrix, high=6, low=32, K=12)
     out
 end
 
+"""
+Square root of variances: a negative variance (a root inside the QZ criterion but outside the unit circle makes the
+Lyapunov solution indefinite; MATLAB would continue with complex numbers) gives NaN and one warning.
+"""
+function _sqrt_nan(v::AbstractVector)
+    any(<(0), v) && @warn "negative variance in the theoretical moments (a root of the model lies outside the unit circle but inside qz_criterium): standard deviations and correlations of those variables are NaN"
+    [x >= 0 || isnan(x) ? sqrt(x) : NaN for x in v]
+end
+
 # ------------------------------------------------------------------------------------ options
 const _MOM_DEFAULTS = Dict{String,Any}("order" => 1, "ar" => 5, "hp_filter" => 0, "one_sided_hp_filter" => 0,
     "bandpass" => false, "passband" => (6, 32), "bandpass_K" => 12, "filtered_theoretical_moments_grid" => 512,
@@ -409,7 +418,7 @@ function _th_autocovariances(R::Rules, Sigma, ivar, o)
         gamma[1] = v
         if nar > 0
             vxy = A * Vx * aa' + ghu_s * Sigma * bb'
-            sy = sqrt.(diag(v))[stationary]
+            sy = _sqrt_nan(diag(v))[stationary]
             sy = sy * sy'
             for i in 1:nar
                 g = fill(NaN, nvar, nvar)
@@ -463,7 +472,7 @@ function _th_autocovariances(R::Rules, Sigma, ivar, o)
         imv = filtered_acov(Sigma, ghu_s, nothing)
         gamma[1] = imv[1, :, :]
         if nar > 0
-            sy = sqrt.(diag(gamma[1])); sy = sy * sy'
+            sy = _sqrt_nan(diag(gamma[1])); sy = sy * sy'
             for i in 1:nar
                 gamma[i+1] = imv[i+1, :, :] ./ sy
             end
@@ -583,7 +592,7 @@ function _pruned_order2(R::Rules, Sigma, ivar, o)
     Var_z[id1, id2] .= 0; Var_z[id1, id3] .= 0; Var_z[id2, id1] .= 0; Var_z[id3, id1] .= 0
     Var_y = C * Var_z * C' + D * Varinov * D'
     Var_y[abs.(Var_y) .< 1e-12] .= 0.0
-    sd = sqrt.(diag(Var_y))
+    sd = _sqrt_nan(diag(Var_y))
     sy = sd * sd'
     Corr_y = Var_y ./ sy
     tmp = A * Var_z * C' + B * Varinov * D'
@@ -644,7 +653,7 @@ function theoretical_moments(m::Model, dr=nothing; var_list=nothing, Sigma_e=not
     if pruned
         E_y, Var_y, Corr_y, Corr_yi = _pruned_order2(R, Sigma, ivar, o)
         s2 = diag(Var_y)
-        sd = sqrt.(s2)
+        sd = _sqrt_nan(s2)
         res.mean, res.var, res.variance, res.std = E_y, Var_y, s2, sd
         res.gamma_y = Any[Var_y, Corr_yi...]
         i1 = findall(x -> abs(x) > 1e-12, s2)

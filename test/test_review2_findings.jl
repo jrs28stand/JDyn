@@ -105,13 +105,13 @@ end
         shocks; var e = 1; var u = 4; corr e,u = 0.5; end;
         """)
     set_shock_stderr!(m, "u", 3.0)
-    @test_broken m.Sigma_e == [1.0 1.0; 1.0 9.0]
+    @test m.Sigma_e == [1.0 1.0; 1.0 9.0]
 end
 
 @testset "R12 set_params! is not atomic" begin
     m = build("var y; varexo e; parameters a b; a = 0.5; b = 1;\nmodel; y = a*y(-1) + b*e; end;\n")
     try; set_params!(m, ["a" => 0.9, "nonexistent" => 1.0]); catch; end
-    @test_broken get_param(m, "a") == 0.5
+    @test get_param(m, "a") == 0.5
 end
 
 @testset "R13 steady_state_model can call Julia's exit()" begin
@@ -132,7 +132,7 @@ end
 @testset "R14 negative variance inside the QZ criterion: raw DomainError" begin
     m = build("var y; varexo e; parameters rho; rho = 1.0000005;\nmodel; y = rho*y(-1) + e; end;\nshocks; var e = 1; end;\nsteady;\nstoch_simul(order=1, irf=0);\n")
     r = try; stoch_simul_moments(m); nothing; catch e; e; end
-    @test_broken !(r isa DomainError)
+    @test !(r isa DomainError)
 end
 
 @testset "R15 (S4) irf_plot_threshold makes stoch_simul_moments warn" begin
@@ -151,20 +151,20 @@ end
         JDyn.irf_figures(m)
     end
     @test res.order == 1
-    @test_broken any(l -> occursin("order", string(l.message)), lg.logs)
+    @test any(l -> occursin("order", string(l.message)), lg.logs)
 end
 
 @testset "R17 load() does not forward extra_args" begin
     d = mktempdir(); write(joinpath(d, "mac.mod"), "@#ifndef A\n@#define A = 1\n@#endif\nvar y; varexo e; parameters a; a = 0.1*@{A};\nmodel; y = a*y(-1) + e; end;\n")
     r = try; quietly(() -> JDyn.load(joinpath(d, "mac.mod"); extra_args=["-DA=3"])); catch e; e; end
-    @test_broken r isa JDyn.Model && r.params[1] ≈ 0.3
+    @test r isa JDyn.Model && r.params[1] ≈ 0.3
 end
 
 @testset "R18 refusals as raw Julia exceptions" begin
     f = joinpath(DYNARE_SRC, "tests", "deterministic_simulations", "ramst_dseries.mod")
     if isfile(f)
         r = try; load_copy(f); nothing; catch e; e; end
-        @test_broken r === nothing || r isa ModelError
+        @test r === nothing || r isa ModelError
     end
 end
 
@@ -173,7 +173,7 @@ end
     @test isnan(get_param(m, "unused"))
     @test first_order(m) isa JDyn.FirstOrderSolution
     r = try; k_order(m; order=2); catch e; e; end
-    @test_broken r isa AbstractDict
+    @test r isa AbstractDict
 end
 
 # ====================================================================== new findings (load API)
@@ -194,7 +194,7 @@ end
     m = build(RBC * "stoch_simul(order=1, irf=0, hp_filter=1600);\nstoch_simul(order=1, irf=3) c;\n")
     mo = stoch_simul_moments(m)
     # Dynare 7.2 (Octave): the second stoch_simul keeps options_.hp_filter = 1600; oo_.var = 0.00347420017853539
-    @test_broken isapprox(mo.var[1, 1], 0.00347420017853539; rtol=1e-6)    # JDyn: 0.007660 (unfiltered)
+    @test isapprox(mo.var[1, 1], 0.00347420017853539; rtol=1e-6)    # JDyn: 0.007660 (unfiltered)
 end
 
 @testset "R24 homotopy_setup(from_initval_to_endval) ignored: steady state at the initval exogenous value" begin
@@ -203,7 +203,7 @@ end
         m = load_copy(f; extra=[joinpath(dirname(f), "common.mod")])
         ys, _ = steady_state(m)
         # Dynare 7.2 (Octave): oo_.steady_state = [6.12244879311, 51.0204019802, 2], exo_steady_state = 2
-        @test_broken isapprox(ys[1:2], [6.12244879311, 51.0204019802]; rtol=1e-6)   # JDyn: [1.5306, 12.755] (x = 1)
+        @test isapprox(ys[1:2], [6.12244879311, 51.0204019802]; rtol=1e-6)   # JDyn: [1.5306, 12.755] (x = 1)
     end
 end
 
@@ -219,7 +219,7 @@ end
     m = build(base * "calib_smoother(datafile=dat1);\n"; files=Dict("dat1.m" => DAT1))
     # Dynare 7.2: DsgeSmoother error 'F is singular in stationary period' (use_univariate_smoother_if_singularity_is_detected is false)
     r = try; quietly(() -> smooth(m)); catch e; e; end
-    @test_broken r isa Exception
+    @test r isa JDyn.SmootherError
 end
 
 @testset "R25 checked clean: diffuse smoother and likelihood with missing data on a unit-root model" begin
