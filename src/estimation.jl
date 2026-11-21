@@ -1477,6 +1477,7 @@ The `smoother` (and `filtered_vars`, `filter_step_ahead`) options run `smooth` a
 function estimate(m::Model; seed=0, rng=Random.default_rng(), kw...)
     est = Estimation(m; kw...)
     o = est.options
+    initial_estimation_checks(est)
     mode = nothing
     lp = log_posterior(est, est.x0)
     if o["mode_compute"] != 0
@@ -1502,6 +1503,27 @@ function estimate(m::Model; seed=0, rng=Random.default_rng(), kw...)
         sm = smooth(m; estimation=est, theta=theta)
     end
     EstimationResult(est, est.x0, mode, mc, lp, lap, mhm, post, sm)
+end
+
+"""
+    initial_estimation_checks(est)
+
+The stochastic-singularity check of Dynare's `initial_estimation_checks.m`: evaluate the likelihood at the initial values
+with the automatic switch to the univariate filter turned off; a singular forecast-error variance is an error.
+"""
+function initial_estimation_checks(est::Estimation)
+    o = est.options
+    old = o["use_univariate_filters_if_singularity_is_detected"]
+    o["use_univariate_filters_if_singularity_is_detected"] = false
+    info = try
+        _dsge_likelihood(est, est.x0; bounds=(fill(-Inf, est.n), fill(Inf, est.n)))[2]
+    finally
+        o["use_univariate_filters_if_singularity_is_detected"] = old
+    end
+    info == 50 && throw(EstimationError("initial_estimation_checks: The forecast error variance in the multivariate Kalman filter became singular. " *
+        "This is often a sign of stochastic singularity, but can also sometimes happen by chance for a particular combination of parameters and data realizations. " *
+        "If you think the latter is the case, you should try with different initial values for the estimated parameters."))
+    nothing
 end
 
 "Set the estimated parameters and standard deviations of `m` to `theta` (Dynare leaves the model at the estimates)."
