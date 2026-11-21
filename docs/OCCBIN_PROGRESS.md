@@ -10,7 +10,7 @@ References: test/ref_occbin/ (pydyn's occest_* files; generator r_occbin_estimat
 - (2) OccBin smoother (PKF and IVF) and occbin shock decomposition: scratch runs match Dynare to <1e-12.
 - Hooks: Estimation(...; occbin=Dict) -> _setup_occbin!; _dsge_likelihood -> _occbin_likelihood; smooth() dispatches to
   _occbin_smooth for models with occbin_constraints (src/occbin_estimation.jl). OccbinResult has `ss` (per-period rules).
-- test/test_occbin_estimation.jl written, not yet run through the package.
+- test/test_occbin_estimation.jl passes (190 checks); oo_ fields, options_.occbin overrides, occbin_write_regimes done.
 
 ## Next
 - run test file; commit per piece; oo_ fields (oo_.occbin.smoother/linear_smoother, oo_.Smoother.occbin) in results_estimation;

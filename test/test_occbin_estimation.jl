@@ -304,7 +304,7 @@ end
     @test all(vec(occ.regime_history.items[t].regime) == rh[t][1][1] && vec(occ.regime_history.items[t].regimestart) == rh[t][1][2] for t in eachindex(rh))
     @test mxd(oo.occbin.linear_smoother.alphahat, s["pkf_linear_alphahat"]) < 1e-10
     @test mxd(oo.occbin.linear_smoother.etahat, s["pkf_linear_etahat"]) < 1e-10
-    @test mxd(occ.alphahat, Matrix((s["pkf_SmoothedVariables"] .- vec(s["ys"])')[:, Int.(vec(r["order_var"]))]')) < 1e-10
+    @test mxd(occ.alphahat, Matrix((s["pkf_SmoothedVariables"] .- vec(occ.SteadyState)')[:, Int.(vec(r["order_var"]))]')) < 1e-10
     # re-run on the workspace with the inversion filter as smoother
     estimation!(ws, ["yg"]; mode_compute=0, smoother=true)
     @test mxd(hcat([vec(ws.oo_.SmoothedVariables[v]) for v in m.endo_names]...), s["pkf_SmoothedVariables"]) < 1e-10

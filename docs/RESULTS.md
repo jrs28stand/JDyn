@@ -111,7 +111,8 @@ At Dynare's steady state the decision rules agree to 1e-12 (test_korder.jl).
 | check | dr.eigval | yes |
 | stoch_simul | dr (ys, order_var, inv_order_var, state_var, gh*), irfs, endo_simul, exo_simul, var_list, mean, var, autocorr, gamma_y, variance_decomposition, skewness, kurtosis | yes (orders 1-3; moments orders 1-2) |
 | perfect_foresight_solver | endo_simul, exo_simul, deterministic_simulation.{status, iterations, error}, initial_steady_state | yes |
-| occbin_solver | oo_.occbin.simul.{piecewise, linear, shocks_sequence} | yes |
+| occbin_solver | oo_.occbin.simul.{piecewise, linear, shocks_sequence, exo_pos, regime_history} | yes (regime_history: a 1 x T Cell of structs `regime1, regimestart1, ...`, MATLAB's struct array) |
+| occbin_write_regimes | (an .xls file in Output/) | the same table as CSV in Output/<filename>.csv (`occbin_write_regimes!`) |
 | estimation | prior, posterior.optimization, posterior_mode / mle_mode (+ `_std_at_mode`), MarginalDensity, posterior_mean/median/var/hpdinf/hpdsup/deciles/density, posterior.metropolis, Smoother, SmoothedVariables, UpdatedVariables, FilteredVariables(+KStepAhead), SmoothedShocks, SmoothedMeasurementErrors, dr (order_var ... edim), steady_state | yes, see "estimation and calib_smoother" below; `estimation!(ws; ...)` re-runs it |
 | calib_smoother | the smoother fields above, prior (with an estimated_params block), dr, steady_state | yes (`calib_smoother!(ws; ...)` re-runs it) |
 | forecast | forecast.{Mean, HPDinf, HPDsup, HPDinf_ME, HPDsup_ME} | yes (`forecast!`; after stoch_simul, orders 1-3; after estimation the `EstimationResult.forecast` field, copied into oo_ by `estimation`) |
@@ -149,6 +150,21 @@ Names in `oo_.posterior_*` follow `display_estimation_results_table.m`: `paramet
 | `oo_.gui.ran_estimation`, `ran_calib_smoother` | logical | | yes |
 | `M_.params`, `M_.Sigma_e`, `M_.H`, `M_.Correlation_matrix` | | set to the posterior mode (mean when mh_replic > 0 and no mode) | yes (mode_compute=0: the starting values) |
 | `options_.{nobs, first_obs, varobs_id, number_of_observed_variables, mh_jscale, filtered_vars, filter_step_ahead, nk, lik_init, varlist, parameter_set}` | | | yes. `first_obs` stays 1 after a smoother-only run (mode_compute=0), as in Dynare, whose early return skips the reset to NaN |
+
+OccBin models (occbin_constraints): the likelihood is the piecewise Kalman filter or the inversion filter, the smoother
+Dynare's occbin.DSGE_smoother (src/occbin_estimation.jl). In addition to the fields above (OccBin smoother values,
+`oo_.Smoother.occbin = true`):
+
+| Field | JDyn |
+|---|---|
+| `oo_.occbin.smoother.{error_flag, warning_flag, regime_history, realtime_regime_history}` | yes (regime histories as 1 x T+1 Cells of structs) |
+| `oo_.occbin.smoother.{SmoothedVariables, UpdatedVariables, SmoothedShocks, alphahat, etahat, ahat, epsilonhat, SteadyState, trend_coeff, T0, R0, C0, simul.{piecewise, linear}}` | yes; T0/R0/C0 are the regime matrices of every period in decision-rule order (layout not compared with Dynare) |
+| `oo_.occbin.linear_smoother.{SmoothedVariables, UpdatedVariables, SmoothedShocks, alphahat, etahat, ahat, SteadyState, T0, R0}` | yes (`aK`, `decomp`, `alphahat0`, `state_uncertainty0`, `regime_history_iter` not written) |
+| when the OccBin smoother fails (error_flag ~= 0) | only oo_.occbin.smoother is written, as Dynare ("No results will be written to oo_") |
+
+OccBin options come from the file's occbin_setup / occbin_solver statements and from `options_.occbin.*` (MATLAB lines,
+keywords). Refused with OccBin: prefilter, univariate filters with the PKF, the diffuse filter, loglinear, filter_covariance,
+smoothed_state_uncertainty, filter_step_ahead beyond 1, observation_trends in the smoother.
 
 Not written, and refused where the option asks for them: `selected_variables_only`, a smoother or filter together with an
 MCMC run, `oo_.FilteredVariablesShockDecomposition`, forecasts, posterior IRFs, `bayestopt_`/`estim_params_` (JDyn keeps

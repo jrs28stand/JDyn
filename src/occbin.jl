@@ -596,23 +596,28 @@ _asnum(v::AbstractString) = lowercase(strip(v)) in ("inf", "+inf") ? Inf : parse
 
 `simulate` keywords set by the `.mod` file's `occbin_setup` / `occbin_solver` statements (applied in order, as Dynare
 does: a later statement overrides an earlier one). Unset options keep Dynare's defaults. `simul_debug` only prints diagnostics in Dynare and is accepted;
-the options of OccBin estimation and smoothing (`smoother_*`, `likelihood_*`, `filter_*`, ...) are not implemented and
-produce a warning.
+the options of OccBin estimation and smoothing (`smoother_*`, `likelihood_*`, `filter_*`) are read by `occbin_filter_options`
+(a warning says the simulation does not use them);
+other options produce a warning.
 """
 function mod_options(ob::Occbin)
     m = ob.model
     o = get(m.options, "occbin_options", Dict{String,Any}())     # every occbin_setup / occbin_solver statement, in order
     out = Dict{Symbol,Any}()
-    unused = String[]
+    unused, filt = String[], String[]
     for (key, v) in o
         if haskey(_OCCBIN_MOD_OPTIONS, key)
             kw, T = _OCCBIN_MOD_OPTIONS[key]
             out[kw] = T === Bool ? _asbool(v) : T === Int ? Int(round(_asnum(v))) : _asnum(v)
+        elseif any(pre -> startswith(key, pre), ("smoother.", "likelihood.", "filter."))
+            push!(filt, key)                          # read by occbin_filter_options (estimation, smoother)
         elseif key != "simul.debug"
             push!(unused, key)
         end
     end
     isempty(unused) || warn_once(m, "occbin_setup/occbin_solver options not implemented in JDyn (ignored): $(join(sort(unused), ", "))")
+    isempty(filt) || warn_once(m, "occbin_setup options of the OccBin filters and smoother, not used by the simulation (they apply to " *
+                                  "estimation and smoothing): $(join(sort(filt), ", "))")
     (; (k => out[k] for k in sort(collect(keys(out))))...)
 end
 
