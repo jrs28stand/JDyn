@@ -51,6 +51,7 @@ export run_preprocessor, load, Model, ModelError, steady_state, SteadyStateError
        squeeze_shock_decomposition, realtime_shock_decomposition, RealtimeDecomposition, select_vintage, decomposition_plot_data,
        DecompositionPlotData, decomposition_table, stack_bars,
        perfect_foresight, PerfectForesightResult, PerfectForesightError, unanticipated_shocks,
-       dynare, @dynare, DynareWorkspace, build_M, build_options, MStruct, Cell
+       dynare, @dynare, DynareWorkspace, build_M, build_options, MStruct, Cell,
+       stoch_simul!, steady!, check!, perfect_foresight_setup!, perfect_foresight_solver!, occbin_solver!, set_param_value!
 
 end

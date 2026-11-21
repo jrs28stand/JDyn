@@ -60,3 +60,57 @@ end
     @test hasproperty(oo_.irfs, :y_e) && size(oo_.irfs.y_e) == (1, 40)
     @test size(oo_.mean) == (length(ws.oo_.var_list), 1)
 end
+
+@testset "re-running commands on the workspace (no preprocessing)" begin
+    d = _copy_dir(joinpath(EXAMPLES, "perfect_foresight"))
+    ws = with_logger(NullLogger()) do
+        JDyn.dynare(joinpath(d, "perfect_foresight_rbc.mod"))
+    end
+    oo_ = ws.oo_
+    base, x0 = copy(oo_.endo_simul), copy(oo_.exo_simul)
+    oo_.exo_simul .= x0[1] .+ 2 .* (x0 .- x0[1])                       # a bigger shock path
+    JDyn.perfect_foresight_solver!(ws; tolf=1e-12)
+    big = copy(oo_.endo_simul)
+    r = JDyn.perfect_foresight(ws.model; exo=Matrix(oo_.exo_simul), tolf=1e-12)
+    @test maximum(abs, big .- r.endo_simul) < 1e-9
+    @test maximum(abs, big[1, 2:5] .- base[1, 2:5]) > 1e-3
+    oo_.exo_simul .= x0
+    JDyn.perfect_foresight_solver!()                                      # acts on the current workspace
+    @test maximum(abs, oo_.endo_simul .- base) < 1e-6                     # Dynare's tolf = 1e-5
+
+    d = _copy_dir(SS)
+    ws = with_logger(NullLogger()) do
+        JDyn.dynare(joinpath(d, "collard_2001_theoretical_moments.mod"))
+    end
+    oo_, M_, m = ws.oo_, ws.M_, ws.model
+    for rho in (0.5, 0.9)
+        JDyn.set_param_value!(ws, "rho", rho)
+        JDyn.stoch_simul!(ws; order=1, irf=12, nomoments=true)
+        @test ws.options_.irf == 12 && ws.options_.order == 1                 # options persist, as in Dynare
+        sol = JDyn.first_order(m; params=vec(M_.params))
+        y = JDyn.irf(sol, JDyn.get_lower_cholesky_covariance(m.Sigma_e)[:, m.ix["e"]]; periods=12)
+        @test size(oo_.irfs.y_e) == (1, 12)
+        @test maximum(abs, vec(oo_.irfs.y_e) .- y[:, m.ie["y"]]) < 1e-14
+        @test maximum(abs, oo_.dr.ghx .- JDyn.ghx(sol)) < 1e-14
+    end
+    M_.params[m.ip["rho"]] = 0.7                                          # writing M_ directly also works
+    JDyn.stoch_simul!(["y"])
+    @test JDyn.get_param(m, "rho") == 0.7 && collect(oo_.var_list) == ["y"]
+    M_.Sigma_e .= 2 .* M_.Sigma_e
+    JDyn.stoch_simul!(["y"])
+    @test m.Sigma_e == M_.Sigma_e
+end
+
+@testset "steady-state file sets parameters again on every re-run (nk_baseline)" begin
+    d = _copy_dir(SS)
+    ws = with_logger(NullLogger()) do
+        JDyn.dynare(joinpath(d, "nk_baseline.mod"))
+    end
+    M_, oo_, m = ws.M_, ws.oo_, ws.model
+    JDyn.set_param_value!(ws, "betta", 0.99)
+    JDyn.stoch_simul!(ws; order=1, irf=10, nomoments=true)
+    P(n) = M_.params[m.ip[n]]
+    # nk_baseline_steadystate.m sets gammma1 = mu_z*mu_I/betta - (1-delta): it follows the new betta
+    @test P("gammma1") ≈ P("Lambdax") * exp(P("Lambdamu")) / 0.99 - (1 - P("delta")) rtol = 1e-14
+    @test maximum(abs, JDyn.static_resid(m, vec(oo_.steady_state), nothing, vec(M_.params))) < 1e-10
+end

@@ -23,6 +23,32 @@ same objects are what MATLAB code in the .mod file sees. Matrices keep MATLAB's 
 n x 1, rows 1 x n, scalars `Float64`, logicals `Bool`, strings `String`, cells `Cell`. `display(oo_)` prints
 MATLAB's struct summary (`endo_simul: 3x202 double`).
 
+## Re-running without preprocessing
+
+The workspace stays live: change `M_`, `options_` or `oo_` and call Dynare's commands again. Keyword
+options are written into options_, as `stoch_simul(order=1, irf=20)` does in MATLAB, and persist.
+
+```julia
+@dynare "rbc.mod"
+for rho in (0.5, 0.9, 0.95)
+    set_param_value!("rho", rho)          # or M_.params[i] = rho
+    stoch_simul!(; order=1, irf=20)       # new oo_.dr, oo_.irfs (about 0.3 s each on collard_2001)
+    push!(irfs, copy(oo_.irfs.y_e))
+end
+
+x0 = copy(oo_.exo_simul)                  # after perfect_foresight_setup/solver
+for s in (0.5, 1.0, 2.0)
+    oo_.exo_simul .= s .* x0              # another shock path
+    perfect_foresight_solver!()           # starts from oo_.endo_simul, as Dynare (about 0.2 s each)
+    push!(paths, oo_.endo_simul[1, :])
+end
+```
+
+Commands: `steady!`, `check!`, `stoch_simul!(var_list; shocks, rng, options...)`, `perfect_foresight_setup!`,
+`perfect_foresight_solver!`, `occbin_solver!`, `set_param_value!`. Each takes the workspace as first
+argument, or acts on the last one `dynare`/`@dynare` made (as MATLAB's commands act on the globals).
+Parameters a steady-state file or `steady_state_model` block sets go back to `M_.params`, as in Dynare.
+
 The existing API (`load`, `first_order`, `perfect_foresight`, `estimate`, ...) is unchanged: `dynare()` is a
 layer over it, and `ws.model` is the usual `Model`.
 

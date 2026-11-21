@@ -1,9 +1,9 @@
 # Dynare-style results: M_, options_ and oo_ as MATLAB structs (MStruct), filled the way Dynare's
 # commands fill them, so results arrive as in MATLAB: oo_.endo_simul, oo_.dr.ghx, oo_.irfs.y_e, ...
 #
-# PROTOTYPE: the commands of the .mod file are run after the file has been loaded (with the final
-# calibration), in file order. MATLAB lines placed between commands do not see their results yet;
-# see docs/RESULTS.md for the design that runs them in place.
+# The commands of the .mod file run after the file has been loaded (with the final calibration), in file
+# order; MATLAB lines placed between commands do not see their results yet (docs/RESULTS.md). Afterwards the
+# same commands (stoch_simul!, perfect_foresight_solver!, ...) re-run on the workspace without preprocessing.
 
 "What Dynare leaves in MATLAB's workspace after `dynare model`."
 struct DynareWorkspace
@@ -119,8 +119,8 @@ const _OPTION_PREFIX = Dict("occbin_solver" => "occbin.", "occbin_write_regimes"
 const _OPTION_ELSEWHERE = Set(["occbin_setup", "occbin_graph", "identification", "method_of_moments", "model_info",
                                "conditional_forecast", "dynare_sensitivity", "model_diagnostics", "heterogeneity_solve"])
 
-"options_: Dynare's defaults known to JDyn, the MATLAB assignments of the .mod file, then the options of
-each command in file order (the preprocessor names them by their options_ path)."
+"""options_ before the first statement: Dynare's defaults known to JDyn and the MATLAB assignments of the
+.mod file. Each statement then writes its options when it runs (`_apply_options!`), as in Dynare's driver."""
 function build_options(m::Model)
     O = MStruct()
     for (k, v) in OPTION_DEFAULTS
@@ -131,17 +131,56 @@ function build_options(m::Model)
     for k in keys(m.matlab_options)
         O[k] = m.matlab_options[k]
     end
-    for st in m.statements
-        kind = st["statementName"]
-        opts = get_or(st, "options", nothing)
-        (opts isa AbstractDict && !(kind in _OPTION_ELSEWHERE)) || continue
-        pre = get(_OPTION_PREFIX, kind, "")
-        for (k, v) in opts
-            _setpath!(O, pre * String(k), _mval(v))
-        end
-    end
     O.dynare_version = "7.2"
     O
+end
+
+"Write a statement's options into options_, at the path Dynare's driver uses (the preprocessor names them by it)."
+function _apply_options!(O::MStruct, st)
+    kind = st["statementName"]
+    opts = get_or(st, "options", nothing)
+    (opts isa AbstractDict && !(kind in _OPTION_ELSEWHERE)) || return O
+    pre = get(_OPTION_PREFIX, kind, "")
+    for (k, v) in opts
+        _setpath!(O, pre * String(k), _mval(v))
+    end
+    O
+end
+
+"Keyword options of a command call, written into options_ as Dynare's driver would (they persist)."
+function _take_options!(ws, kw)
+    for (k, v) in kw
+        _setpath!(ws.options_, String(k), v isa AbstractVector{<:AbstractString} ? _cellrow(String.(v)) : _mval(v))
+    end
+end
+
+function _getpath(s::MStruct, path::AbstractString, default)
+    for p in split(path, ".")
+        (s isa MStruct && haskey(s, p)) || return default
+        s = s[p]
+    end
+    s
+end
+_optf(ws, k, d) = (v = _getpath(ws.options_, k, d); v isa AbstractMatrix && isempty(v) ? d : v)
+_opti(ws, k, d) = Int(_optf(ws, k, d))
+_optb(ws, k, d) = (v = _optf(ws, k, d); v isa Bool ? v : v != 0)
+
+"Bring the model in line with what the user may have changed in M_ (params, Sigma_e)."
+function _sync_model!(ws)
+    m = ws.model
+    p = vec(Float64.(ws.M_.params))
+    length(p) == length(m.params) || throw(ModelError("M_.params has $(length(p)) elements, the model has $(length(m.params)) parameters"))
+    m.params .= p
+    S = ws.M_.Sigma_e
+    size(S) == size(m.Sigma_e) || throw(ModelError("M_.Sigma_e has size $(size(S)), expected $(size(m.Sigma_e))"))
+    m.Sigma_e .= S
+    ws.M_.Correlation_matrix = _corr(m.Sigma_e)
+    m
+end
+"Parameters the steady state (file or steady_state_model block) has set go back to M_.params, as in Dynare."
+function _store_params!(ws, p)
+    ws.model.params .= p
+    ws.M_.params = _col(p)
 end
 
 # ---------------------------------------------------------------------- oo_
@@ -159,45 +198,59 @@ function _store_dr!(oo::MStruct, dr::AbstractDict, n::Int)
     oo.dr = D
 end
 
-function _stoch_simul!(ws::DynareWorkspace, st; shocks=nothing, rng=nothing)
-    m, oo, O = ws.model, ws.oo_, ws.options_
-    opts = get_or(st, "options", Dict{String,Any}())
-    order = Int(get(opts, "order", 2))
-    pruning = get(opts, "pruning", false) == true
-    order > 1 && m.max_deriv_order < order && throw(ModelError("stoch_simul(order=$order) needs derivatives of order $order: load the model with output=\"$(order == 2 ? "second" : "third")\" (dynare(...; output=...))"))
-    dr = order == 1 ? as_dr(first_order(m)) : k_order(m; order=order, pruning=pruning)
+_shock_list(v, m) = v isa AbstractVector{<:AbstractString} ? String.(v) : v isa Cell ? String.(collect(v)) :
+                    v isa MStruct && haskey(v, "symbol_list") ? _shock_list(v["symbol_list"], m) : m.exo_names
+
+"""
+    stoch_simul!(ws=current workspace, var_list=[]; shocks=nothing, rng=nothing, options...)
+
+Dynare's `stoch_simul` on a workspace: solves at the current `M_.params` and `M_.Sigma_e` with the current
+`options_` (keyword options are written into options_ first, as `stoch_simul(order=1, irf=20)` does) and
+fills `oo_.dr`, `oo_.irfs`, `oo_.endo_simul`/`oo_.exo_simul` (periods > 0) and the moments. No preprocessing:
+change a parameter (`M_.params[i] = x` or `set_param_value!`) and call it again.
+"""
+function stoch_simul!(ws::DynareWorkspace, var_list=String[]; shocks=nothing, rng=nothing, options...)
+    m, oo = _sync_model!(ws), ws.oo_
+    _take_options!(ws, options)
+    order = _opti(ws, "order", 2)
+    pruning = _optb(ws, "pruning", false)
+    order > 1 && m.max_deriv_order < order && throw(ModelError("stoch_simul(order=$order) needs derivatives of order $order: run dynare(...; output=\"$(order == 2 ? "second" : "third")\")"))
+    dr, p = if order == 1
+        sol = first_order(m)
+        as_dr(sol), sol.params
+    else
+        d = k_order(m; order=order, pruning=pruning)
+        d, d["params"]
+    end
+    _store_params!(ws, p)
     _store_dr!(oo, dr, m.n_endo)
     oo.steady_state = _col(dr["ys"])
     oo.exo_steady_state = _col(exo_steady(m))
-    var_list = !isempty(get_or(st, "symbol_list", [])) ? String.(st["symbol_list"]) : orig_endo_names(m)
+    var_list = isempty(var_list) ? orig_endo_names(m) : String.(collect(var_list))
     oo.var_list = _cellcol(var_list)
     ivar = [m.ie[v] for v in var_list]
-    # impulse responses: every variable of var_list (Dynare plots only those above the threshold)
-    nirf = Int(get(opts, "irf", 40))
+    nirf = _opti(ws, "irf", 40)
     if nirf > 0
         irfs = get(oo, "irfs", MStruct())
         cs = get_lower_cholesky_covariance(m.Sigma_e)
-        shocks_list = haskey(opts, "irf_shocks") ? String.(get(opts["irf_shocks"], "symbol_list", m.exo_names)) : m.exo_names
-        relative = get(opts, "relative_irf", false) == true
-        for s in shocks_list
-            i = m.ix[s]
+        relative = _optb(ws, "relative_irf", false)
+        for sname in _shock_list(_getpath(ws.options_, "irf_shocks", nothing), m)
+            i = m.ix[sname]
             abs(cs[i, i]) < 1e-6 && continue                     # Dynare skips shocks with zero variance
-            y = if order == 1
-                irf(dr, cs[:, i]; periods=nirf)
-            else
+            y = order == 1 ? irf(dr, cs[:, i]; periods=nirf) :
                 irf(dr, cs[:, i]; Sigma_e=m.Sigma_e, periods=nirf, order=order, pruning=pruning,
-                    drop=Int(get(opts, "drop", 100)), replic=Int(get(opts, "replic", 50)), rng=rng)
-            end
+                    drop=_opti(ws, "drop", 100), replic=_opti(ws, "replic", 50), rng=rng)
             relative && order == 1 && (y = 100 .* y ./ cs[i, i])
             for j in ivar
-                irfs[string(m.endo_names[j], "_", s)] = _row(y[:, j])
+                irfs[string(m.endo_names[j], "_", sname)] = _row(y[:, j])
             end
         end
         oo.irfs = irfs
     end
-    periods = Int(get(opts, "periods", 0))
+    periods = _opti(ws, "periods", 0)
     if periods > 0
         ex = if shocks !== nothing
+            size(shocks) == (periods, m.n_exo) || throw(ArgumentError("shocks must be periods x exo_nbr = ($periods, $(m.n_exo))"))
             Matrix{Float64}(shocks)
         else
             r = rng === nothing ? Random.default_rng() : rng
@@ -210,9 +263,12 @@ function _stoch_simul!(ws::DynareWorkspace, st; shocks=nothing, rng=nothing)
         oo.endo_simul = Matrix{Float64}(permutedims(y))        # n_endo x periods, as Dynare's simult
         oo.exo_simul = ex
     end
-    if !(get(opts, "nomoments", false) == true) && order <= 2
+    if !_optb(ws, "nomoments", false) && order <= 2
+        mo = Dict{Symbol,Any}(:order => order, :pruning => pruning, :periods => periods, :drop => _opti(ws, "drop", 100),
+                              :ar => _opti(ws, "ar", 5), :hp_filter => _optf(ws, "hp_filter", 0.0),
+                              :nocorr => _optb(ws, "nocorr", false), :nodecomposition => _optb(ws, "nodecomposition", false))
         mom = try
-            stoch_simul_moments(m; var_list=var_list, dr=dr, shocks=(periods > 0 ? oo.exo_simul : nothing))
+            stoch_simul_moments(m; var_list=var_list, dr=dr, shocks=(periods > 0 ? oo.exo_simul : nothing), mo...)
         catch e
             e isa Union{ArgumentError,ModelError} || rethrow()
             warn_once(m, "stoch_simul: moments not computed ($(sprint(showerror, e)))")
@@ -231,23 +287,117 @@ function _stoch_simul!(ws::DynareWorkspace, st; shocks=nothing, rng=nothing)
             end
         end
     end
+    ws
 end
 
-function _perfect_foresight!(ws::DynareWorkspace)
-    r = perfect_foresight(ws.model)
+"""
+    steady!(ws=current workspace; options...)
+
+Dynare's `steady`: the steady state at the current `M_.params` into `oo_.steady_state`; parameters a
+steady-state file or `steady_state_model` block sets go to `M_.params`.
+"""
+function steady!(ws::DynareWorkspace; options...)
+    m = _sync_model!(ws)
+    _take_options!(ws, options)
+    ys, p = steady_state(m)
+    _store_params!(ws, p)
+    ws.oo_.steady_state = _col(ys)
+    ws
+end
+
+"Dynare's `check`: eigenvalues into `oo_.dr.eigval` (throws BlanchardKahnError if the conditions fail)."
+function check!(ws::DynareWorkspace; options...)
+    m = _sync_model!(ws)
+    _take_options!(ws, options)
+    sol = first_order(m)
+    _store_params!(ws, sol.params)
+    D = get(ws.oo_, "dr", MStruct())
+    D.eigval = _col(abs.(sol.eigenvalues))
+    ws.oo_.dr = D
+    ws
+end
+
+"`set_param_value('name', v)`: sets M_.params (and the model's parameter)."
+function set_param_value!(ws::DynareWorkspace, name::AbstractString, v::Real)
+    i = get(ws.model.ip, name, nothing)
+    i === nothing && throw(ArgumentError("unknown parameter '$name'"))
+    ws.M_.params[i] = Float64(v)
+    ws.model.params[i] = Float64(v)
+    ws
+end
+
+"""
+    perfect_foresight_setup!(ws=current workspace; periods=options_.periods)
+
+Dynare's `perfect_foresight_setup`: builds `oo_.endo_simul` (initial/terminal conditions and the starting
+guess) and `oo_.exo_simul` (the shocks of the `shocks` block) for the current `M_.params`. Edit
+`oo_.exo_simul` afterwards to try other shock paths.
+"""
+function perfect_foresight_setup!(ws::DynareWorkspace; options...)
+    m = _sync_model!(ws)
+    _take_options!(ws, options)
+    T = _opti(ws, "periods", 0)
+    T > 0 || throw(ArgumentError("perfect_foresight_setup: options_.periods must be positive"))
+    pws = _pf_replay(m, nothing, nothing, (), ())
+    endo, x = _pf_make_paths(m, pws, T)
+    ws.oo_.endo_simul = Matrix{Float64}(endo)
+    ws.oo_.exo_simul = Matrix{Float64}(permutedims(x))
+    ws.oo_.steady_state = _col(pws.ss)
+    ws.oo_.exo_steady_state = _col(pws.xss)
+    pws.ss0 === nothing || (ws.oo_.initial_steady_state = _col(pws.ss0))
+    ws
+end
+
+"""
+    perfect_foresight_solver!(ws=current workspace; options...)
+
+Dynare's `perfect_foresight_solver`: solves from the current `oo_.endo_simul` (initial and terminal
+conditions, and the starting guess) and `oo_.exo_simul`, as Dynare does, and stores the path in
+`oo_.endo_simul`. Loop over shock paths by editing `oo_.exo_simul` and calling it again.
+"""
+function perfect_foresight_solver!(ws::DynareWorkspace; raise_on_failure::Bool=true, options...)
+    m = _sync_model!(ws)
+    _take_options!(ws, options)
+    T = _opti(ws, "periods", 0)
+    lag, lead = Int(m.raw["model_info"]["maximum_lag"]), Int(m.raw["model_info"]["maximum_lead"])
+    rows = lag + T + lead
+    oo = ws.oo_
+    (haskey(oo, "endo_simul") && haskey(oo, "exo_simul") && size(oo.endo_simul) == (m.n_endo, rows) &&
+     size(oo.exo_simul) == (rows, m.n_exo)) || perfect_foresight_setup!(ws)
+    E = oo.endo_simul
+    kw = Dict{Symbol,Any}(Symbol(k) => v for (k, v) in options if k in (:tolf, :tolx, :maxit, :homotopy, :lmmcp, :stack_solve_algo, :markowitz,
+                                                                        :endval_steady, :linear_approximation, :robust_lin_solve))
+    r = perfect_foresight(m; periods=T, exo=Matrix{Float64}(oo.exo_simul),
+                          y_init=lag > 0 ? E[:, 1:lag] : nothing, y_term=lead > 0 ? E[:, lag+T+1:end] : nothing,
+                          guess=E[:, lag+1:lag+T], raise_on_failure=raise_on_failure, kw...)
+    _store_pf!(ws, r)
+end
+
+function _store_pf!(ws, r)
     oo = ws.oo_
     oo.endo_simul = Matrix{Float64}(r.endo_simul)
     oo.exo_simul = Matrix{Float64}(r.exo_simul)
-    oo.steady_state = _col(r.steady_state)
-    r.initial_steady_state === nothing || (oo.initial_steady_state = _col(r.initial_steady_state))
     ds = MStruct()
     ds.status = r.status
     ds.iterations = Float64(r.iterations)
     ds.error = r.max_residual
     oo.deterministic_simulation = ds
+    ws
 end
 
-function _occbin!(ws::DynareWorkspace)
+"perfect_foresight_with_expectation_errors_solver (from the .mod file's declarations)."
+function _perfect_foresight_wee!(ws::DynareWorkspace)
+    r = perfect_foresight(_sync_model!(ws); expectation_errors=true)
+    _store_pf!(ws, r)
+    ws.oo_.steady_state = _col(r.steady_state)
+    r.initial_steady_state === nothing || (ws.oo_.initial_steady_state = _col(r.initial_steady_state))
+    ws
+end
+
+"Dynare's `occbin_solver` at the current `M_.params` (shocks from the `shocks(surprise)` block)."
+function occbin_solver!(ws::DynareWorkspace; options...)
+    _sync_model!(ws)
+    _take_options!(ws, Dict(Symbol("occbin." * String(k)) => v for (k, v) in options))
     ob = Occbin(ws.model)
     r = simulate(ob)
     sim = MStruct()
@@ -258,7 +408,17 @@ function _occbin!(ws::DynareWorkspace)
     occ = get(ws.oo_, "occbin", MStruct())
     occ.simul = sim
     ws.oo_.occbin = occ
+    ws
 end
+
+# Dynare's commands act on the current workspace (the last one `dynare` made), as MATLAB's act on globals
+const CURRENT = Ref{Union{Nothing,DynareWorkspace}}(nothing)
+_current() = CURRENT[] === nothing ? throw(ArgumentError("no Dynare workspace yet: run dynare(\"model.mod\") or @dynare first")) : CURRENT[]
+for f in (:stoch_simul!, :steady!, :check!, :perfect_foresight_setup!, :perfect_foresight_solver!, :occbin_solver!)
+    @eval $f(; kw...) = $f(_current(); kw...)
+end
+stoch_simul!(var_list::AbstractVector; kw...) = stoch_simul!(_current(), var_list; kw...)
+set_param_value!(name::AbstractString, v::Real) = set_param_value!(_current(), name, v)
 
 """
     dynare(modfile; output=nothing, shocks=Dict(), rng=nothing, kw...) -> DynareWorkspace
@@ -271,7 +431,9 @@ MATLAB's syntax). `@dynare "model.mod"` also defines `M_`, `options_` and `oo_` 
 to a (periods x n_exo) shock matrix, to reproduce a given simulation (e.g. Dynare's `oo_.exo_simul`);
 otherwise shocks are drawn with `rng` (Julia's random numbers, so paths differ from MATLAB's).
 
-PROTOTYPE: commands run after the whole file has been loaded, with the final calibration.
+Commands run after the whole file has been loaded, with the final calibration. Afterwards, re-run them on
+the workspace without preprocessing: `M_.params[i] = x` or `set_param_value!("rho", x)`, then `stoch_simul!()`;
+edit `oo_.exo_simul`, then `perfect_foresight_solver!()`.
 """
 function dynare(modfile::AbstractString; output=nothing, shocks=Dict{Int,Any}(), rng=nothing, kw...)
     if output === nothing
@@ -286,31 +448,32 @@ function dynare(modfile::AbstractString; output=nothing, shocks=Dict{Int,Any}(),
     oo.exo_det_steady_state = zeros(0, 0)
     oo.dynare_version = "7.2"
     nss = 0
+    CURRENT[] = ws
     for st in m.statements
         kind = st["statementName"]
+        _apply_options!(ws.options_, st)
         if kind == "steady"
-            ys, _ = steady_state(m)
-            oo.steady_state = _col(ys)
+            steady!(ws)
         elseif kind == "check"
-            sol = first_order(m)
-            D = get(oo, "dr", MStruct())
-            D.eigval = _col(abs.(sol.eigenvalues))
-            oo.dr = D
+            check!(ws)
         elseif kind == "stoch_simul"
             nss += 1
-            _stoch_simul!(ws, st; shocks=get(shocks, nss, nothing), rng=rng)
-        elseif kind == "perfect_foresight_solver" || kind == "perfect_foresight_with_expectation_errors_solver"
-            _perfect_foresight!(ws)
+            stoch_simul!(ws, String.(get_or(st, "symbol_list", String[])); shocks=get(shocks, nss, nothing), rng=rng)
+        elseif kind == "perfect_foresight_setup"
+            perfect_foresight_setup!(ws)
+        elseif kind == "perfect_foresight_solver"
+            perfect_foresight_solver!(ws)
+        elseif kind == "perfect_foresight_with_expectation_errors_solver"
+            _perfect_foresight_wee!(ws)
         elseif kind == "occbin_solver"
-            _occbin!(ws)
-        elseif kind in COMPUTE_KINDS && !(kind in ("perfect_foresight_setup", "perfect_foresight_with_expectation_errors_setup",
+            occbin_solver!(ws)
+        elseif kind in COMPUTE_KINDS && !(kind in ("perfect_foresight_with_expectation_errors_setup",
                                                    "occbin_setup", "occbin_graph", "rplot", "write_latex_dynamic_model",
                                                    "write_latex_static_model", "write_latex_original_model",
                                                    "write_latex_steady_state_model", "collect_latex_files", "write_latex_definitions"))
-            warn_once(m, "dynare(): '$kind' does not fill oo_ yet in this prototype")
+            warn_once(m, "dynare(): '$kind' does not fill oo_ yet")
         end
     end
-    ws.M_.params = _col(m.params)
     for (k, v) in m.session.sc.vars
         v isa Tainted || v isa HostStruct || (ws.vars[k] = v)
     end
