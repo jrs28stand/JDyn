@@ -193,9 +193,11 @@ end
 _filter_name(o) = o["hp_filter"] != 0 ? "hp" : o["one_sided_hp_filter"] != 0 ? "one-sided hp" : o["bandpass"] ? "bandpass" : ""
 
 function _default_var_list(m)
-    for st in m.statements
-        if get(st, "statementName", "") == "stoch_simul" && !isempty(get_or(st, "symbol_list", []))
-            return String.(st["symbol_list"])
+    # the results are those of the last stoch_simul statement (its own variable list, or all variables)
+    for st in Iterators.reverse(m.statements)
+        if get(st, "statementName", "") == "stoch_simul"
+            isempty(get_or(st, "symbol_list", [])) || return String.(st["symbol_list"])
+            break
         end
     end
     orig_endo_names(m)

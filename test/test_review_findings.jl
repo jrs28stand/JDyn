@@ -37,9 +37,9 @@ end
             steady;
             """)
         ys, _ = steady_state(m)
-        @test_broken isapprox(ys, [0.2, 0.7328416548961019]; rtol=1e-8)        # oo_.steady_state of Dynare 7.2
+        @test isapprox(ys, [0.2, 0.7328416548961019]; rtol=1e-8)        # oo_.steady_state of Dynare 7.2
         sol = first_order(m)
-        @test_broken isapprox(vec(ghx(sol)), [1.0, 0.7328416548961019]; rtol=1e-8)   # oo_.dr.ghx of Dynare 7.2
+        @test isapprox(vec(ghx(sol)), [1.0, 0.7328416548961019]; rtol=1e-8)   # oo_.dr.ghx of Dynare 7.2
     end
 
     # ------------------------------------------------------------------ R02 class of logical arrays after indexed assignment
