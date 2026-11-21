@@ -14,7 +14,7 @@ References: test/ref_occbin/ (pydyn's occest_* files; generator r_occbin_estimat
 - test/test_occbin_estimation.jl in runtests.jl.
 
 ## Open
-- Full-suite run result: see final report / next commit.
+- Full suite (test/runtests.jl, 25 files): all passed.
 - Not implemented (refused): occbin.forecast, particle filters, loss-function regime guess, init_regime_history,
   smoother_first_period_occbin_update != 1, filter_covariance / smoothed_state_uncertainty / filter_step_ahead > 1 with OccBin,
   trends in the OccBin smoother, Bayesian smoother over draws.
