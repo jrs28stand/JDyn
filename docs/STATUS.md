@@ -1,8 +1,8 @@
 # Status (2026-11-21)
 
 Reference: Dynare 7.2 under GNU Octave 8.4 (the same reference results as pydyn). All figures below are
-from `test/runtests.jl` (1,739 checks pass, 0 fail; 3 skipped: perfect foresight, and references
-without IRFs); the perfect foresight rows are from `test/test_perfect_foresight.jl` (307 checks, this branch).
+from `test/runtests.jl` (1,739 checks passed before the perfect foresight work; with it, `test_perfect_foresight.jl` adds
+307 checks and the two shipped perfect foresight examples are no longer reported "not implemented"; 0 fail).
 
 ## Implemented and checked against Dynare
 
@@ -79,6 +79,9 @@ maximum_lag + periods + maximum_lead) and `exo_simul` (rows x n_exo) have Dynare
 
 ## Open checks
 
+- Homotopy can accept a wrong terminal steady state on badly scaled models: Dynare's own defect (reference-environment.md),
+  reproduced because the iterates must match Dynare's; `endval_steady_nocheck`, `steady_tolf` and the residual check at the
+  terminal state are the guards.
 - Files of Dynare's test suite outside pydyn's corpus have not been compared: in particular a file that
   pydyn refuses but JDyn loads has no Dynare reference yet.
 - `options_.qz_criterium` set by MATLAB code and a `qz_criterium` statement option: the statement option
