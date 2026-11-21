@@ -489,10 +489,10 @@ end
     # options override the statement; unsupported options raise unless allowed
     res = quiet(() -> JDyn.estimate(estload("est_ur", 3); mode_compute=0))
     @test res.mode === nothing
-    @test_throws JDyn.EstimationError JDyn.estimate(estload("est_nk", 5))            # smoother
-    res = quiet(() -> JDyn.estimate(estload("est_nk", 5); allow_unsupported=true))
+    # the smoother option is honoured (src/smoother.jl): estimate() then also smooths at the mode
+    res = quiet(() -> JDyn.estimate(estload("est_nk", 5)))
     @test isfinite(res.log_posterior)
-    @test "smoother" in res.est.unsupported
+    @test !("smoother" in res.est.unsupported) && res.smoother !== nothing
     # a short MCMC from the .mod file's settings (2 chains, jscale 0.8 of the file)
     res = quiet(() -> JDyn.estimate(estload("est_schorfheide", "FULL"); mh_replic=300, seed=7))
     @test res.mcmc !== nothing && size(res.mcmc.draws) == (2, 300, 9)
@@ -510,7 +510,7 @@ end
     @test_throws JDyn.EstimationError Estimation(m; kalman_algo=5)
     @test_throws JDyn.EstimationError Estimation(estload("est_nk"); lik_init=4)
     @test_throws JDyn.EstimationError Estimation(m; first_obs=[1, 2])                  # recursive estimation
-    @test_throws JDyn.EstimationError Estimation(m; smoother=true)
+    @test Estimation(m; smoother=true).unsupported == String[]
     @test_throws JDyn.EstimationError Estimation(m; mode_file="abc")
     @test Estimation(m; smoother=false).unsupported == String[]
     # nodisplay and nograph are cosmetic

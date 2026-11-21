@@ -33,6 +33,8 @@ include("moments.jl")
 include("priors.jl")
 include("kalman.jl")
 include("estimation.jl")
+include("smoother.jl")
+include("shock_decomposition.jl")
 include("perfect_foresight.jl")
 include("plotting.jl")
 include("occbin.jl")
@@ -44,6 +46,11 @@ export run_preprocessor, load, Model, ModelError, steady_state, SteadyStateError
        Occbin, OccbinResult, OccbinIRF, OccbinError, OccbinPeriodicError, OccbinMaxitError, OccbinHorizonError, OccbinLoopError,
        OccbinDynareBug, error_flag, irf_occbin, occbin_graph_table, surprise_shocks, mod_options, check_constraints,
        Estimation, EstimationError, estimate, posterior_mode, sample_posterior, log_likelihood, log_prior, log_posterior,
-       perfect_foresight, PerfectForesightResult, dynare, @dynare, DynareWorkspace, build_M, build_options, MStruct, Cell, PerfectForesightError, unanticipated_shocks
+       smooth, SmootherResult, SmootherError, check_smoother, parameter_vector, prior_mode,
+       shock_decomposition, initial_condition_decomposition, ShockDecomposition, shock_groups, group_shocks, init2shocks, apply_init2shocks,
+       squeeze_shock_decomposition, realtime_shock_decomposition, RealtimeDecomposition, select_vintage, decomposition_plot_data,
+       DecompositionPlotData, decomposition_table, stack_bars,
+       perfect_foresight, PerfectForesightResult, PerfectForesightError, unanticipated_shocks,
+       dynare, @dynare, DynareWorkspace, build_M, build_options, MStruct, Cell
 
 end

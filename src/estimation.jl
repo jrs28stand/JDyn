@@ -479,7 +479,8 @@ const _HONOURED_EST = Set(["datafile", "first_obs", "nobs", "loglinear", "logdat
     "diffuse_filter", "kalman_algo", "kalman_tol", "diffuse_kalman_tol", "riccati_tol", "prior_trunc", "mode_compute", "mh_replic",
     "mh_nblck", "mh_jscale", "mh_drop", "mh_init_scale_factor", "order", "use_univariate_filters_if_singularity_is_detected",
     "rescale_prediction_error_covariance", "cova_compute", "mh_conf_sig", "optim_opt", "gstep", "Harvey_scale_factor",
-    "lyapunov_complex_threshold", "mode_check.status", "nodiagnostic"])
+    "lyapunov_complex_threshold", "mode_check.status", "nodiagnostic",
+    "smoother", "filtered_vars", "filter_step_ahead", "filter_covariance", "smoothed_state_uncertainty"])
 const _EST_DEFAULTS = Dict{String,Any}("datafile" => nothing, "first_obs" => 1, "nobs" => nothing, "loglinear" => false,
     "logdata" => false, "prefilter" => 0, "presample" => 0, "lik_init" => 1, "diffuse_filter" => false, "kalman_algo" => 0,
     "kalman_tol" => 1e-10, "diffuse_kalman_tol" => 1e-6, "riccati_tol" => 1e-6, "prior_trunc" => 0.0, "mode_compute" => 5,
@@ -571,7 +572,7 @@ function Estimation(m::Model; data=nothing, allow_unsupported::Bool=false, state
     sort!(unsupported)
     if !isempty(unsupported)
         msg = "Estimation does not act on these estimation options: " * join(unsupported, ", ") *
-              " (smoothing, forecasts, posterior IRFs and moments, higher orders, other samplers and optimisers are not implemented)"
+              " (forecasts, posterior IRFs and moments, higher orders, other samplers and optimisers are not implemented)"
         allow_unsupported ? warn_once(m, msg) : throw(EstimationError(msg))
     end
     haskey(raw, "mode_check.status") && _est_flag(raw["mode_check.status"]) && warn_once(m, "estimation: mode_check draws plots only; no plots are made")
@@ -1444,6 +1445,7 @@ struct EstimationResult
     marginal_density_laplace::Float64
     marginal_density_mhm::Float64
     posterior::Union{Nothing,Dict{String,Any}}   # posterior statistics from the draws
+    smoother::Any                      # SmootherResult at the mode (smoother, filtered_vars, filter_step_ahead options), else nothing
 end
 
 """
@@ -1467,8 +1469,10 @@ end
 Run what the .mod file's `estimation` statement asks for within the implemented scope (first order): the posterior mode with
 csminwel unless `mode_compute=0`, the Hessian, the Laplace approximation, and a random-walk Metropolis-Hastings run when
 `mh_replic > 0` (with posterior statistics and the modified harmonic mean). Keyword options override the statement's
-options; the model is not modified. Options for outputs not implemented (smoother, forecasts, posterior IRFs, ...) raise an
+options; the model is not modified. Options for outputs not implemented (forecasts, posterior IRFs, ...) raise an
 `EstimationError` unless `allow_unsupported=true`. With no `estimation` statement in the file, pass options as keywords.
+The `smoother` (and `filtered_vars`, `filter_step_ahead`) options run `smooth` at the mode (at the initial values with
+`mode_compute=0`) and return it in the `smoother` field; with `mh_replic > 0` they are refused.
 """
 function estimate(m::Model; seed=0, rng=Random.default_rng(), kw...)
     est = Estimation(m; kw...)
@@ -1490,7 +1494,14 @@ function estimate(m::Model; seed=0, rng=Random.default_rng(), kw...)
         mhm = marginal_density_mhm(mc)
     end
     lap = mode === nothing ? NaN : mode.laplace
-    EstimationResult(est, est.x0, mode, mc, lp, lap, mhm, post)
+    sm = nothing
+    if _est_flag(get(o, "smoother", false)) || _est_flag(get(o, "filtered_vars", false)) || !isempty(something(get(o, "filter_step_ahead", nothing), []))
+        # Dynare's frequentist smoother at the mode (xparam1); the draws' smoothed variables are not implemented
+        (mc !== nothing) && throw(EstimationError("smoother with mh_replic > 0 (smoothed variables at the posterior draws) is not implemented; run smooth(m; estimation=est, parameter_set=\"posterior_mean\", mcmc=...) for one parameter vector"))
+        theta = mode === nothing ? est.x0 : mode.x
+        sm = smooth(m; estimation=est, theta=theta)
+    end
+    EstimationResult(est, est.x0, mode, mc, lp, lap, mhm, post, sm)
 end
 
 "Set the estimated parameters and standard deviations of `m` to `theta` (Dynare leaves the model at the estimates)."
