@@ -21,6 +21,7 @@ run_m(code; variables=Dict{String,Any}(), directory=nothing) = mrun(code; variab
 as_matrix(v::AbstractString) = mat(v)
 as_matrix(v::Real) = fill(Float64(v), 1, 1)
 as_matrix(v::AbstractMatrix) = Matrix{Float64}(v)
+as_matrix(v::AbstractVector) = reshape(Float64.(v), :, 1)
 
 "Same shape, |a-b| <= rtol |b| elementwise, NaN equal to NaN, equal infinities."
 function close_nan(a, b; rtol=1e-13, atol=0.0)
@@ -270,6 +271,385 @@ if section("mod")
         m = build("var c; varexo e; parameters rho s; s = 1;\ncalibration;\nrho = twice(rho_s);\nmodel; c = rho*c(-1) + s*e; end;";
                   files=files)
         @test (M.get_param(m, "rho"), M.get_param(m, "s")) == (0.6, 4.0)
+    end
+end
+end
+
+# ====================================================================== steady-state files
+nk(; kw...) = load_copy(joinpath(SS, "nk_baseline.mod"); extra=[joinpath(SS, "nk_baseline_steadystate.m")], kw...)
+
+const SSMODEL = "var c k; varexo e; parameters rho cbar kbar;\nrho = 0.5; cbar = 2;\n" *
+                "model; c = cbar + rho*(c(-1)-cbar) + e; k = kbar + rho*(k(-1)-kbar); end;\n"
+
+const OLD_STYLE = """function [ys, check] = old_steadystate(ys, exo)
+% steady-state file in the old two-output form: parameters come from the global M_
+global M_
+check = 0;
+rho = M_.params(1);
+cbar = M_.params(2);
+if rho >= 1
+    check = 1;
+    return
+end
+M_.params(3) = 3*cbar;
+ys = [cbar; M_.params(3)];
+"""
+
+if section("ss")
+@testset "steady-state files and helpers" begin
+    @testset "nk_baseline with its MATLAB steady-state file" begin
+        m = nk()
+        r = refmat("clean_nk_baseline.mat")
+        sol = M.first_order(m)
+        @test isapprox(sol.ys, vec(r["ys"]); rtol=1e-8, atol=1e-10)
+        @test isapprox(sol.params, vec(r["params"]); rtol=1e-10)
+        @test isapprox(M.ghx(sol), r["ghx"]; rtol=1e-6, atol=1e-8)
+        @test isapprox(M.ghu(sol), r["ghu"]; rtol=1e-6, atol=1e-8)
+        M.set_param!(m, "betta", 0.995)                       # the file updates Rbar
+        sol_b = M.first_order(m)
+        @test isapprox(sol_b.params, vec(r["params_b"]); rtol=1e-10)
+        @test isapprox(sol_b.ys, vec(r["ys_b"]); rtol=1e-8, atol=1e-10)
+        @test isapprox(M.ghx(sol_b), r["ghx_b"]; rtol=1e-6, atol=1e-8)
+    end
+
+    @testset "steady-state file: parameters it sets are loaded" begin
+        m = nk()
+        ys, params = M.steady_state(m)
+        @test maximum(abs, M.static_resid(m, ys, nothing, params)) < 1e-10
+        # like Dynare's M_.params after `steady`, the loaded parameters include those the file sets
+        @test M.get_param(m, "Rbar") == params[m.ip["Rbar"]] && isfinite(M.get_param(m, "Rbar"))
+    end
+
+    @testset "steady-state file failure flag" begin
+        m = nk()
+        M.set_param!(m, "betta", 50.0)                        # gammma1 < 0: the file sets check = 1 and returns
+        @test throws_match(() -> M.steady_state(m), SteadyStateError, "signalled failure")
+    end
+
+    @testset "steady-state file timing (interpreted)" begin
+        m = nk()
+        fn, x = M.steady_state_file_fn(m), zeros(m.n_exo)
+        fn(m, copy(m.params), x)
+        t = @elapsed for _ in 1:20
+            fn(m, copy(m.params), x)
+        end
+        println("  nk_baseline steady state per call (interpreted): $(round(Int, t / 20 * 1e6)) us")
+        @test t / 20 < 0.05
+    end
+
+    @testset "user functions take precedence" begin
+        calls = Ref(0)
+        inner = M.steady_state_file_fn(nk())
+        fn(model, params, exo) = (calls[] += 1; inner(model, params, exo))
+        m = nk(; steady_state_fn=fn)
+        M.steady_state(m)
+        @test calls[] > 0
+        m2 = load_copy(joinpath(SS, "collard_2001_analytical_steady_state.mod");
+                       extra=[joinpath(SS, "collard_2001_analytical_steady_state_helper.m")],
+                       functions=Dict("collard_2001_analytical_steady_state_helper" => (a...) -> 0.25))
+        @test isempty(m2.matlab_functions)
+        ys, _ = M.steady_state(m2; check=false)
+        @test ys[m2.ie["h"]] == 0.25
+    end
+
+    @testset "helper function file in steady_state_model" begin
+        # collard_2001_analytical_steady_state with its original .m helper (fsolve inside)
+        m = load_copy(joinpath(SS, "collard_2001_analytical_steady_state.mod");
+                      extra=[joinpath(SS, "collard_2001_analytical_steady_state_helper.m")])
+        @test collect(keys(m.matlab_functions)) == ["collard_2001_analytical_steady_state_helper"]
+        r = refmat("clean_collard_2001_analytical_steady_state.mat")
+        sol = M.first_order(m)
+        @test isapprox(m.Sigma_e, r["Sigma_e"]; rtol=1e-12)
+        # Dynare's fsolve stops at TolFun = 1e-10; JDyn solves the helper's equation to machine precision
+        @test isapprox(sol.ys, vec(r["ys"]); rtol=1e-7, atol=1e-9)
+        at_ref = M.first_order(m; ys=vec(r["ys"]), params=vec(r["params"]))
+        @test isapprox(M.ghx(at_ref), r["ghx"]; rtol=1e-9, atol=1e-11)
+        @test isapprox(M.ghu(at_ref), r["ghu"]; rtol=1e-9, atol=1e-11)
+    end
+
+    @testset "helper with several outputs" begin
+        files = Dict("two_out.m" => "function [a, b, info] = two_out(x)\ninfo = 0;\na = x;\nif x > 1\n  b = 3*x;\nelse\n  b = -1;\nend\n")
+        m = build(SSMODEL * "steady_state_model;\n[c, kk, info] = two_out(cbar);\nkbar = kk;\nk = kbar;\nend;\n"; files=files)
+        ys, params = M.steady_state(m)
+        @test ys == [2.0, 6.0]
+        @test params[m.ip["kbar"]] == 6.0 && haskey(m.matlab_functions, "two_out")
+    end
+
+    @testset "old two-output steady-state file is an error as in Dynare" begin
+        # Dynare 7.2 calls [ys, params, info] = f(ys, exo, M_, options_); the old [ys, check] = f(ys, exo)
+        # fails there ("called with too many inputs"), and here too
+        m = build(SSMODEL; name="old", files=Dict("old_steadystate.m" => OLD_STYLE))
+        @test throws_match(() -> M.steady_state(m), SteadyStateError, "too many")
+    end
+
+    @testset "steady-state file that cannot be interpreted is reported" begin
+        bad = "function [ys, params, check] = bad_steadystate(ys, exo, M_, options_)\nparams = M_.params;\ncheck = 0;\nys = some_toolbox_function(ys);\n"
+        m = build(SSMODEL; name="bad", files=Dict("bad_steadystate.m" => bad))
+        @test throws_match(() -> M.steady_state(m), SteadyStateError, "bad_steadystate.m cannot be interpreted")
+    end
+end
+end
+
+# ====================================================================== independent review (findings A1-A11, B1-B6)
+# Inputs are the reviewer's cases; expected values are those Dynare 7.2 printed under Octave 8.4
+# (M_.params as [p q r] unless stated). REFUSED means JDyn must raise ModelError.
+const RV_HEAD = "var y c; varexo e u; parameters p q r;\n" *
+                "model; y = 0.5*y(-1)+e+0*(p+q+r); c = 0.3*c(-1) + u; end;\n"
+const RV_P = "p=1;q=2;r=3;\n"
+const RV_RBC = "var y c k; varexo e; parameters alpha beta delta A;\n" *
+               "model; 1/c = beta/c(+1)*(alpha*A*k^(alpha-1)+1-delta); y = A*exp(e)*k(-1)^alpha; k = y - c + (1-delta)*k(-1); end;\n" *
+               "alpha = 0.33; beta = 0.99; delta = 0.025; A = 1;\n"
+const RV_SSM_A = "steady_state_model;\nk = 10;\nA = (1/beta - 1 + delta)/(alpha*k^(alpha-1));\ny = A*k^alpha;\nc = y - delta*k;\nend;\n"
+const RV_SSM = "steady_state_model;\nk = ((1/beta - 1 + delta)/(alpha*A))^(1/(alpha-1));\ny = A*k^alpha;\nc = y - delta*k;\nend;\n"
+rv_ssfile(name, body) = """function [ys,params,check] = $(name)_steadystate(ys,exo,M_,options_)
+NumberOfParameters = M_.param_nbr;
+for ii = 1:NumberOfParameters
+  paramname = M_.param_names{ii};
+  eval([ paramname ' = M_.params(' int2str(ii) ');']);
+end
+check = 0;
+$body
+params=NaN(NumberOfParameters,1);
+for iter = 1:length(M_.params)
+  eval([ 'params(' num2str(iter) ') = ' M_.param_names{iter} ';' ])
+end
+NumberOfEndogenousVariables = M_.orig_endo_nbr;
+for ii = 1:NumberOfEndogenousVariables
+  varname = M_.endo_names{ii};
+  eval(['ys(' int2str(ii) ') = ' varname ';']);
+end
+end
+"""
+const SETGET = Dict("setget.m" => "function y = setget(x)\nglobal M_\nM_.params(1) = x;\ny = x;\nend\n")
+const REFUSED = :refused
+
+rv(body; files=Dict{String,String}(), head=RV_HEAD, name="m") = build(head * body; name=name, files=files)
+
+const RV_CASES = Dict{String,Any}(
+    # A1: one unparsable statement must not hide the other statements of its line
+    "A1_u01_complex_literal" => (RV_P * "z = abs(3+4i); M_.params(1) = z;", nothing, REFUSED),          # Dynare [5 2 3]
+    "A1_u10_format_long" => (RV_P * "x = 1; format long; M_.params(1) = 5;", nothing, [5, 2, 3]),
+    "A1_u11_close_all" => (RV_P * "x = 1; close all; M_.params(1) = 5;", nothing, [5, 2, 3]),
+    "A1_u16_hex" => (RV_P * "x = 0x10; M_.params(1) = x;", nothing, REFUSED),                            # Dynare [16 2 3]
+    "A1_u05_plus_equal" => (RV_P * "x = 3; x += 1; M_.params(1) = x;", nothing, REFUSED),                # Octave only: [4 2 3]
+    "A1_u14_increment" => (RV_P * "x = 3; x++; M_.params(1) = x;", nothing, REFUSED),
+    "A1_u06_inside_if" => (RV_P * "if 1, x = 2i; M_.params(1) = 3; end", nothing, [3, 2, 3]),
+    "A1_u02_stale_workspace" => (RV_P * "w = 1;\nx = 1; clear x; w = 2;\nM_.params(1) = w;", nothing, [2, 2, 3]),
+    "A1_u07_param_copy" => (RV_P * "x = 2i; p = 3;\nM_.params(2) = p;", nothing, [1, 3, 3]),
+    # A4: M_ and options_ are values
+    "A4_m01_copy" => (RV_P * "M2 = M_;\nM2.params(1) = 100;\nx = M_.params(1);\nq = x;", nothing, [1, 1, 3]),
+    "A4_k16_restore" => (RV_P * "M_bak = M_;\np = 9;\nM_ = M_bak;", nothing, [1, 2, 3]),
+    "A4_m05_restore_after_loop" => (RV_P * "M_bak = M_;\nfor k = 1:2\n set_param_value('p', k*10);\nend\nM_ = M_bak;", nothing, [1, 2, 3]),
+    "A4_m06_struct_field" => (RV_P * "s.M = M_;\np = 9;\nzz = s.M.params(1);\nM_.params(3) = zz;", nothing, [9, 2, 1]),
+    "A4_m08_handle_capture" => (RV_P * "f = @() M_.params(1);\np = 9;\nzz = f();\nM_.params(3) = zz;", nothing, [9, 2, 1]),
+    "A4_m16_options" => (RV_P * "opt_bak = options_;\noptions_.order = 3;\noptions_ = opt_bak;\nx = options_.order;\nq = x;", nothing, [1, 2, 3]),
+    # A5: arguments of display functions are evaluated
+    "A5_k30_disp" => (RV_P * "disp(setget(3));", SETGET, [3, 2, 3]),
+    "A5_k31_fprintf" => (RV_P * "fprintf('%d\\n', setget(3));", SETGET, [3, 2, 3]),
+    "A5_y03_warning" => (RV_P * "warning('value %d', setget(3));", SETGET, [3, 2, 3]),
+    "A5_y07_display" => (RV_P * "x = 1;\ndisplay(setget(3));", SETGET, [3, 2, 3]),
+    "A5_y04_evalc" => (RV_P * "x = 5;\ndisp(evalc('x = 7;'));\nM_.params(2) = x;", nothing, REFUSED),   # Dynare [1 7 3]
+    # A6 / B4: NaN-producing operations are not errors
+    "A6_t01_try" => (RV_P * "try\n x = 0/0;\n M_.params(1) = 5;\ncatch\n M_.params(1) = 6;\nend", nothing, [5, 2, 3]),
+    "B4_t02_nan" => (RV_P * "x = 0/0;\nM_.params(1) = isnan(x);", nothing, [1, 2, 3]),
+    "B4_t03_inf_minus_inf" => (RV_P * "x = Inf - Inf;\nif isnan(x)\n p = 7;\nend", nothing, [7, 2, 3]),
+    "B4_u48_roundoff" => (RV_P * "x = 0.1*3; y1 = 0.3; M_.params(1) = (x == y1) + 10*(abs(x-y1) < eps) + 100*(x >= y1); " *
+                          "M_.params(2) = 1e-320*1e10; M_.params(3) = realmax*10 + (-realmax*10);", nothing,
+                          [110, 9.9998886718268301e-311, NaN]),
+    # A7: for over an empty range empties the loop variable
+    "A7_t06" => (RV_P * "k = 5;\nfor k = 1:0\nend\nif isempty(k)\n p = 7;\nelse\n p = 8;\nend", nothing, [7, 2, 3]),
+    "A7_c29" => (RV_P * "k = 10;\nfor k = 1:0\n p = 5;\nend\nq = isempty(k);\nr = numel(k);", nothing, [1, 1, 0]),
+    "A7_y12" => (RV_P * "k = 3;\nfor k = zeros(1,0)\nend\nM_.params(2) = numel(k);", nothing, [1, 0, 3]),
+    # A8: mod with a non-integer divisor
+    "A8_t04" => (RV_P * "if mod(1, 0.1) == 0\n p = 7;\nelse\n p = 8;\nend", nothing, [7, 2, 3]),
+    "A8_w04" => ("x = 0.1; z = 1;\np = mod(z, x); q = 1; r = 1;", nothing, [0, 1, 1]),
+    # A9: max/min with NaN in Dynare statements
+    "A9_y01" => ("x = NaN;\np = max(x, 1); q = min(1, x); r = 1;", nothing, [1, 1, 1]),
+    # B3: Inf in Dynare statements
+    "B3_v19" => ("flag = true; x = -1; z = 0;\np = flag*2 + flag; q = (x < z) + (x == -1) + (x >= z)*10; r = 1/z;", nothing, [3, 2, Inf]),
+    "B3_w02" => ("x = 10; z = -1;\np = x^400; q = 1; r = 1;", nothing, [Inf, 1, 1]),
+    # B6: a parameter without a value is not a MATLAB variable
+    "B6_d19" => ("p = 1;\nzz = q;\n", nothing, REFUSED),                                                 # Dynare: 'q' undefined
+    # section C (relaxed refusals)
+    "C_m18_row_params" => (RV_P * "M_.params = [7 8 9];", nothing, [7, 8, 9]),
+    "C_k12_run" => (RV_P * "run('myscript.m');", Dict("myscript.m" => "set_param_value('p', 33);\nzz = 17;\n"), [33, 2, 3]),
+    "C_a29_beta_function" => ("p = beta(2,3); q = 1; r = lgamma(5);", nothing, [1 / 12, 1, 3.1780538303479458]),
+    "C_k45_options_default" => (RV_P * "x = options_.order;\nq = x;", nothing, [1, 2, 3]),
+    "C_n07_resid_keeps_params" => (RV_P * "resid;\nq = p/2;", nothing, [1, 0.5, 3]),
+    # second pass by the author (values from Dynare 7.2 under Octave, cases p03-p40 of the pass)
+    "P2_p03_condition_side_effect" => (RV_P * "if setget(3) > 2, zz = 9; end\nM_.params(2) = zz;", SETGET, [3, 9, 3]),
+    "P2_p05_cell_copy_of_M" => (RV_P * "cc = {M_};\np = 9;\nM_.params(3) = cc{1}.params(1);", nothing, [9, 2, 1]),
+    "P2_p06_M_passed_by_value" => (RV_P * "r0 = getp(M_);\nM_.params(2) = r0;",
+                                   Dict("getp.m" => "function v = getp(M)\nM.params(1) = 50;\nv = M.params(1);\nend\n"), [1, 50, 3]),
+    "P2_p07_global_variable" => (RV_P * "global gx\ngx = 4;\nsetg();\nM_.params(1) = gx;",
+                                 Dict("setg.m" => "function setg()\nglobal gx\ngx = gx + 1;\nend\n"), [5, 2, 3]),
+    "P2_p10_oo_steady_state_before_steady" => (RV_P * "stoch_simul(order=1,irf=0,noprint);\nx = oo_.steady_state(1) + 5;\nq = x;", nothing, [1, 5, 3]),
+    "P2_p20_option_changed_by_command" => (RV_P * "options_.order = 1;\nstoch_simul(order=2,irf=0,noprint);\nx = options_.order;\nq = x;",
+                                           nothing, REFUSED),                                           # Dynare q = 2
+    "P2_p21_option_not_touched_by_command" => (RV_P * "options_.irf = 7;\nstoch_simul(order=1,noprint,nograph);\nx = options_.irf;\nq = x;",
+                                               nothing, [1, 7, 3]),
+    "P2_p40_oo_from_initval" => (RV_P * "initval; y = 2; end;\nx = oo_.steady_state(1) + oo_.exo_steady_state(2);\nq = x;", nothing, [1, 2, 3]),
+    "P2_unterminated_string" => (RV_P * "x = 'abc; M_.params(1) = 5;", nothing, REFUSED),               # a syntax error in MATLAB
+)
+
+if section("review")
+@testset "review" begin
+    @testset "review cases" begin
+        for case in sort(collect(keys(RV_CASES)))
+            body, files, expected = RV_CASES[case]
+            files = something(files, Dict{String,String}())
+            if expected === REFUSED
+                @test throws_match(() -> rv(body; files=files), ModelError) || (@info case; false)
+                continue
+            end
+            ok = try
+                m = rv(body; files=files)
+                close_nan(m.params, Float64.(expected); rtol=1e-14) || (@info case m.params; false)
+            catch e
+                @info case e
+                false
+            end
+            @test ok
+        end
+    end
+
+    @testset "A1 warning does not overclaim" begin
+        m, warns = build_logged(RV_HEAD * RV_P * "x = 2i;\n")
+        msg = [w for w in warns if occursin("MATLAB code", w)]
+        @test length(msg) == 1 && !occursin("None of them writes", msg[1]) && occursin("found no write", msg[1])
+        @test m.matlab_skipped[1][1] == "x = 2i" && m.params == [1, 2, 3]
+    end
+
+    @testset "A2 parameters set by the steady state" begin
+        # files WITHOUT any MATLAB line: after steady/stoch_simul Dynare's M_.params holds A set by the steady state
+        A, delta = 0.49751442178543509, 0.24875721089271755
+        m = rv(RV_SSM_A * "steady;\ndelta = A/2;\n"; head=RV_RBC, name="s32")
+        @test isapprox(m.params, [0.33, 0.99, delta, A]; rtol=1e-14)
+        @test isempty(m.matlab_skipped)
+        m = rv(RV_SSM_A * "stoch_simul(order=1,irf=0,noprint);\ndelta = A/2;\n"; head=RV_RBC, name="n03")
+        @test isapprox(m.params, [0.33, 0.99, delta, A]; rtol=1e-14)
+        m = rv(RV_SSM_A * "steady;\nshocks; var e = A; end;\n"; head=RV_RBC, name="n04")
+        @test isapprox(m.Sigma_e, fill(A, 1, 1); rtol=1e-14)
+        @test isapprox(m.params, [0.33, 0.99, 0.025, A]; rtol=1e-14)
+        body = "k = 10;\nA = (1/beta - 1 + delta)/(alpha*k^(alpha-1));\ny = A*k^alpha;\nc = y - delta*k;\n"
+        m = rv("steady;\ndelta = A/2;\n"; head=RV_RBC, name="s27", files=Dict("s27_steadystate.m" => rv_ssfile("s27", body)))
+        @test isapprox(m.params, [0.33, 0.99, delta, A]; rtol=1e-14)
+        # s25: the MATLAB variable A is not updated by steady (x = 1), M_.params(A) is
+        m = rv(RV_SSM_A * "steady;\nx = A;\nM_.params(3) = x/2;\n"; head=RV_RBC, name="s25")
+        @test isapprox(m.params, [0.33, 0.99, 0.5, A]; rtol=1e-14)
+    end
+
+    @testset "A3/B1 initval and endval read the current steady-state vector" begin
+        m = rv(RV_P * "initval; y = 1; c = 2; end;\nendval; y = 3; c = y*2; end;\n"; name="a47")
+        @test m.initval == Dict("y" => 1.0, "c" => 2.0) && m.endval == Dict("y" => 3.0, "c" => 6.0)
+        m = rv(RV_P * "initval; c = y*2 + 1; y = 4; end;\n"; name="a49")          # unset variables are 0
+        @test m.initval == Dict("c" => 1.0, "y" => 4.0)
+        m = rv(RV_P * "initval; y = 1; e = 0.5; end;\nendval; e = 1; c = e*3; y = c + 1; end;\n"; name="v12")
+        @test m.endval == Dict("e" => 1.0, "c" => 3.0, "y" => 4.0) && m.initval == Dict("y" => 1.0, "e" => 0.5)
+        m = rv(RV_P * "endval; e = 1; c = e*3; y = c + 1; end;\n"; name="v13")
+        @test m.endval == Dict("e" => 1.0, "c" => 3.0, "y" => 4.0)
+        # v02: analytical steady state, then endval refers to it: Dynare k = 56.696838122096885
+        m = rv(RV_SSM * "initval; k = 20; c = 1.5; y = 2.5; end;\nsteady;\nendval; k = k*2; c = 1; y = 1; end;\n"; head=RV_RBC, name="v02")
+        @test isapprox(m.endval["k"], 56.696838122096885; rtol=1e-14)
+        @test m.initval == Dict("k" => 20.0, "c" => 1.5, "y" => 2.5)
+        # v01: numerical steady state. Dynare's own solver stops at k = 28.348419047 (residual 1e-10),
+        # the exact value is 28.348419061: agreement only to the solver's tolerance (rtol 1e-8 here)
+        m = rv("initval; k = 20; c = 1.5; y = 2.5; end;\nsteady;\ninitval; c = k/10; end;\n"; head=RV_RBC, name="v01")
+        @test isapprox(m.initval["c"], 2.8348419047165483; rtol=1e-8)
+        @test m.initval["k"] == 20.0 && m.initval["y"] == 2.5
+        @test isapprox(m.initval["c"], 2.8348419061048443; rtol=1e-12)
+    end
+
+    @testset "A6/A7 in steady-state files" begin
+        # x70-x72: Dynare's oo_.steady_state [y c k] = [50 3 1], [2 3 5], [2 3 5]
+        head = "var y c k; varexo e; parameters alpha beta delta A lambda is np;\n" *
+               "model; 1/c = beta/c(+1)*(alpha*A*k^(alpha-1)+1-delta) + 0*(lambda+is+np); y = A*exp(e)*k(-1)^alpha; " *
+               "k = y - c + (1-delta)*k(-1); end;\nalpha = 0.33; beta = 0.99; delta = 0.025; A = 1; lambda = 2; is = 3; np = 4;\n"
+        cases = Dict("x70" => ("k = 1; y = 2; c = 3;\nfor ii = 1:0\n k = 100;\nend\nif isempty(ii), y = 50; end\n", [50, 3, 1]),
+                     "x71" => ("k = 1; y = 2; c = 3; t = 0;\ntry\n t = 1/t;\n k = 5;\ncatch\n k = 6;\nend\n", [2, 3, 5]),
+                     "x72" => ("k = 1; y = 2; c = 3; t = 10;\ntry\n t = t^400;\n k = 5;\ncatch\n k = 6;\nend\n", [2, 3, 5]))
+        for (name, (body, expected)) in cases
+            m = rv("steady(nocheck);\n"; head=head, name=name, files=Dict("$(name)_steadystate.m" => rv_ssfile(name, body)))
+            fn = M.steady_state_file_fn(m)
+            ys, _ = fn(m, copy(m.params), zeros(1))
+            @test ys[1:3] == expected
+        end
+    end
+
+    @testset "A9 initval with NaN" begin
+        m = rv(RV_P * "x = NaN;\ninitval; y = max(x, 2); c = min(x, 2); end;\n")          # w15
+        @test m.initval == Dict("y" => 2.0, "c" => 2.0)
+    end
+
+    @testset "A11 two-output steady-state file" begin
+        f = "function [ys,check] = s12_steadystate(ys,exo)\nglobal M_\ncheck = 0;\nalpha = M_.params(1); beta = M_.params(2); " *
+            "delta = M_.params(3); A = M_.params(4);\nk = ((1/beta - 1 + delta)/(alpha*A))^(1/(alpha-1));\ny = A*k^alpha;\n" *
+            "c = y - delta*k;\nys = [y; c; k];\nend\n"
+        m = rv("steady;\n"; head=RV_RBC, name="s12", files=Dict("s12_steadystate.m" => f))
+        @test throws_match(() -> M.steady_state(m), SteadyStateError, "too many inputs")   # Dynare: "called with too many inputs"
+    end
+
+    @testset "B2 block-local named x" begin
+        # v04/v05: a steady_state_model local called x next to an exogenous variable
+        expected = [3.0153277085137282, 2.3066172319875173, 28.348419061048443]
+        for (name, block) in (("v04", "x = (1/beta - 1 + delta)/(alpha*A*exp(e));\nk = x^(1/(alpha-1));\n"),
+                              ("v05", "x = (1/beta - 1 + delta)/(alpha*A);\nk = x^(1/(alpha-1));\n"))
+            m = rv("steady_state_model;\n" * block * "y = A*k^alpha*exp(e);\nc = y - delta*k;\nend;\nsteady(nocheck);\n";
+                   head=RV_RBC, name=name)
+            @test isapprox(M.steady_state(m)[1], expected; rtol=1e-14)
+            @test isapprox(M._from_steady_state_model_interpreted(m, copy(m.params), zeros(1), zeros(3))[1], expected; rtol=1e-14)
+        end
+    end
+
+    @testset "B3 Inf in shocks" begin
+        m = rv(RV_P * "x = 0;\nshocks; var e; stderr 1/x; end;\n")                # w12: Sigma_e(1,1) = Inf
+        @test m.Sigma_e[1, 1] == Inf
+    end
+
+    @testset "B5 JSON repairs" begin
+        # the preprocessor writes invalid JSON for an equation tag containing a backslash
+        m = rv("var y; varexo e; parameters p; p = 0.5;\nmodel; [eq='\\#1', name='growth: \$\\Delta A\$'] y = p*y(-1) + e; end;\n"; head="")
+        @test M.get_param(m, "p") == 0.5
+    end
+
+    @testset "C vector elements and M_ fields in Dynare statements" begin
+        m = rv(RV_P * "v = [0.1 0.2 0.3];\nshocks; var e; stderr v(2); var u = v(3); end;\n" *
+               "initval; y = v(1)*10; end;\nq = M_.Sigma_e(2,2);\n")
+        @test isapprox(diag(m.Sigma_e), [0.04, 0.3])
+        @test m.initval == Dict("y" => 1.0) && M.get_param(m, "q") == 0.3
+    end
+
+    @testset "C helper reading global M_" begin
+        # s39: Dynare oo_.steady_state = [3.0153277085137282 2.3066172319875173 28.348419061048443]
+        kglob = "function k = kglob(dummy)\nglobal M_\nalpha = M_.params(1); beta = M_.params(2); delta = M_.params(3); " *
+                "A = M_.params(4);\nk = ((1/beta - 1 + delta)/(alpha*A))^(1/(alpha-1));\nend\n"
+        m = rv("steady_state_model;\nk = kglob(1);\ny = A*k^alpha;\nc = y - delta*k;\nend;\nsteady;\n";
+               head=RV_RBC, name="s39", files=Dict("kglob.m" => kglob))
+        @test isapprox(M.steady_state(m)[1], [3.0153277085137282, 2.3066172319875173, 28.348419061048443]; rtol=1e-14)
+        M.set_param!(m, "A", 1.2)                               # the helper sees the parameters of the call
+        @test M.steady_state(m)[1][3] > 30
+    end
+
+    @testset "E Dynare functions writing M_ through global" begin
+        # v24 and the scan of Dynare's matlab/ tree: a call to such a function is refused, not skipped
+        for (k, line) in enumerate(("set_parameters(xparam1);", "x = 1;\nolsgibbs(ds, 'eq', 1, 2, 3);", "dynare_estimation(var_list_);",
+                                    "pac.update.parameters('pacman', M_, oo_);"))
+            @test throws_match(() -> rv(RV_P * "xparam1 = 0.7;\n" * line * "\n"; name="e$k"), ModelError) || (@info line; false)
+        end
+    end
+
+    @testset "second pass: steady-state parameters and copies" begin
+        # p25, p28, p29, p36, p37 (Dynare's M_.params [alpha beta delta A])
+        A = 0.49751442178543509
+        cases = Dict("p25" => ("steady;\nM_bak = M_;\nA = 3;\nM_ = M_bak;\ndelta = A/2;", [0.33, 0.99, A / 2, A]),
+                     "p28" => ("steady;\nA = 2;\nsteady;\ndelta = A/2;", [0.33, 0.99, A / 2, A]),
+                     "p29" => ("steady;\nf = @() get_param_by_name('A');\nM_.params(3) = f()/2;", [0.33, 0.99, A / 2, A]),
+                     "p36" => ("check;\ndelta = A/2;", [0.33, 0.99, 0.5, 1.0]),
+                     "p37" => ("steady;\nset_param_value('A', 4);\nstoch_simul(order=1,irf=0,noprint);\ndelta = A/2;", [0.33, 0.99, A / 2, A]))
+        for (name, (body, expected)) in cases
+            m = rv(RV_SSM_A * body * "\n"; head=RV_RBC, name=name)
+            @test isapprox(m.params, expected; rtol=1e-14) || (@info name m.params; false)
+        end
     end
 end
 end

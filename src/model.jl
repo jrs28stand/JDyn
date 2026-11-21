@@ -115,6 +115,16 @@ function load_model_functions(json_dir::AbstractString, raw::Dict{String,Any}; h
     files = readdir(jdir)
     for f in files
         endswith(f, ".jl") || continue
+        if f == "SteadyState2.jl"
+            # the steady_state_model block: the 7.2 preprocessor writes invalid Julia for a call with several
+            # outputs ([ys_[1], kk, info] = f(...)); such a block is interpreted instead (steady.jl)
+            try
+                Base.include(mod, joinpath(jdir, f))
+            catch e
+                e isa LoadError || rethrow()
+            end
+            continue
+        end
         Base.include(mod, joinpath(jdir, f))
     end
     get(n) = Base.invokelatest(isdefined, mod, Symbol(n)) ? Base.invokelatest(getfield, mod, Symbol(n)) : nothing
