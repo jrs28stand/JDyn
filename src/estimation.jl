@@ -1192,6 +1192,13 @@ function laplace(est::Estimation, theta::AbstractVector, invhess::AbstractMatrix
     0.5 * est.n * log(2 * pi) + 0.5 * logdet_ + log_posterior(est, theta)
 end
 
+# optim options of each mode_compute, as dynare_minimize_objective.m reads them ("verbosity"/"SaveFiles": display only)
+const _OPTIM_KEYS = Dict(0 => String[], 4 => ["MaxIter", "TolFun", "NumgradEpsilon", "NumgradAlgorithm", "verbosity", "SaveFiles"],
+    5 => ["MaxIter", "Hessian", "robust", "TolFun", "TolGstep", "TolGstepRel", "verbosity", "SaveFiles"],
+    7 => ["MaxIter", "MaxFunEvals", "TolFun", "TolX", "Display"],
+    8 => ["MaxIter", "TolFun", "TolX", "MaxFunEvals", "MaxFunEvalFactor", "InitialSimplexSize", "verbosity"],
+    9 => ["MaxIter", "TolFun", "TolX", "MaxFunEvals", "verbosity", "SaveFiles"])
+
 function _parse_optim_opt(s)
     out = Dict{String,Any}()
     s = strip(String(s))
@@ -1210,12 +1217,17 @@ end
     posterior_mode(est; x0=est.x0, compute_hessian=true, rng) -> ModeResult
 
 Maximise the log posterior (the log likelihood for ML) from `x0` (default the initial values of the `estimated_params`
-block, else the prior means) with `csminwel` (Dynare's `mode_compute=4`: numerical gradient, BFGS, the penalty objective
-of `penalty_objective_function.m`, `csminwel.tolerance.f` 1e-7, `gradient_epsilon` 1e-6, initial inverse Hessian 1e-4 I),
-then the Hessian by `hessian.m` and its inverse and the Laplace approximation as `dynare_estimation_1.m`.
-`mode_compute=0` only evaluates the posterior at `x0`. Other `mode_compute` values are not implemented here: the
-default `mode_compute=5` (newrat) and the others are replaced by csminwel with one warning (the optimum, not the path,
-is comparable).
+block, else the prior means) with Dynare's optimiser `mode_compute`, then the Hessian by `hessian.m` and its inverse and the
+Laplace approximation as `dynare_estimation_1.m`. `mode_compute=0` only evaluates the posterior at `x0`.
+
+- 4: `csminwel` (numerical gradient, BFGS, the penalty objective of `penalty_objective_function.m`, `csminwel.tolerance.f`
+  1e-7, `gradient_epsilon` 1e-6, initial inverse Hessian 1e-4 I);
+- 5 (Dynare's default): `newrat` (src/optimizers.jl), Dynare's iterates;
+- 7: `fminsearch` (MATLAB's Nelder-Mead; Dynare's options MaxIter 6000, TolFun 1e-8, TolX 1e-6);
+- 8: Dynare's `simplex_optimization_routine`;
+- 9: CMA-ES (random: `rng`).
+Other values (MATLAB-toolbox optimisers 1, 3, 12, 13; Dynare's 2, 6, 10, 101, 102) raise an `EstimationError`.
+`maxiter`, `tol` and `epsilon` override the optimiser's `MaxIter`, `TolFun` and gradient step.
 """
 function posterior_mode(est::Estimation; x0=est.x0, compute_hessian=nothing, mode_compute=est.options["mode_compute"],
                         rng=Random.default_rng(), maxiter=nothing, tol=nothing, epsilon=nothing, gradient_method=2)
@@ -1224,15 +1236,13 @@ function posterior_mode(est::Estimation; x0=est.x0, compute_hessian=nothing, mod
     ok_[2] == 0 || throw(EstimationError("the log posterior is not finite at the initial values: $(est.last_info)"))
     compute_hessian = compute_hessian === nothing ? est.options["cova_compute"] != 0 : compute_hessian
     opt = _parse_optim_opt(est.options["optim_opt"])
+    allowed = get(_OPTIM_KEYS, mode_compute, nothing)
+    allowed === nothing && throw(EstimationError("mode_compute=$mode_compute is not implemented (0, 4 csminwel, 5 newrat, 7 fminsearch, 8 simplex, 9 cmaes are)"))
     for k in keys(opt)
-        k in ("MaxIter", "TolFun", "NumgradEpsilon", "NumgradAlgorithm", "verbosity") ||
-            throw(EstimationError("optim option $k is not supported (csminwel options MaxIter, TolFun, NumgradEpsilon, NumgradAlgorithm are)"))
+        k in allowed || throw(EstimationError("optim option $k is not supported with mode_compute=$mode_compute (supported: $(join(allowed, ", ")))"))
     end
     nfev = 0; iters = 0; msg = "mode_compute=0: no optimisation"; success = true
-    if mode_compute != 0
-        if mode_compute != 4
-            warn_once(est.model, "mode_compute=$mode_compute is not implemented: csminwel (mode_compute=4) is used instead; the optimum, not the path of the optimiser, is comparable with Dynare's")
-        end
+    if mode_compute == 4
         fcn = th -> (r = _dsge_likelihood(est, th); (r[1], r[2], r[3]))
         fh, xh, _, _, iters, nfev, retcode, msg = csminwel(fcn, x; crit=Float64(something(tol, get(opt, "TolFun", 1e-7))),
             nit=Int(something(maxiter, get(opt, "MaxIter", 1000))), method=Int(get(opt, "NumgradAlgorithm", gradient_method)),
@@ -1240,6 +1250,39 @@ function posterior_mode(est::Estimation; x0=est.x0, compute_hessian=nothing, mod
         xh === nothing && throw(EstimationError("csminwel: bad initial parameter"))
         x = xh
         success = retcode in (0, 1, 3, 6, 7)
+    elseif mode_compute == 5
+        Int(get(opt, "Hessian", 1)) == 1 || throw(EstimationError("newrat: only optim 'Hessian',1 (Dynare's default) is implemented"))
+        # dsge_likelihood's fourth output: [-log prior; minus the log-likelihood contribution of each period]
+        fcn = th -> (r = _dsge_likelihood(est, th; with_lik=true); (r[1], r[2], r[3], r[2] == 0 ? vcat(-r[5], r[6]) : Float64[]))
+        xh, _, _, _, _, iters, nfev, exitflag, msg = newrat(fcn, x, est.lb, est.ub; ftol=Float64(something(tol, get(opt, "TolFun", 1e-5))),
+            nit=Int(something(maxiter, get(opt, "MaxIter", 1000))), htol=Float64(get(opt, "TolGstep", NaN)),
+            htol_rel=Float64(get(opt, "TolGstepRel", NaN)), robust=get(opt, "robust", 0) in (1, 1.0, true, "true"),
+            gradient_epsilon=Float64(something(epsilon, 1e-6)))
+        exitflag == -2 && throw(EstimationError("newrat: bad initial parameter"))
+        x = xh
+        success = exitflag in (1, -1)
+    elseif mode_compute == 7
+        fcn = th -> _dsge_likelihood(est, th)[1]
+        xh, _, exitflag, iters, nfev = fminsearch(fcn, x; maxiter=Int(something(maxiter, get(opt, "MaxIter", 6000))),
+            maxfunevals=Int(get(opt, "MaxFunEvals", 1_000_000)), tolx=Float64(get(opt, "TolX", 1e-6)), tolf=Float64(something(tol, get(opt, "TolFun", 1e-8))))
+        x = xh
+        success = exitflag == 1
+        msg = success ? "fminsearch: converged" : "fminsearch: maximum number of iterations or function evaluations reached"
+    elseif mode_compute == 8
+        fcn = th -> (r = _dsge_likelihood(est, th); (r[1], r[2] == 0))
+        mf = get(opt, "MaxFunEvals", nothing)
+        xh, _, exitflag, iters, nfev, msg = simplex_optimization(fcn, x; maxiter=Int(something(maxiter, get(opt, "MaxIter", 10000))),
+            tolx=Float64(get(opt, "TolX", 1e-4)), tolf=Float64(something(tol, get(opt, "TolFun", 1e-4))),
+            maxfcall=mf === nothing ? nothing : Int(mf), maxfcallfactor=Float64(get(opt, "MaxFunEvalFactor", 500)),
+            delta_factor=Float64(get(opt, "InitialSimplexSize", 0.05)))
+        x = xh
+        success = exitflag == 1
+    elseif mode_compute == 9
+        fcn = th -> _dsge_likelihood(est, th)[1]
+        xh, _, iters, nfev, msg, success = cmaes(fcn, x, est.lb, est.ub; rng=rng, maxiter=maxiter === nothing ? get(opt, "MaxIter", nothing) : maxiter,
+            tolfun=Float64(something(tol, get(opt, "TolFun", 1e-7))), tolx=Float64(get(opt, "TolX", 1e-7)),
+            maxfunevals=get(opt, "MaxFunEvals", nothing))
+        x = xh
     end
     out = ModeResult(copy(x), est.names, log_posterior(est, x), nothing, nothing, NaN, success, msg, nfev, iters)
     mode_compute != 0 && compute_hessian && add_hessian!(est, out)
