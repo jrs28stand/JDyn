@@ -31,6 +31,17 @@ abstract type HostStruct end
 const MAX_STEPS = Ref(20_000_000)
 const MAX_ELEMENTS = 20_000_000
 
+"""
+Julia exceptions that an operation of the interpreter can raise on input MATLAB rejects with an error of its own
+(`trace(ones(2,3))`, an integer conversion of a huge value, ...): they become MatlabErrors, which a MATLAB
+try/catch can catch. JDyn's own error types and the interpreter's control signals are left alone.
+"""
+const _JULIA_ERRORS = Union{DimensionMismatch,InexactError,BoundsError,ArgumentError,DomainError,OverflowError,
+                            KeyError,DivideError,LinearAlgebra.SingularException,LinearAlgebra.LAPACKException,
+                            StringIndexError,TypeError,MethodError,UndefRefError,InvalidStateException}
+matlab_error(e::_JULIA_ERRORS) = MatlabError(first(split(sprint(showerror, e), '\n')))
+matlab_error(e) = e
+
 _cplx() = throw(Unsupported("the result is a complex number in MATLAB; complex numbers are not supported", "complex"))
 _unsup(msg, kind="feature") = throw(Unsupported(msg, kind))
 merr(msg) = throw(MatlabError(msg))
@@ -301,6 +312,14 @@ function mpower(a, b)
         end
         _unsup("non-integer power of a matrix")
     end
+    if length(x) == 1 && size(y, 1) == size(y, 2)           # scalar ^ square matrix = expm(log(s) * A)
+        s0 = x[1]
+        isempty(y) && return zeros(0, 0)
+        (isnan(s0) || any(!isfinite, y)) && return ret(fill(NaN, size(y)))
+        s0 < 0 && _cplx()
+        s0 == 0 && _unsup("0 ^ matrix")
+        return ret(exp(log(s0) .* y))
+    end
     merr("operator ^: one argument must be a square matrix and the other a scalar; use .^ for element-wise power")
 end
 
@@ -390,59 +409,97 @@ end
 
 _isempty_val(v) = (v isa AbstractMatrix && isempty(v)) || (v isa AbstractString && v == "")
 
+_is00(v) = (v isa AbstractMatrix && size(v) == (0, 0)) || (v isa AbstractString && v == "")
+
+"""
+Which operands of a numeric concatenation along `dim` (1 vertical, 2 horizontal) take part, and the dimension
+error if they do not fit. As Octave's dim_vector::hvcat: a 0x0 operand is skipped; so is a 1x0 or 0x1 one that
+does not fit (`[zeros(1,0); 1 2 3]`); anything else must agree in the other dimension (`[1 2 3, zeros(2,0)]` is an error).
+"""
+function _cat_parts(parts, dim, what)
+    other = 3 - dim
+    keep = Matrix[]
+    cur = nothing                                 # running size of the result
+    for p in parts
+        d = size(p)
+        d == (0, 0) && continue
+        if cur === nothing
+            cur = d; push!(keep, p); continue
+        end
+        if cur[other] == d[other]
+            cur = dim == 1 ? (cur[1] + d[1], cur[2]) : (cur[1], cur[2] + d[2])
+            push!(keep, p)
+        elseif d[1] + d[2] == 1                     # 1x0 or 0x1: skipped
+            continue
+        elseif cur[1] + cur[2] == 1                 # the result so far is 1x0 or 0x1: replaced
+            cur = d; empty!(keep); push!(keep, p)
+        else
+            merr("$what dimensions mismatch ($(cur[1])x$(cur[2]) vs $(d[1])x$(d[2]))")
+        end
+    end
+    keep, cur === nothing ? (0, 0) : cur
+end
+
 function mhcat(vals)
+    nz = [v for v in vals if !_is00(v)]
+    isempty(nz) && return zeros(0, 0)
+    length(nz) == 1 && return nz[1]
+    textual = any(v -> v isa AbstractString || v isa Cell, nz)
+    if !textual
+        parts = [arr(v) for v in nz]
+        keep, dims = _cat_parts(parts, 2, "horizontal")
+        isempty(keep) && return zeros(0, 0)
+        res = all(p -> eltype(p) == Bool, keep) ? Matrix{Bool}(reduce(hcat, keep)) :
+              Matrix{Float64}(reduce(hcat, [Matrix{Float64}(p) for p in keep]))
+        size(res) == dims || (res = zeros(eltype(res), dims...))
+        return ret(res)
+    end
     vals = [v for v in vals if !_isempty_val(v)]
     isempty(vals) && return zeros(0, 0)
     if any(v -> v isa AbstractString, vals)
         all(v -> v isa AbstractString, vals) && return join(vals)
         _unsup("concatenation of char arrays with numbers")
     end
-    if any(v -> v isa Cell, vals)
-        items = Any[]
-        for v in vals
-            if v isa Cell
-                v.shape[1] > 1 && _unsup("horizontal concatenation of cell columns")
-                append!(items, v.items)
-            else
-                push!(items, v)
-            end
+    items = Any[]
+    for v in vals
+        if v isa Cell
+            v.shape[1] > 1 && _unsup("horizontal concatenation of cell columns")
+            append!(items, v.items)
+        else
+            push!(items, v)
         end
-        return Cell(items, (1, length(items)))
     end
-    length(vals) == 1 && return vals[1]
-    parts = [arr(v) for v in vals]
-    r = size(parts[1], 1)
-    any(p -> size(p, 1) != r, parts) && merr("horizontal dimensions mismatch")
-    if all(p -> eltype(p) == Bool, parts)
-        return ret(Matrix{Bool}(reduce(hcat, parts)))
-    end
-    ret(Matrix{Float64}(reduce(hcat, [Matrix{Float64}(p) for p in parts])))
+    Cell(items, (1, length(items)))
 end
 
 function mvcat(vals)
+    nz = [v for v in vals if !_is00(v)]
+    isempty(nz) && return zeros(0, 0)
+    length(nz) == 1 && return nz[1]
+    textual = any(v -> v isa AbstractString || v isa Cell, nz)
+    if !textual
+        parts = [arr(v) for v in nz]
+        keep, dims = _cat_parts(parts, 1, "vertical")
+        isempty(keep) && return zeros(0, 0)
+        res = all(p -> eltype(p) == Bool, keep) ? Matrix{Bool}(reduce(vcat, keep)) :
+              Matrix{Float64}(reduce(vcat, [Matrix{Float64}(p) for p in keep]))
+        size(res) == dims || (res = zeros(eltype(res), dims...))
+        return ret(res)
+    end
     vals = [v for v in vals if !_isempty_val(v)]
     isempty(vals) && return zeros(0, 0)
     length(vals) == 1 && return vals[1]
     any(v -> v isa AbstractString, vals) && _unsup("char matrices (vertical concatenation of char arrays)")
-    if any(v -> v isa Cell, vals)
-        items = Any[]
-        for v in vals
-            if v isa Cell
-                v.shape[2] > 1 && _unsup("vertical concatenation of cell rows")
-                append!(items, v.items)
-            else
-                push!(items, v)
-            end
+    items = Any[]
+    for v in vals
+        if v isa Cell
+            v.shape[2] > 1 && _unsup("vertical concatenation of cell rows")
+            append!(items, v.items)
+        else
+            push!(items, v)
         end
-        return Cell(items, (length(items), 1))
     end
-    parts = [arr(v) for v in vals]
-    c = size(parts[1], 2)
-    any(p -> size(p, 2) != c, parts) && merr("vertical dimensions mismatch")
-    if all(p -> eltype(p) == Bool, parts)
-        return ret(Matrix{Bool}(reduce(vcat, parts)))
-    end
-    ret(Matrix{Float64}(reduce(vcat, [Matrix{Float64}(p) for p in parts])))
+    Cell(items, (length(items), 1))
 end
 
 # ---------------------------------------------------------------------- indexing
@@ -502,13 +559,21 @@ function _index_arr(a::AbstractMatrix, args; keep::Bool=false)
             k > length(a) && merr("index ($k) out of bounds (array has $(length(a)) element(s))")
             return reshape([a[k]], 1, 1)
         end
+        ix === false && return zeros(eltype(a), 0, 0)         # A(false) is 0x0
         flat = vec(a)
         k = _lin_index(ix, length(flat))
         out = flat[k]
         ix === COLON && return reshape(out, :, 1)
         ia = arr(ix)
         if eltype(ia) == Bool
-            return (size(a, 1) == 1 && size(a, 2) != 1) ? reshape(out, 1, :) : reshape(out, :, 1)
+            # a logical subscript is find(mask): a vector source keeps its orientation, otherwise the result is a
+            # row for a row mask and a column for a column or matrix mask
+            if size(a, 1) == 1 && size(a, 2) != 1
+                return reshape(out, 1, :)
+            elseif size(a, 2) == 1 && size(a, 1) != 1
+                return reshape(out, :, 1)
+            end
+            return (size(ia, 1) == 1 && size(ia, 2) != 1) ? reshape(out, 1, :) : reshape(out, :, 1)
         end
         if minimum(size(ia)) != 1 || (size(a, 1) != 1 && size(a, 2) != 1)
             return reshape(out, size(ia))
@@ -544,29 +609,38 @@ function assign_index(v, args, rhs)
     if v isa AbstractString || rhs isa AbstractString || rhs isa MStruct || rhs isa Handle
         _unsup("indexed assignment with char arrays, structs or handles")
     end
-    a = v === nothing ? zeros(0, 0) : arr(v)
+    # an undefined variable takes the class of the right-hand side (`clear x; x(3) = true` is logical); `x = []`
+    # is double
+    a = v === nothing ? (rhs isa Bool || rhs isa AbstractMatrix{Bool} ? zeros(Bool, 0, 0) : zeros(0, 0)) : arr(v)
     r = arr(rhs)
     deleting = isempty(r) && rhs isa AbstractMatrix
-    if eltype(a) == Bool && eltype(r) != Bool
-        a = Matrix{Float64}(a)
-    elseif eltype(a) != Bool && eltype(r) == Bool
-        r = Matrix{Float64}(r)
+    if !deleting
+        if eltype(a) == Bool && eltype(r) != Bool
+            # the right-hand side is converted to the class of the left one: logical stays logical (NaN is an error)
+            any(isnan, r) && merr("invalid conversion from NaN to logical")
+            r = Matrix{Bool}(r .!= 0)
+        elseif eltype(a) != Bool && eltype(r) == Bool
+            r = Matrix{Float64}(r)
+        end
     end
     n = length(args)
     if n == 1
         k = _lin_index(args[1], length(a); grow=true)
         if deleting
-            (minimum(size(a)) > 1 && args[1] !== COLON) && _unsup("deleting elements of a matrix with a linear index")
             any(>(length(a)), k) && merr("matrix index is out of range for deletion")
+            args[1] === COLON && return zeros(eltype(a), 0, 0)
+            isempty(k) && return a
             keep = trues(length(a))
             keep[k] .= false
             out = vec(a)[keep]
-            return ret(size(a, 1) == 1 ? reshape(out, 1, :) : reshape(out, :, 1))
+            # a vector keeps its orientation; deleting elements of a matrix gives a row (Octave 8.4 and MATLAB)
+            return ret((size(a, 1) == 1 || minimum(size(a)) > 1) ? reshape(out, 1, :) : reshape(out, :, 1))
         end
         need = isempty(k) ? 0 : maximum(k)
         if need > length(a)
             T = eltype(a)
             if length(a) == 0
+                size(a, 1) > 1 && merr("A(I) = X: cannot resize an empty array along an ambiguous dimension")
                 a = zeros(T, 1, need)
             elseif size(a, 1) == 1
                 a = hcat(a, zeros(T, 1, need - size(a, 2)))
@@ -592,21 +666,39 @@ function assign_index(v, args, rhs)
         if deleting
             (ci !== nothing && any(>(size(a, 2)), ci)) && merr("matrix index is out of range for deletion")
             (ri !== nothing && any(>(size(a, 1)), ri)) && merr("matrix index is out of range for deletion")
-            if ri === nothing && ci !== nothing
+            # an empty subscript deletes nothing; two colons delete every row (0xN, as Octave and MATLAB);
+            # otherwise one subscript must span its whole dimension and the other says what goes
+            ((ri !== nothing && isempty(ri)) || (ci !== nothing && isempty(ci))) && return a
+            (ri === nothing && ci === nothing) && return a[Int[], :]
+            # (a subscript that spans its dimension, such as 1:end, counts as a colon in MATLAB; Octave refuses it)
+            rfull = ri === nothing || length(unique(ri)) == size(a, 1)
+            cfull = ci === nothing || length(unique(ci)) == size(a, 2)
+            if ri === nothing || (rfull && !cfull)
                 keep = trues(size(a, 2)); keep[ci] .= false
                 return ret(a[:, keep])
             end
-            if ci === nothing && ri !== nothing
+            if ci === nothing || (cfull && !rfull)
                 keep = trues(size(a, 1)); keep[ri] .= false
                 return ret(a[keep, :])
             end
             merr("a null assignment can only have one non-colon index")
         end
-        if ri === nothing
-            ri = collect(1:((length(a) > 0 || ci === nothing) ? size(a, 1) : size(r, 1)))
-        end
-        if ci === nothing
-            ci = collect(1:(length(a) > 0 ? size(a, 2) : size(r, 2)))
+        # colons take the extent of the array; only a 0x0 array lets them take it from the right-hand side
+        # (Octave's zero_dims_inquire: the non-singleton extents of the right-hand side, in order)
+        if ri === nothing || ci === nothing
+            if size(a) == (0, 0)
+                if ri === nothing && ci === nothing
+                    ri = collect(1:size(r, 1)); ci = collect(1:size(r, 2))
+                else
+                    ext = [d for d in size(r) if d != 1]
+                    e = isempty(ext) ? 1 : ext[1]
+                    ri === nothing && (ri = collect(1:e))
+                    ci === nothing && (ci = collect(1:e))
+                end
+            else
+                ri === nothing && (ri = collect(1:size(a, 1)))
+                ci === nothing && (ci = collect(1:size(a, 2)))
+            end
         end
         nr = max(size(a, 1), isempty(ri) ? 0 : maximum(ri))
         nc = max(size(a, 2), isempty(ci) ? 0 : maximum(ci))
