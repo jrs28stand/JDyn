@@ -55,6 +55,8 @@ linear one ignores the constraints), `regime_history[t][j] = (regime, start)` fo
 `exo_pos` the (1-based) positions of the columns of `shocks` among the exogenous variables, `iterations` the
 number of iterations per shock period, `periodic[t]` whether a periodic solution was selected, and
 `diagnostics[t]` the per-iteration `max_err`, `violates`, `n_viol` and the 1-based `selected` iteration.
+`ss[t] = (T, R, C)` is the rule of shock period `t` under its verified regime, `y_t - ys = T (y_{t-1} - ys) + R u_t + C`
+(declaration order, `R` on all shocks; Dynare's `ss.T/R/C(:,:,1)` of `occbin.solver`, used by the OccBin filters).
 """
 struct OccbinResult
     piecewise::Matrix{Float64}
@@ -68,6 +70,7 @@ struct OccbinResult
     diagnostics::Vector{_Diag}
     endo_names::Vector{String}
     exo_names::Vector{String}
+    ss::Vector{Tuple{Matrix{Float64},Matrix{Float64},Vector{Float64}}}   # per shock period: (T, R, C), see below
 end
 
 """
@@ -99,7 +102,7 @@ struct _Constraint
 end
 
 """
-    Occbin(m::Model; params=nothing)
+    Occbin(m::Model; params=nothing, qz_criterium=nothing)
 
 Piecewise-linear solver for a model with an `occbin_constraints` block. The reference regime is the one with all
 the `occbin_X_bind` parameters at 0 (steady state and first-order rules of that regime are computed here, from
@@ -121,7 +124,7 @@ mutable struct Occbin
     cons::Vector{_Constraint}
 end
 
-function Occbin(m::Model; params=nothing)
+function Occbin(m::Model; params=nothing, qz_criterium=nothing)
     isempty(m.occbin_constraints) && throw(ModelError("the model has no occbin_constraints block"))
     names = String[c["name"] for c in m.occbin_constraints]
     k = length(names)
@@ -135,7 +138,7 @@ function Occbin(m::Model; params=nothing)
     base = Vector{Float64}(params === nothing ? m.params : params)
     base[switch] .= 0.0
     ys, p = steady_state(m; params=base)
-    ref = first_order(m; ys=ys, params=p, loglinear=false)       # the piecewise rules are in levels
+    ref = first_order(m; ys=ys, params=p, loglinear=false, qz_criterium=qz_criterium)       # the piecewise rules are in levels
     ob = Occbin(m, names, k, switch, ys, p, ref, ref.G, ref.H, m.n_endo, m.n_exo, Dict{Tuple,Any}(), _Constraint[])
     _compile_constraints!(ob)
     ob
@@ -282,7 +285,10 @@ function _rules(ob::Occbin, ind::AbstractMatrix, Tmax::Int)
 end
 
 "Deviations from steady state for `size(ind, 1)` periods given a regime guess `ind` (periods x constraints)."
-function _path(ob::Occbin, ind::AbstractMatrix, init::AbstractVector, shock::AbstractVector, Tmax::Int)
+_path(ob::Occbin, ind::AbstractMatrix, init::AbstractVector, shock::AbstractVector, Tmax::Int) = _path_rules(ob, ind, init, shock, Tmax)[1]
+
+"`_path` and the time-varying rules it used (Dynare's `ss.T/R/C` of `occbin.solver`)."
+function _path_rules(ob::Occbin, ind::AbstractMatrix, init::AbstractVector, shock::AbstractVector, Tmax::Int)
     rules = _rules(ob, ind, Tmax)
     N = size(ind, 1)
     z = Matrix{Float64}(undef, N, ob.n)
@@ -298,7 +304,7 @@ function _path(ob::Occbin, ind::AbstractMatrix, init::AbstractVector, shock::Abs
         end
         z[t, :] = y
     end
-    z
+    z, rules
 end
 
 "Dynare's `map_regime`: regimes and their 1-based start periods for a 0/1 column."
@@ -401,6 +407,9 @@ function simulate(ob::Occbin, shocks_in::AbstractMatrix; periods::Integer=100, c
     iters, periodic_flags, diag = Int[], Bool[], _Diag[]
     z = zeros(0, n)
     used = bi
+    ss_out = Tuple{Matrix{Float64},Matrix{Float64},Vector{Float64}}[]
+    rules_cur = Tuple{Matrix{Float64},Matrix{Float64},Vector{Float64}}[]
+    first_rule(r) = isempty(r) ? (ob.P, ob.Q, zeros(n)) : r[1]
 
     for sp in 1:S
         changed, it, increased = true, 0, false
@@ -442,7 +451,7 @@ function simulate(ob::Occbin, shocks_in::AbstractMatrix; periods::Integer=100, c
                     used = copy(bi)
                     hist[end] = used
                 end
-                z = _path(ob, used, y0, view(shocks, sp, :), _tmax(used))
+                z, rules_cur = _path_rules(ob, used, y0, view(shocks, sp, :), _tmax(used))
                 binding, relax, eb, er = check_constraints(ob, z .+ ob.ys')
                 L = size(bi, 1)
                 if isfinite(max_check) && max_check < L
@@ -511,12 +520,13 @@ function simulate(ob::Occbin, shocks_in::AbstractMatrix; periods::Integer=100, c
                         chosen_periodic, selected = true, best
                         if best < it
                             used = copy(bi)
-                            z = _path(ob, used, y0, view(shocks, sp, :), _tmax(used))
+                            z, rules_cur = _path_rules(ob, used, y0, view(shocks, sp, :), _tmax(used))
                         end
                     end
                 end
             else
                 changed = false
+                rules_cur = rules_cur[2:end]          # Dynare: SS = SS(2:end), the rule of the next period
                 z = vcat(z[2:end, :], (ob.P * z[end, :])')
                 size(z, 1) < size(bi, 1) && (z = vcat(z, (ob.P * z[end, :])'))
             end
@@ -540,6 +550,7 @@ function simulate(ob::Occbin, shocks_in::AbstractMatrix; periods::Integer=100, c
             throw(OccbinHorizonError("period $sp: a constraint binds at the end of the horizon; increase check_ahead_periods (error 312)", sp))
         push!(history, [_map_regime(view(used, :, j)) for j in 1:k])
         push!(iters, it)
+        push!(ss_out, first_rule(rules_cur))
         push!(periodic_flags, changed && chosen_periodic)
         push!(diag, (max_err=max_err[1:it], violates=Vector{Bool}(viol_exp[1:it]), n_viol=n_viol[1:it], selected=selected))
         y0 = z[1, :]
@@ -555,7 +566,7 @@ function simulate(ob::Occbin, shocks_in::AbstractMatrix; periods::Integer=100, c
         linear[t, :] = y
     end
     OccbinResult(piecewise .+ ob.ys', linear .+ ob.ys', Matrix{Float64}(shocks_in), history, ob.ys, iters, exo_idx, periodic_flags,
-                 diag, m.endo_names, m.exo_names)
+                 diag, m.endo_names, m.exo_names, ss_out)
 end
 simulate(ob::Occbin, shocks::AbstractVector; kw...) = simulate(ob, reshape(Float64.(shocks), :, 1); kw...)
 

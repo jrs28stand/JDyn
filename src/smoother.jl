@@ -181,6 +181,7 @@ Base.@kwdef mutable struct SmootherResult
     solution::Any = nothing
     sample::Matrix{Float64} = zeros(0, 0)           # observations of the sample: after logs, before prefilter and trends
     first_obs::Int = 1
+    occbin::Any = nothing                           # OccBin models: OccbinSmoothing (src/occbin_estimation.jl)
 end
 nobs(r::SmootherResult) = size(r.smoothed, 1)
 Base.show(io::IO, r::SmootherResult) = print(io, "SmootherResult(", nobs(r), " periods, ", length(r.endo_names), " variables, ",
@@ -763,12 +764,18 @@ statement that the code does not act on give one warning; ones that would change
 Blocks of the file: `observation_trends` (linear trends removed from the data, demeaned under `prefilter`; returned in `Trend` /
 `TrendCoeffs`), `filter_initial_state` (the filter starts from the given state; stationary initialisations only).
 
+For a model with `occbin_constraints`, the OccBin smoother runs after the linear one (Dynare's occbin.DSGE_smoother, or the
+inversion filter with `smoother_inversion_filter`); `res.occbin` holds its output and `occbin=Dict(...)` overrides OccBin options
+(src/occbin_estimation.jl).
+
 `replicate_dynare_bugs=true` reproduces Dynare 7.2's defects instead of correcting them (see the head of this file):
 the multivariate diffuse smoother (`kalman_algo=3`) when a period of the diffuse phase has no observation or a zero `F_inf`,
 and the `filter_initial_state` centring of `Init_State`.
 """
-function smooth(m::Model, data=nothing; sol=nothing, estimation=nothing, theta=nothing, mode=nothing, mcmc=nothing,
-                reuse=nothing, kw...)
+smooth(m::Model, data=nothing; kw...) = isempty(m.occbin_constraints) ? _smooth_linear(m, data; kw...) : _occbin_smooth(m, data; kw...)
+
+function _smooth_linear(m::Model, data=nothing; sol=nothing, estimation=nothing, theta=nothing, mode=nothing, mcmc=nothing,
+                        reuse=nothing, kw...)
     est = estimation
     user = Dict{String,Any}(string(k) => v for (k, v) in kw)
     kw_qz = Dict{String,Any}(k => v for (k, v) in user if k == "qz_criterium" && v !== nothing)

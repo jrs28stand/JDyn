@@ -1,0 +1,260 @@
+# Estimation and smoothing of OccBin models (port of pydyn/occbin_estimation.py, after the OccBin branches of Dynare 7.2's
+# matlab/estimation/{dsge_likelihood, dynare_estimation_init, initial_estimation_checks, dynare_estimation_1}.m,
+# matlab/+occbin/{IVF_posterior, DSGE_smoother}.m and matlab/kalman/evaluate_smoother.m; Dynare Team, GPL-3.0-or-later).
+#
+# Dynare sets options_.occbin.likelihood.status and smoother.status for every model with an occbin_constraints block, so:
+#   * `Estimation` of such a model uses the piecewise Kalman filter (PKF), or the inversion filter (IVF) when
+#     `occbin_setup(likelihood_inversion_filter)` (or `occbin=Dict("likelihood_inversion_filter" => true)`) asks for it;
+#     everything built on `_dsge_likelihood` (posterior_mode, hessian, laplace, sample_posterior, estimate) follows;
+#   * `smooth` (calib_smoother, estimation(smoother)) runs the OccBin smoother (occbin.DSGE_smoother) or the inversion
+#     filter (`smoother_inversion_filter`); the linear smoother is kept in `res.occbin.linear_*`.
+
+"Options of the estimation statement and Dynare checks for an OccBin model (called by the Estimation constructor)."
+function _setup_occbin!(est::Estimation, overrides)
+    m = est.model
+    if isempty(m.occbin_constraints)
+        overrides === nothing || throw(EstimationError("occbin options were given but the model has no occbin_constraints block"))
+        return est
+    end
+    o = est.options
+    oc = occbin_filter_options(m, overrides; what="OccBin estimation")
+    ivf = Bool(oc["likelihood.inversion_filter"])
+    o["loglinear"] && throw(EstimationError("loglinear is not available with OccBin (the piecewise-linear solution is in levels)"))
+    o["lik_init"] == 3 && throw(EstimationError("the diffuse filter (lik_init=3, diffuse_filter, kalman_algo 3/4) is not implemented with OccBin"))
+    # initial_estimation_checks.m
+    o["prefilter"] != 0 && throw(EstimationError("initial_estimation_checks: OccBin is incompatible with the prefilter option due to the sample " *
+                                                 "mean generally not corresponding to the steady state with an occasionally binding constraint."))
+    (!ivf && o["kalman_algo"] in (2, 4)) &&
+        throw(EstimationError("initial_estimation_checks: OccBin is incompatible with the selected univariate Kalman filter."))
+    if ivf || Bool(oc["smoother.inversion_filter"])
+        oc["likelihood.IVF_shock_observable_mapping"] = _ivf_mapping(est, oc)
+        (any(!=(0), est.H0) || !isempty(est.groups.vn) || !isempty(est.groups.cn)) &&
+            throw(EstimationError("IVF-filter: Measurement errors are not allowed with the inversion filter."))
+        length(oc["likelihood.IVF_shock_observable_mapping"]) == length(est.varobs) ||
+            throw(EstimationError("The IVF requires exactly as many shocks as observables."))
+    end
+    o["occbin"] = oc
+    est
+end
+
+"IVF_shock_observable_mapping (dynare_estimation_init.m): by default the shocks with a non-zero calibrated variance."
+function _ivf_mapping(est::Estimation, oc)
+    m = est.model
+    mp = oc["likelihood.IVF_shock_observable_mapping"]
+    zero_var = findall(diag(est.Sigma_e0) .== 0)
+    (mp === nothing || (mp isa AbstractArray && isempty(mp))) && return findall(diag(est.Sigma_e0) .!= 0)
+    idx = Int[x isa AbstractString ? _exo_index(m, x) : Int(x) for x in (mp isa AbstractArray ? vec(mp) : [mp])]
+    any(in(zero_var), idx) && throw(EstimationError("IVF-filter: an observable is mapped to a zero variance shock."))
+    idx
+end
+
+"OccBin options of an estimation (nothing for a model without occbin_constraints)."
+occbin_options(est::Estimation) = get(est.options, "occbin", nothing)
+
+"""
+    occbin_at(est, theta) -> Occbin
+
+The piecewise-linear model at `theta` (steady state and reference-regime rules at the estimated parameters).
+"""
+occbin_at(est::Estimation, theta::AbstractVector) = Occbin(est.model; params=model_params(est, theta), qz_criterium=est.options["qz_criterium"])
+
+"PKF state space at `theta`: `_PKFContext` on the filter states (`est.restrict`, Dynare's restrict_var_list)."
+function _pkf_context(est::Estimation, ob::Occbin, Q, Hm)
+    oc = occbin_options(est)
+    mm = length(est.restrict)
+    Z = zeros(length(est.varobs), mm)
+    for (i, k) in enumerate(est.mf)
+        Z[i, k] = 1.0
+    end
+    _PKFContext(ob, est.restrict, Z, Hm, Q, oc; kalman_tol=est.options["kalman_tol"],
+                rescale=est.options["rescale_prediction_error_covariance"])
+end
+
+"Initial prediction and covariance of the PKF (dsge_likelihood.m, lik_init 1 and 2)."
+function _pkf_initial_state(est::Estimation, ctx::_PKFContext)
+    o, oc = est.options, ctx.o
+    P = if o["lik_init"] == 1
+        lyapunov_symm(ctx.T0, ctx.R0 * ctx.Q * ctx.R0'; qz_criterium=o["qz_criterium"], complex_threshold=o["lyapunov_complex_threshold"])[1]
+    else
+        Ph = o["Harvey_scale_factor"] * Matrix{Float64}(I, ctx.mm, ctx.mm)
+        (Int(oc["likelihood.first_period_occbin_update"]) != 1 && o["Harvey_scale_factor"] == 0) &&
+            (Ph = ctx.T0 * Ph * ctx.T0' + ctx.R0 * ctx.Q * ctx.R0')
+        Ph
+    end
+    zeros(ctx.mm), P
+end
+
+"Observations minus the steady state (and trends) of the observed variables, (pp x T)."
+function _occbin_observations(est::Estimation, ob::Occbin)
+    Y = permutedims(est.data) .- ob.ys[est.obs_decl]
+    trend = _trend(est, ob.params, est.nobs)
+    trend === nothing ? Y : Y .- trend
+end
+
+"""
+    occbin_filter(est, theta) -> PKFResult or InversionFilterResult
+
+Run the OccBin filter of the estimation at `theta` (no bounds or prior): the piecewise Kalman filter (`PKFResult`), or the
+inversion filter (`InversionFilterResult`, with `LIK` and `lik` set) under `likelihood_inversion_filter`. Throws the solver's
+errors (`SteadyStateError`, `BlanchardKahnError`).
+"""
+function occbin_filter(est::Estimation, theta::AbstractVector; rng=dynare_rng(est.model))
+    oc = occbin_options(est)
+    oc === nothing && throw(EstimationError("the model has no occbin_constraints block"))
+    theta = Float64.(theta)
+    Q, Hm = covariances(est, theta)
+    ob = occbin_at(est, theta)
+    if Bool(oc["likelihood.inversion_filter"])
+        err = oc["likelihood.IVF_shock_observable_mapping"]
+        ivf = inversion_filter(ob, est.data, est.obs_decl, err, oc; rng=rng)
+        if ivf.error_code == 0
+            code, pen = inversion_filter_loglik!(ivf, est.data, est.obs_decl, Q, err; presample=est.options["presample"])
+            if code != 0
+                ivf.error_code, ivf.penalty = code, pen
+            end
+        end
+        return ivf
+    end
+    ctx = _pkf_context(est, ob, Q, Hm)
+    a, P = _pkf_initial_state(est, ctx)
+    di = est.data_index === nothing ? nothing : est.data_index
+    piecewise_kalman_filter(ctx, _occbin_observations(est, ob), a, P; data_index=di, presample=est.options["presample"])
+end
+
+"dsge_likelihood.m / IVF_posterior.m for an OccBin model, after the bounds and covariance checks; same outputs as `_dsge_likelihood`."
+function _occbin_likelihood(est::Estimation, theta::AbstractVector, with_lik::Bool)
+    oc = occbin_options(est)
+    reject(info, pen, msg) = (est.last_info = msg; est.last_info_code = info; (Inf, info, pen, NaN, NaN, Float64[]))
+    ivf = Bool(oc["likelihood.inversion_filter"])
+    est.last_filter = ivf ? "inversion filter" : "piecewise Kalman filter"
+    res = try
+        occbin_filter(est, theta)
+    catch e
+        if e isa SteadyStateError
+            return reject(22, 0.1, "steady state: $(e.msg)")
+        elseif e isa BlanchardKahnError
+            return reject(3, isfinite(e.penalty) ? e.penalty : 0.1, "solution: $(e.msg)")
+        elseif e isa DomainError || e isa LinearAlgebra.SingularException || e isa LinearAlgebra.LAPACKException
+            return reject(22, 0.1, "steady state or solution: $(sprint(showerror, e))")
+        end
+        rethrow()
+    end
+    if ivf
+        res.error_code != 0 && return reject(res.error_code, res.penalty, "inversion filter failed in period $(res.error_period) (info $(res.error_code))")
+    else
+        res.error_code != 0 && return reject(320, 0.1, "piecewise Kalman filter failed in period $(res.error_period) (OccBin error $(res.error_code); info 320)")
+        isfinite(res.LIK) || return reject(320, 0.1, "the likelihood is NaN or Inf (info 320)")
+    end
+    LIK = res.LIK
+    lnprior = logpdf(est.prior, theta)
+    if isinf(lnprior) || isnan(lnprior)
+        info = isnan(lnprior) ? 47 : 40
+        est.last_info = "the prior density is zero, infinite or NaN (info $info)"
+        est.last_info_code = info
+        return Inf, info, ivf ? 1000.0 : 0.1, -LIK, lnprior, Float64[]
+    end
+    contrib = with_lik ? res.lik[est.options["presample"]+1:end] : Float64[]
+    LIK - lnprior, 0, 0.0, -LIK, lnprior, contrib
+end
+
+# ====================================================================== smoother
+"""
+OccBin part of a `SmootherResult` (`res.occbin`): the `OccbinSmootherResult` (`smoother`; Dynare's oo_.occbin.smoother), the
+linear smoother's result (`linear`; oo_.occbin.linear_smoother) and the OccBin options used.
+"""
+struct OccbinSmoothing
+    smoother::OccbinSmootherResult
+    linear::Any
+    options::Dict{String,Any}
+end
+
+# smoother options that need the regime-dependent variances, not implemented with OccBin
+const _OCC_SMOOTHER_REFUSED = ("filter_covariance", "smoothed_state_uncertainty")
+
+"""
+`smooth` for a model with occbin_constraints (Dynare's evaluate_smoother / dynare_estimation_1 with
+options_.occbin.smoother.status): the linear smoother (all of smooth's options and parameter sets) followed by the OccBin
+smoother at the same parameters, or by the inversion filter with `smoother_inversion_filter`. `occbin` overrides OccBin options.
+"""
+function _occbin_smooth(m::Model, data=nothing; occbin=nothing, estimation=nothing, kw...)
+    for k in _OCC_SMOOTHER_REFUSED
+        _flag(get(kw, Symbol(k), false)) && throw(SmootherError("$k is not implemented for the OccBin smoother"))
+    end
+    est = estimation
+    oc = (est !== nothing && occbin === nothing && occbin_options(est) !== nothing) ? occbin_options(est) :
+         occbin_filter_options(m, occbin; what="OccBin smoother")
+    lin = _smooth_linear(m, data; estimation=est, kw...)
+    for (k, v) in (("filter_covariance", lin.FilteredVariablesKStepAheadVariances), ("smoothed_state_uncertainty", lin.State_uncertainty))
+        v === nothing || throw(SmootherError("$k is not implemented for the OccBin smoother"))
+    end
+    lin.loglinear && throw(SmootherError("loglinear is not available with OccBin (the piecewise-linear solution is in levels)"))
+    _flag(get(lin.options, "prefilter", 0)) && throw(SmootherError("OccBin is incompatible with the prefilter option (initial_estimation_checks)"))
+    any(!iszero, lin.TrendCoeffs) && throw(SmootherError("observation_trends are not implemented for the OccBin smoother"))
+    lin.kalman_algo in (3, 4) && throw(SmootherError("the diffuse filter is not implemented for the OccBin smoother"))
+    fsa = lin.filter_step_ahead
+    (isempty(fsa) || fsa == [1]) || throw(SmootherError("filter_step_ahead beyond 1 is not implemented for the OccBin smoother"))
+    lik_init = Int(get(lin.options, "lik_init", 1))
+    qz = (est !== nothing && lik_init == est.options["lik_init"]) ? est.options["qz_criterium"] :
+         _select_qz(m, lik_init, get(lin.options, "qz_criterium", nothing))
+    ob = Occbin(m; params=lin.params, qz_criterium=qz)
+    maximum(abs.(ob.ys .- lin.SteadyState); init=0.0) < 1e-8 * max(1.0, maximum(abs, ob.ys; init=0.0)) ||
+        throw(SmootherError("the steady state of the reference regime differs from the linear smoother's (occbin_X_bind parameters set?)"))
+    n, T = m.n_endo, size(lin.data, 1)
+    obs = lin.obs_index
+    if Bool(oc["smoother.inversion_filter"])
+        err = (est !== nothing && haskey(oc, "likelihood.IVF_shock_observable_mapping") && oc["likelihood.IVF_shock_observable_mapping"] !== nothing) ?
+              oc["likelihood.IVF_shock_observable_mapping"] : findall(diag(lin.Sigma_e) .!= 0)
+        length(err) == length(obs) || throw(SmootherError("The IVF requires exactly as many shocks as observables."))
+        any(!iszero, lin.me_cov) && throw(SmootherError("IVF-filter: Measurement errors are not allowed with the inversion filter."))
+        ivf = inversion_filter(ob, lin.data .+ ob.ys[obs]', obs, err, oc; rng=dynare_rng(m))
+        sm = inversion_filter_smoother(ivf, ob.ys, err, ob.n_exo; endo_names=m.endo_names, exo_names=m.exo_names)
+    else
+        ktol = Float64(something(get(lin.options, "kalman_tol", nothing), 1e-10))
+        sm = occbin_smoother(ob, permutedims(lin.data), lin.Sigma_e, lin.me_cov, obs, oc; lik_init=lik_init, qz_criterium=qz,
+                             Harvey_scale_factor=Float64(something(get(lin.options, "Harvey_scale_factor", nothing), 10.0)), kalman_tol=ktol)
+    end
+    res = deepcopy(lin)
+    res.occbin = OccbinSmoothing(sm, lin, oc)
+    sm.error_flag == 0 || return res              # Dynare writes nothing to oo_ (store_smoother_results is skipped)
+    nm = m.endo_names
+    cols(M, names) = Dict{String,Vector{Float64}}(v => M[:, i] for (i, v) in enumerate(names))
+    ys = ob.ys
+    res.smoothed, res.shocks, res.init_state = sm.smoothed, sm.shocks, sm.smoothed0
+    res.SmoothedVariables = cols(sm.smoothed .+ ys', nm)
+    res.SmoothedShocks = cols(sm.shocks, m.exo_names)
+    res.updated = sm.updated
+    res.UpdatedVariables = cols(sm.updated .+ ys', nm)
+    res.Init_State = Dict{String,Float64}(v => sm.smoothed0[i] + ys[i] for (i, v) in enumerate(nm))
+    res.Init_State_Vector = sm.smoothed0 .+ ys
+    eps = lin.data .- sm.smoothed[:, obs]
+    res.measurement_errors = eps
+    res.SmoothedMeasurementErrors = isempty(lin.SmoothedMeasurementErrors) ? Dict{String,Vector{Float64}}() : cols(eps, lin.varobs)
+    if sm.inversion_filter
+        res.FilteredVariables = Dict{String,Vector{Float64}}()
+        res.FilteredVariablesKStepAhead = nothing
+        res.filter_step_ahead = Int[]
+    else
+        res.FilteredVariables = cols(sm.filtered .+ ys', nm)
+        if fsa == [1]
+            k = zeros(1, n, T + 1)
+            k[1, :, 2:T+1] = permutedims(sm.filtered .+ ys')
+            k[1, :, 1] = ys
+            res.FilteredVariablesKStepAhead = k
+        end
+    end
+    res
+end
+
+"""
+    occbin_shock_decomposition(m, res::SmootherResult; tinit=1) -> Dict{String,ShockDecomposition}
+
+Dynare's `occbin.shock_decomposition` on the OccBin smoother result of `smooth` (fields `decomp`, `wdecomp`, `init_decomp`,
+`linear`, `linear_init`; see the method on `OccbinSmootherResult`).
+"""
+function occbin_shock_decomposition(m::Model, res::SmootherResult; tinit::Integer=1)
+    res.occbin === nothing && throw(SmootherError("not an OccBin smoother result"))
+    sm = res.occbin.smoother
+    sm.error_flag == 0 || throw(SmootherError("the OccBin smoother failed (error_flag $(sm.error_flag))"))
+    ob = Occbin(m; params=res.params)
+    occbin_shock_decomposition(sm, ob.P, ob.Q; tinit=tinit)
+end
