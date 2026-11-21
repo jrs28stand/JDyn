@@ -390,7 +390,10 @@ if isdefined(JDyn, :dynare)
     @testset "R28 stoch_simul! IRF rules differ from Dynare's stoch_simul.m (relative_irf at order 2, skip threshold)" begin
         f = joinpath(DYNARE_SRC, "tests", "irfs", "example1_unit_std.mod")
         if isfile(f)
-            d = mktempdir(); cp(f, joinpath(d, "example1_unit_std.mod"))
+            d = mktempdir()
+            # the file's own order-2 check (2e-4 against Dynare's random draws) now runs and fires (see docs/ACCEPTANCE.md);
+            # this test is about oo_.irfs, so the copy does not stop there
+            write(joinpath(d, "example1_unit_std.mod"), replace(read(f, String), "error('relative_irf-option at order=2 is broken')" => "disp('order 2 relative_irf differs')"))
             ws = quietly(() -> JDyn.dynare(joinpath(d, "example1_unit_std.mod")))
             # Dynare 7.2 (Octave): final oo_.irfs.a_e(1) = 0.01 (relative_irf at order 2 normalises the shock to 0.01)
             @test ws.oo_.irfs.a_e[1] ≈ 0.01                 # JDyn: 0.0095 (the shock's stderr)

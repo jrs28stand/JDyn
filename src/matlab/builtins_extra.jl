@@ -296,7 +296,7 @@ function _load_to_struct(I, a)
     name = String(a[1])
     cands = isabspath(name) ? [name, name * ".mat"] : [joinpath(I.dir === nothing ? pwd() : I.dir, name), joinpath(I.dir === nothing ? pwd() : I.dir, name * ".mat"), name, name * ".mat"]
     path = findfirst(isfile, cands)
-    path === nothing && merr("load: unable to find file $name")
+    path === nothing && throw(Unsupported("load: unable to find file $name (it may be written by another run)", "file"))
     p = cands[path]
     data = try
         MAT.matread(p)

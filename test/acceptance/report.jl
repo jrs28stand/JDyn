@@ -129,5 +129,7 @@ function write_reports(out)
             causes_table(io, rows, cat; top=cat == "CHECK_FAILED" ? 100 : 30)
         end
     end
+    triage = joinpath(HERE, "triage.md")
+    isfile(triage) && open(md, "a") do io; println(io); print(io, read(triage, String)); end
     println("wrote ", out, " and ", md)
 end
