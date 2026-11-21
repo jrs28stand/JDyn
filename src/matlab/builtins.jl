@@ -934,7 +934,7 @@ function _plot(I, argnodes, sc, nout)
 end
 lazy!(_plot, PLOT_FUNCS...)
 
-const FILE_FUNCS = split("save fopen fread fwrite fgetl fgets fscanf textscan importdata xlsread xlswrite csvread csvwrite " *
+const FILE_FUNCS = split("fopen fread fwrite fgetl fgets fscanf textscan importdata xlsread xlswrite csvread csvwrite " *
     "dlmread dlmwrite readtable writetable readmatrix writematrix delete copyfile movefile rmdir " *
     "addpath rmpath cd dir ls system unix dos exist_file " *
     "datatomfile matfile which websave urlread unzip zip tempdir tempname setenv " *

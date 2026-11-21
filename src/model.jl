@@ -639,6 +639,8 @@ function _exec_statement!(m::Model, st)
                 push!(m.session.oo_written, d["name"])
             end
         end
+    elseif kind in ("ramsey_model", "ramsey_policy")
+        throw(ModelError("$kind (optimal policy) is not supported by JDyn: the Ramsey problem's steady state and policy rule are not computed"))
     elseif kind == "shocks" && get(st, "surprise", false) == true
         m.n_surprise += 1
         push!(get!(m.options, "shock_paths", Any[]), st)

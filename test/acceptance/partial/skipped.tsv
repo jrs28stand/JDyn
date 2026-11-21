@@ -1,0 +1,4 @@
+solve_algo_12_14/simul_backward_reference.mod	function	unknown function or variable 'dseries'	initialconditions = dseries(rand(2, 50), '2021Q3', { ... 'x1', 'y1', 'z1', 't1', 's1', ... 'x2', 'y2', 'z2', 't2', 's2',
+solve_algo_12_14/simul_backward_reference.mod	function	unknown function or variable 'dseries'	innovations = dseries(randn(100, 50), '2022Q1', { ... 'e_x1', 'e_y1', 'e_z1', 'e_t1', 'e_s1', ... 'e_x2', 'e_y2', 'e_z2'
+solve_algo_12_14/simul_backward_reference.mod	tainted	'initialconditions' is unknown: "initialconditions = dseries(rand(2, 50), '2021Q3', { ... 'x1" was not executed	s = simul_backward_model(initialconditions, 100, innovations);
+solve_algo_12_14/simul_backward_reference.mod	file	save of a double value	save simul_backward_ref.mat s

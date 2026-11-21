@@ -397,6 +397,7 @@ function steady!(ws::DynareWorkspace; options...)
         m.oo[v] = y
     end
     ws.oo_.steady_state = _col(ys)
+    ws.oo_.exo_steady_state = _col(exo_steady(m))      # a homotopy moves the exogenous variables too
     ws
 end
 
@@ -595,6 +596,7 @@ function dynare(modfile::AbstractString; output=nothing, shocks=Dict{Int,Any}(),
     end
     ws.M_.endo_histval = h
     _mark_synced!(ws)
+    try; save_results_mat(dirname(abspath(modfile)), splitext(basename(modfile))[1], ws.M_, ws.oo_, ws.options_); catch e; @debug "results.mat not written" e; end
     haskey(ws.oo_, "steady_state") || (ws.oo_.steady_state = _col(Float64[get(m.oo, v, 0.0) for v in m.endo_names]))
     haskey(ws.oo_, "exo_steady_state") || (ws.oo_.exo_steady_state = _col(exo_steady(m)))
     for (k, v) in m.session.sc.vars

@@ -710,6 +710,15 @@ function command(I::Interp, s, sc)
         return nothing
     end
     name == "load" && return load_file(I, collect(String, args), sc)
+    if name == "save"
+        push!(I.scope_stack, sc)
+        try
+            BUILTINS["save"](I, Any[String(strip(a, ['\'', '"'])) for a in args], 0)
+            return nothing
+        finally
+            pop!(I.scope_stack)
+        end
+    end
     if name == "run"
         push!(I.scope_stack, sc)
         try

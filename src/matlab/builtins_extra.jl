@@ -288,7 +288,7 @@ function _mat_value(v::AbstractDict)
     end
     s
 end
-_mat_value(v::AbstractArray) = Cell(Any[_mat_value(x) for x in v], ndims(v) == 1 ? (length(v), 1) : size(v))
+_mat_value(v::AbstractArray) = Cell(Any[_mat_value(x) for x in vec(v)], ndims(v) == 1 ? (length(v), 1) : (size(v, 1), size(v, 2)))
 _mat_value(v) = throw(Unsupported("load: a value of class $(typeof(v)) in the MAT-file", "file"))
 
 "`s = load(file)`: the variables of a MAT-file (or an ASCII matrix file) as a struct."
@@ -343,4 +343,71 @@ bi!("getenv") do I, a, nout
 end
 bi!("mkdir") do I, a, nout
     _need_exec("mkdir"); mkpath(String(a[end])); nout > 0 ? Any[true, "", ""] : Any[]
+end
+
+# ---------------------------------------------------------------------- save
+_to_mat(v::Union{Bool,Real,AbstractString}) = v isa Real && !(v isa Bool) ? Float64(v) : v
+_to_mat(v::AbstractMatrix{<:Real}) = v isa AbstractMatrix{Bool} ? Matrix{Bool}(v) : Matrix{Float64}(v)
+function _to_mat(v::MStruct)
+    d = Dict{String,Any}()
+    for k in v._keys
+        x = v[k]
+        (x isa Handle || x isa HostStruct || x isa Tainted) && continue
+        try
+            d[k] = _to_mat(x)
+        catch e
+            e isa Unsupported || rethrow()          # a field of a class MAT-files cannot hold here is left out
+        end
+    end
+    d
+end
+function _to_mat(v::Cell)
+    a = Array{Any}(undef, v.shape...)
+    for (i, x) in enumerate(v.items)
+        a[i] = _to_mat(x)
+    end
+    a
+end
+_to_mat(v) = throw(Unsupported("save of a $(mclass(v)) value", "file"))
+
+"Write the named variables of a scope into a MAT-file (MATLAB's `save file var1 var2`; no names: all variables)."
+function _save_mat(path::String, vars::Dict{String,Any}, names; append=false)
+    d = Dict{String,Any}()
+    if append && isfile(path)
+        merge!(d, MAT.matread(path))
+    end
+    for n in names
+        haskey(vars, n) || merr("save: no such variable '$n'")
+        d[n] = _to_mat(vars[n])
+    end
+    MAT.matwrite(path, d)
+end
+
+bi!("save") do I, a, nout
+    _need_exec("save")
+    isempty(a) && merr("save: not enough input arguments")
+    all(x -> x isa AbstractString, a) || _unsup("save with computed variable names or a struct argument")
+    opts = [x for x in a[2:end] if startswith(x, "-") || x in ("mat", "ascii")]
+    names = [x for x in a[2:end] if !(x in opts)]
+    any(o -> o in ("-ascii", "ascii", "-struct", "-text", "-binary"), opts) && _unsup("save with option $(join(opts, ' '))")
+    f = String(a[1]); occursin('.', basename(f)) || (f *= ".mat")
+    path = isabspath(f) ? f : joinpath(I.dir === nothing ? pwd() : I.dir, f)
+    vars = I.scope_stack[end].vars
+    isempty(names) && (names = sort(collect(keys(vars))))
+    _save_mat(path, vars, names; append="-append" in opts)
+    Any[]
+end
+
+"Dynare writes <fname>/Output/<fname>_results.mat (M_, oo_, options_) at the end of a run; other tests load it."
+function save_results_mat(dir::AbstractString, fname::AbstractString, M_, oo_, options_)
+    out = joinpath(dir, fname, "Output"); mkpath(out)
+    d = Dict{String,Any}()
+    for (n, v) in (("M_", M_), ("oo_", oo_), ("options_", options_))
+        try
+            d[n] = _to_mat(v)
+        catch
+            @debug "results.mat: $n not saved"
+        end
+    end
+    MAT.matwrite(joinpath(out, fname * "_results.mat"), d)
 end

@@ -1,0 +1,15 @@
+preprocessor_checks/ramst_model_edit.mod	deterministic_simulations/ramst.mod	OK	7.8	0			
+preprocessor_checks/ramst_model_edit.mod	preprocessor_checks/ramst_model_edit.mod	REFUSED	7.7	0	ModelError	MATLAB error in the .mod file at "if any(size(oo_.endo_simul) ~= size(S.oo_.endo_simul)) || any(any(abs(oo_.endo_simul - S.oo_.endo_si": reference to non-existent field 'oo_'	
+decision_rules/k_order/fs2000k3_m.mod	decision_rules/k_order/fs2000k2a.mod	OK	5.1	0			
+decision_rules/k_order/fs2000k3_m.mod	decision_rules/k_order/fs2000k2_use_dll.mod	OK	7.6	0			
+decision_rules/k_order/fs2000k3_m.mod	decision_rules/k_order/fs2000k_1_use_dll.mod	OK	1.7	0			
+decision_rules/k_order/fs2000k3_m.mod	decision_rules/k_order/fs2000k3_use_dll.mod	OK	2.2	0			
+decision_rules/k_order/fs2000k3_m.mod	decision_rules/k_order/fs2000k2_m.mod	OK	0.8	0			
+decision_rules/k_order/fs2000k3_m.mod	decision_rules/k_order/fs2000k_1_m.mod	OK	0.6	0			
+decision_rules/k_order/fs2000k3_m.mod	decision_rules/k_order/fs2000k3_m.mod	OK	1.7	0			
+solve_algo_12_14/simul_backward_14.mod	solve_algo_12_14/simul_backward_reference.mod	OK_WARN	2.5	1			MATLAB code in the .mod file: 4 statement(s) not executed (2 unknown functions, 1 dependent on skipped statements, 1 file input/output). In them JDyn found no write to M_ or to a parameter; variables they assign are treated as unknown. First: "initialconditions = dseries(rand(2, 50), '2021Q3', { ...
+solve_algo_12_14/simul_backward_14.mod	solve_algo_12_14/simul_backward_12.mod	REFUSED	1.3	0	ModelError	MATLAB error in the .mod file at "ref = load('simul_backward_ref.mat');": load: unable to find file simul_backward_ref.mat	
+solve_algo_12_14/simul_backward_14.mod	solve_algo_12_14/simul_backward_14.mod	REFUSED	0.2	0	ModelError	MATLAB error in the .mod file at "ref = load('simul_backward_ref.mat');": load: unable to find file simul_backward_ref.mat	
+solve_algo_12_14/purely_backward_14.mod	solve_algo_12_14/purely_backward_reference.mod	OK	1.3	0			
+solve_algo_12_14/purely_backward_14.mod	solve_algo_12_14/purely_backward_12.mod	OK_WARN	0.8	1			perfect_foresight does not act on these perfect_foresight_solver options from the .mod file: solve_algo (solve_algo: period-by-period problems are solved by Newton's method (then a trust-region method))
+solve_algo_12_14/purely_backward_14.mod	solve_algo_12_14/purely_backward_14.mod	OK_WARN	0.8	1			perfect_foresight does not act on these perfect_foresight_solver options from the .mod file: solve_algo (solve_algo: period-by-period problems are solved by Newton's method (then a trust-region method))

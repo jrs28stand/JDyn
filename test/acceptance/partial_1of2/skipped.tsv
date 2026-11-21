@@ -1,0 +1,445 @@
+particle/first_spec_hssmc.mod	results	simulation results are not available while the model is loaded	send_endogenous_variables_to_workspace;
+particle/first_spec_hssmc.mod	file	file-system, shell or interactive functions are not available	save('my_data.mat','q','ca');
+particle/first_spec_hssmc.mod	block	unknown variable, package or object 'matlab'	if matlab.internal.parallel.isPCTInstalled
+particle/first_spec_MCMC.mod	results	simulation results are not available while the model is loaded	send_endogenous_variables_to_workspace;
+particle/first_spec_MCMC.mod	file	file-system, shell or interactive functions are not available	save('my_data_MCMC.mat','ca','b');
+lmmcp/rbcii.mod	results	simulation results are not available while the model is loaded	send_endogenous_variables_to_workspace;
+lmmcp/rbcii.mod	function	unknown function or variable 'A'	subplot(3,2,1); plot(1:n,A(1:n)); title('A');
+lmmcp/rbcii.mod	function	unknown function or variable 'y'	subplot(3,2,2); plot(2:n,y(2:n)); title('y');
+lmmcp/rbcii.mod	function	unknown function or variable 'L'	subplot(3,2,3); plot(2:n,L(2:n)); title('L');
+lmmcp/rbcii.mod	function	unknown function or variable 'k'	subplot(3,2,4); plot(1:n,k(1:n)); title('k');
+lmmcp/rbcii.mod	function	unknown function or variable 'c'	subplot(3,2,5); plot(2:n,c(2:n)); title('c');
+lmmcp/rbcii.mod	function	unknown function or variable 'y'	subplot(3,2,6); plot(2:n, y(2:n)-c(2:n)); title('i');
+dates/fs2000.mod	function	unknown function or variable 'dseries'	ts = dseries('fsdat_simul.m');
+optimizers/fs2000_7.mod	block	exist() for files or functions depends on the MATLAB path	if exist('fminsearch','file')
+optimizers/fs2000_102.mod	block	exist() for files or functions depends on the MATLAB path	if ~isoctave() && exist('simulannealbnd','file')
+estimation/slice/fs2000_slice.mod	function	unknown function or variable 'generate_trace_plots'	generate_trace_plots(1:2);
+estimation/slice/fs2000_estimate_initial_states.mod	results	simulation results are not available while the model is loaded	send_endogenous_variables_to_workspace;
+estimation/slice/fs2000_estimate_initial_states.mod	file	file-system, shell or interactive functions are not available	datatomfile('fsdat_simul',{'gp_obs','gy_obs'})
+stochastic_simulations/pruning/AnSchorfheide_pruned_state_space.mod	function	unknown variable, package or object 'pruned_SS'	pruned_state_space.order_1 = pruned_SS.pruned_state_space_system(M_, options_, oo_.dr, [], options_.ar, 1, 0);
+stochastic_simulations/pruning/AnSchorfheide_pruned_state_space.mod	function	unknown variable, package or object 'pruned_SS'	pruned_state_space.order_2 = pruned_SS.pruned_state_space_system(M_, options_, oo_.dr, [], options_.ar, 1, 0);
+stochastic_simulations/pruning/AnSchorfheide_pruned_state_space.mod	function	unknown variable, package or object 'pruned_SS'	pruned_state_space.order_3 = pruned_SS.pruned_state_space_system(M_, options_, oo_.dr, [], options_.ar, 1, 0);
+stochastic_simulations/pruning/AnSchorfheide_pruned_state_space.mod	tainted	'pruned_state_space' is unknown: "pruned_state_space.order_3 = pruned_SS.pruned_state_space_sy" was not executed	pruned = pruned_state_space.(sprintf('order_%d',iorder));
+stochastic_simulations/pruning/AnSchorfheide_pruned_state_space.mod	tainted	'outAndreasenetal' is unknown: loaded from Andreasen_et_al_2018_Dynare44Pruning_v2.mat with a class JDyn does not read	outAndreasen = outAndreasenetal.(sprintf('order_%d',iorder));
+stochastic_simulations/pruning/AnSchorfheide_pruned_state_space.mod	block	'outAndreasen' is unknown: "outAndreasen = outAndreasenetal.(sprintf('order_%d',iorder))" was not executed	if ~isequal(M_.endo_names,[outAndreasen.label_y; outAndreasen.label_v(1:M_.nspred)])
+stochastic_simulations/pruning/AnSchorfheide_pruned_state_space.mod	tainted	'pruned' is unknown: "pruned = pruned_state_space.(sprintf('order_%d',iorder));" was not executed	norm_E_yx = norm(pruned.E_y(oo_.dr.inv_order_var) - [outAndreasen.Mean_y; outAndreasen.Mean_v(1:M_.nspred)] , Inf);
+stochastic_simulations/pruning/AnSchorfheide_pruned_state_space.mod	tainted	'norm_E_yx' is unknown: "norm_E_yx = norm(pruned.E_y(oo_.dr.inv_order_var) - [outAndr" was not executed	fprintf('max(sum(abs(E[y;x]''))): %d\n',norm_E_yx);
+stochastic_simulations/pruning/AnSchorfheide_pruned_state_space.mod	tainted	'pruned' is unknown: "pruned = pruned_state_space.(sprintf('order_%d',iorder));" was not executed	norm_Var_y = norm(pruned.Var_y(oo_.dr.inv_order_var(1:(M_.endo_nbr-M_.nspred)),oo_.dr.inv_order_var(1:(M_.endo_nbr-M_.ns
+stochastic_simulations/pruning/AnSchorfheide_pruned_state_space.mod	tainted	'norm_Var_y' is unknown: "norm_Var_y = norm(pruned.Var_y(oo_.dr.inv_order_var(1:(M_.en" was not executed	fprintf('max(sum(abs(Var[y]''))):: %d\n',norm_Var_y);
+stochastic_simulations/pruning/AnSchorfheide_pruned_state_space.mod	tainted	'pruned' is unknown: "pruned = pruned_state_space.(sprintf('order_%d',iorder));" was not executed	norm_Var_x = norm(pruned.Var_y(M_.nstatic+(1:M_.nspred),M_.nstatic+(1:M_.nspred)) - outAndreasen.Var_v(1:M_.nspred,1:M_.
+stochastic_simulations/pruning/AnSchorfheide_pruned_state_space.mod	tainted	'norm_Var_x' is unknown: "norm_Var_x = norm(pruned.Var_y(M_.nstatic+(1:M_.nspred),M_.n" was not executed	fprintf('max(sum(abs(Var[x]''))): %d\n',norm_Var_x);
+stochastic_simulations/pruning/AnSchorfheide_pruned_state_space.mod	tainted	'pruned' is unknown: "pruned = pruned_state_space.(sprintf('order_%d',iorder));" was not executed	norm_Corr_yi1 = norm(pruned.Corr_yi(oo_.dr.inv_order_var(1:(M_.endo_nbr-M_.nspred)),oo_.dr.inv_order_var(1:(M_.endo_nbr-
+stochastic_simulations/pruning/AnSchorfheide_pruned_state_space.mod	tainted	'norm_Corr_yi1' is unknown: "norm_Corr_yi1 = norm(pruned.Corr_yi(oo_.dr.inv_order_var(1:(" was not executed	fprintf('max(sum(abs(Corr[y,y(-1)]''))): %d\n',norm_Corr_yi1);
+stochastic_simulations/pruning/AnSchorfheide_pruned_state_space.mod	tainted	'pruned' is unknown: "pruned = pruned_state_space.(sprintf('order_%d',iorder));" was not executed	norm_Corr_yi2 = norm(pruned.Corr_yi(oo_.dr.inv_order_var(1:(M_.endo_nbr-M_.nspred)),oo_.dr.inv_order_var(1:(M_.endo_nbr-
+stochastic_simulations/pruning/AnSchorfheide_pruned_state_space.mod	tainted	'norm_Corr_yi2' is unknown: "norm_Corr_yi2 = norm(pruned.Corr_yi(oo_.dr.inv_order_var(1:(" was not executed	fprintf('max(sum(abs(Corr[y,y(-2)]''))): %d\n',norm_Corr_yi2);
+stochastic_simulations/pruning/AnSchorfheide_pruned_state_space.mod	tainted	'pruned' is unknown: "pruned = pruned_state_space.(sprintf('order_%d',iorder));" was not executed	norm_Corr_xi1 = norm(pruned.Corr_yi(M_.nstatic+(1:M_.nspred),M_.nstatic+(1:M_.nspred),1) - outAndreasen.Corr_v(1:M_.nspr
+stochastic_simulations/pruning/AnSchorfheide_pruned_state_space.mod	tainted	'norm_Corr_xi1' is unknown: "norm_Corr_xi1 = norm(pruned.Corr_yi(M_.nstatic+(1:M_.nspred)" was not executed	fprintf('max(sum(abs(Corr[x,x(-1)]''))): %d\n',norm_Corr_xi1);
+stochastic_simulations/pruning/AnSchorfheide_pruned_state_space.mod	tainted	'pruned' is unknown: "pruned = pruned_state_space.(sprintf('order_%d',iorder));" was not executed	norm_Corr_xi2 = norm(pruned.Corr_yi(M_.nstatic+(1:M_.nspred),M_.nstatic+(1:M_.nspred),2) - outAndreasen.Corr_v(1:M_.nspr
+stochastic_simulations/pruning/AnSchorfheide_pruned_state_space.mod	tainted	'norm_Corr_xi2' is unknown: "norm_Corr_xi2 = norm(pruned.Corr_yi(M_.nstatic+(1:M_.nspred)" was not executed	fprintf('max(sum(abs(Corr[x,x(-2)]''))): %d\n',norm_Corr_xi2);
+stochastic_simulations/pruning/AnSchorfheide_pruned_state_space.mod	block	'norm_E_yx' is unknown: "norm_E_yx = norm(pruned.E_y(oo_.dr.inv_order_var) - [outAndr" was not executed	if iorder < 3 && any([norm_E_yx norm_Var_y norm_Var_x norm_Corr_yi1 norm_Corr_yi2 norm_Corr_xi1 norm_Corr_xi2] > 1e-5)
+stochastic_simulations/pruning/AnSchorfheide_pruned_state_space.mod	tainted	'pruned' is unknown: "pruned = pruned_state_space.(sprintf('order_%d',iorder));" was not executed	oo_.pruned=pruned;
+measurement_errors/fs2000_corr_me_ml_mcmc/fs2000_corr_ME.mod	results	options_.periods was changed by a Dynare command; its value is not known to JDyn	exo_simul = randn(2,options_.periods)'*chol([0.005 0.25*sqrt(0.005*0.01); 0.25*sqrt(0.005*0.01) 0.01]);
+measurement_errors/fs2000_corr_me_ml_mcmc/fs2000_corr_ME.mod	tainted	'exo_simul' is unknown: "exo_simul = randn(2,options_.periods)'*chol([0.005 0.25*sqrt" was not executed	temp=temp'+exo_simul;
+measurement_errors/fs2000_corr_me_ml_mcmc/fs2000_corr_ME.mod	tainted	'temp' is unknown: "temp=temp'+exo_simul;" was not executed	gy_obs=temp(:,1);
+measurement_errors/fs2000_corr_me_ml_mcmc/fs2000_corr_ME.mod	tainted	'temp' is unknown: "temp=temp'+exo_simul;" was not executed	gp_obs=temp(:,2);
+measurement_errors/fs2000_corr_me_ml_mcmc/fs2000_corr_ME.mod	file	file-system, shell or interactive functions are not available	save('fsdat_simul_corr.mat','gy_obs','gp_obs')
+gsa/ls2003.mod	function	unknown function or variable 'collect_latex_files'	collect_latex_files;
+gsa/ls2003.mod	file	file-system, shell or interactive functions are not available	[status, cmdout]=system(['pdflatex -halt-on-error -interaction=nonstopmode ' M_.fname '_TeX_binder.tex']);
+gsa/ls2003.mod	block	'status' is unknown: "[status, cmdout]=system(['pdflatex -halt-on-error -interacti" was not executed	if status
+estimation/fs2000_MCMC_jumping_covariance.mod	file	load with options or a path	load('fs2000_MCMC_jumping_covariance/Output/fs2000_MCMC_jumping_covariance_mode','hh');
+estimation/fs2000_MCMC_jumping_covariance.mod	function	unknown function or variable 'hh'	jumping_covariance=diag(diag(hh));
+estimation/fs2000_MCMC_jumping_covariance.mod	file	file-system, shell or interactive functions are not available	save('test_matrix.mat','jumping_covariance');
+exogenous-observed-variables/preprocessor.mod	results	options_.varobs has not been set in the .mod file (Dynare's defaults are not known to JDyn)	assert(length(options_.varobs)==1);
+exogenous-observed-variables/preprocessor.mod	results	options_.varexobs has not been set in the .mod file (Dynare's defaults are not known to JDyn)	assert(length(options_.varexobs)==1);
+exogenous-observed-variables/preprocessor.mod	results	options_.varobs_id has not been set in the .mod file (Dynare's defaults are not known to JDyn)	assert(length(options_.varobs_id)==1);
+exogenous-observed-variables/preprocessor.mod	results	options_.varexobs_id has not been set in the .mod file (Dynare's defaults are not known to JDyn)	assert(length(options_.varexobs_id)==1);
+exogenous-observed-variables/preprocessor.mod	results	options_.varobs_id has not been set in the .mod file (Dynare's defaults are not known to JDyn)	assert(options_.varobs_id==1);
+exogenous-observed-variables/preprocessor.mod	results	options_.varexobs_id has not been set in the .mod file (Dynare's defaults are not known to JDyn)	assert(options_.varexobs_id==2);
+exogenous-observed-variables/preprocessor.mod	results	options_.varobs has not been set in the .mod file (Dynare's defaults are not known to JDyn)	assert(options_.varobs{1}=='y');
+exogenous-observed-variables/preprocessor.mod	results	options_.varexobs has not been set in the .mod file (Dynare's defaults are not known to JDyn)	assert(options_.varexobs{1}=='x');
+estimation/fs2000_calibrated_covariance.mod	block	M_.Sigma_e is unknown (it may have been changed by 'estimation')	if isequal(M_.Sigma_e(2,1),5e-5) || isequal(M_.Sigma_e(1,2),5e-5)
+estimation/fs2000_calibrated_covariance.mod	block	M_.H is not available in JDyn	if ~isequal(M_.H(2,1),5e-5) || ~isequal(M_.H(1,2),5e-5)
+estimation/fs2000_estimated_params_remove.mod	block	unknown variable, package or object 'estim_params_'	if size(estim_params_.var_exo, 1) ~= 2 || size(estim_params_.param_vals, 1) ~= 7 ...
+estimation/heteroskedastic_shocks/fs2000_het_dates.mod	syntax	cannot parse: bad number or date literal "1901Y);"	ts = dseries('../fsdat_simul.m', 1901Y)
+estimation/method_of_moments/RBC/RBC_MoM_Andreasen.mod	block	M_.matched_moments is not available in JDyn	if ~isequal(M_.matched_moments,matched_moments_)
+estimation/method_of_moments/RBC/RBC_MoM_prefilter.mod	results	simulation results are not available while the model is loaded	send_endogenous_variables_to_workspace;
+estimation/method_of_moments/RBC/RBC_MoM_prefilter.mod	file	file-system, shell or interactive functions are not available	save('RBC_MoM_data_2.mat', options_.varobs{:} );
+estimation/method_of_moments/RBC/RBC_MoM_prefilter.mod	block	M_.matched_moments is not available in JDyn	if ~isequal(M_.matched_moments,matched_moments_)
+estimation/method_of_moments/RBC/RBC_MoM_prefilter.mod	file	file-system, shell or interactive functions are not available	save('test_matrix.mat','weighting_matrix')
+estimation/method_of_moments/AFVRR/AFVRR_M0.mod	feature	vertical concatenation of cell rows	AndreasenEtAl.moments1 =[ {[ 1]} {'Ex' } {'Gr_C '} {' ' } {'0.024388' } {'0.023764' } {[ 2]} {'Ex' } {'Gr_I '} {' ' } {'
+estimation/method_of_moments/AFVRR/AFVRR_M0.mod	tainted	value depends on a statement that was not executed: "AndreasenEtAl.moments1 =[ {[ 1]} {'Ex' } {'Gr_C '} {' ' } {'" was not executed	AndreasenEtAl.Q2 = 65.8269;
+estimation/method_of_moments/AFVRR/AFVRR_M0.mod	feature	vertical concatenation of cell rows	AndreasenEtAl.moments2 =[ {[ 1]} {'Ex' } {'Gr_C '} {' ' } {'0.024388' } {'0.023764' } {[ 2]} {'Ex' } {'Gr_I '} {' ' } {'
+estimation/method_of_moments/AFVRR/AFVRR_M0.mod	tainted	'AndreasenEtAl' is unknown: "AndreasenEtAl.moments2 =[ {[ 1]} {'Ex' } {'Gr_C '} {' ' } {'" was not executed	dev_Q = AndreasenEtAl.Q1 - oo_.mom.Q;
+estimation/method_of_moments/AFVRR/AFVRR_M0.mod	tainted	'AndreasenEtAl' is unknown: "AndreasenEtAl.moments2 =[ {[ 1]} {'Ex' } {'Gr_C '} {' ' } {'" was not executed	dev_datamoments = str2double(AndreasenEtAl.moments1(:,5)) - oo_.mom.data_moments;
+estimation/method_of_moments/AFVRR/AFVRR_M0.mod	tainted	'AndreasenEtAl' is unknown: "AndreasenEtAl.moments2 =[ {[ 1]} {'Ex' } {'Gr_C '} {' ' } {'" was not executed	dev_modelmoments = str2double(AndreasenEtAl.moments1(:,6)) - oo_.mom.model_moments;
+estimation/method_of_moments/AFVRR/AFVRR_M0.mod	tainted	'AndreasenEtAl' is unknown: "AndreasenEtAl.moments2 =[ {[ 1]} {'Ex' } {'Gr_C '} {' ' } {'" was not executed	table([AndreasenEtAl.Q1 ; str2double(AndreasenEtAl.moments1(:,5)) ; str2double(AndreasenEtAl.moments1(:,6))],... [oo_.mo
+estimation/method_of_moments/AFVRR/AFVRR_M0.mod	block	'dev_modelmoments' is unknown: "dev_modelmoments = str2double(AndreasenEtAl.moments1(:,6)) -" was not executed	if norm(dev_modelmoments)> 1e-4
+estimation/method_of_moments/AFVRR/AFVRR_M0.mod	tainted	'AndreasenEtAl' is unknown: "AndreasenEtAl.moments2 =[ {[ 1]} {'Ex' } {'Gr_C '} {' ' } {'" was not executed	dev_Q = AndreasenEtAl.Q2 - oo_.mom.Q;
+estimation/method_of_moments/AFVRR/AFVRR_M0.mod	tainted	'AndreasenEtAl' is unknown: "AndreasenEtAl.moments2 =[ {[ 1]} {'Ex' } {'Gr_C '} {' ' } {'" was not executed	dev_datamoments = str2double(AndreasenEtAl.moments2(:,5)) - oo_.mom.data_moments;
+estimation/method_of_moments/AFVRR/AFVRR_M0.mod	tainted	'AndreasenEtAl' is unknown: "AndreasenEtAl.moments2 =[ {[ 1]} {'Ex' } {'Gr_C '} {' ' } {'" was not executed	dev_modelmoments = str2double(AndreasenEtAl.moments2(:,6)) - oo_.mom.model_moments;
+estimation/method_of_moments/AFVRR/AFVRR_M0.mod	tainted	'AndreasenEtAl' is unknown: "AndreasenEtAl.moments2 =[ {[ 1]} {'Ex' } {'Gr_C '} {' ' } {'" was not executed	table([AndreasenEtAl.Q2 ; str2double(AndreasenEtAl.moments2(:,5)) ; str2double(AndreasenEtAl.moments2(:,6))],... [oo_.mo
+estimation/method_of_moments/AFVRR/AFVRR_MFB_RRA.mod	feature	vertical concatenation of cell rows	AndreasenEtAl.moments1 =[ {[ 1]} {'Ex' } {'Gr_C '} {' ' } {'0.024388' } {'0.023726' } {[ 2]} {'Ex' } {'Gr_I '} {' ' } {'
+estimation/method_of_moments/AFVRR/AFVRR_MFB_RRA.mod	tainted	value depends on a statement that was not executed: "AndreasenEtAl.moments1 =[ {[ 1]} {'Ex' } {'Gr_C '} {' ' } {'" was not executed	AndreasenEtAl.Q2 = 140.8954;
+estimation/method_of_moments/AFVRR/AFVRR_MFB_RRA.mod	feature	vertical concatenation of cell rows	AndreasenEtAl.moments2 =[ {[ 1]} {'Ex' } {'Gr_C '} {' ' } {'0.024388' } {'0.023726' } {[ 2]} {'Ex' } {'Gr_I '} {' ' } {'
+estimation/method_of_moments/AFVRR/AFVRR_MFB_RRA.mod	tainted	'AndreasenEtAl' is unknown: "AndreasenEtAl.moments2 =[ {[ 1]} {'Ex' } {'Gr_C '} {' ' } {'" was not executed	dev_Q = AndreasenEtAl.Q1 - oo_.mom.Q;
+estimation/method_of_moments/AFVRR/AFVRR_MFB_RRA.mod	tainted	'AndreasenEtAl' is unknown: "AndreasenEtAl.moments2 =[ {[ 1]} {'Ex' } {'Gr_C '} {' ' } {'" was not executed	dev_datamoments = str2double(AndreasenEtAl.moments1(:,5)) - oo_.mom.data_moments;
+estimation/method_of_moments/AFVRR/AFVRR_MFB_RRA.mod	tainted	'AndreasenEtAl' is unknown: "AndreasenEtAl.moments2 =[ {[ 1]} {'Ex' } {'Gr_C '} {' ' } {'" was not executed	dev_modelmoments = str2double(AndreasenEtAl.moments1(:,6)) - oo_.mom.model_moments;
+estimation/method_of_moments/AFVRR/AFVRR_MFB_RRA.mod	tainted	'AndreasenEtAl' is unknown: "AndreasenEtAl.moments2 =[ {[ 1]} {'Ex' } {'Gr_C '} {' ' } {'" was not executed	table([AndreasenEtAl.Q1 ; str2double(AndreasenEtAl.moments1(:,5)) ; str2double(AndreasenEtAl.moments1(:,6))],... [oo_.mo
+estimation/method_of_moments/AFVRR/AFVRR_MFB_RRA.mod	block	'dev_modelmoments' is unknown: "dev_modelmoments = str2double(AndreasenEtAl.moments1(:,6)) -" was not executed	if norm(dev_modelmoments)> 1e-4
+estimation/method_of_moments/AFVRR/AFVRR_MFB_RRA.mod	tainted	'AndreasenEtAl' is unknown: "AndreasenEtAl.moments2 =[ {[ 1]} {'Ex' } {'Gr_C '} {' ' } {'" was not executed	dev_Q = AndreasenEtAl.Q2 - oo_.mom.Q;
+estimation/method_of_moments/AFVRR/AFVRR_MFB_RRA.mod	tainted	'AndreasenEtAl' is unknown: "AndreasenEtAl.moments2 =[ {[ 1]} {'Ex' } {'Gr_C '} {' ' } {'" was not executed	dev_datamoments = str2double(AndreasenEtAl.moments2(:,5)) - oo_.mom.data_moments;
+estimation/method_of_moments/AFVRR/AFVRR_MFB_RRA.mod	tainted	'AndreasenEtAl' is unknown: "AndreasenEtAl.moments2 =[ {[ 1]} {'Ex' } {'Gr_C '} {' ' } {'" was not executed	dev_modelmoments = str2double(AndreasenEtAl.moments2(:,6)) - oo_.mom.model_moments;
+estimation/method_of_moments/AFVRR/AFVRR_MFB_RRA.mod	tainted	'AndreasenEtAl' is unknown: "AndreasenEtAl.moments2 =[ {[ 1]} {'Ex' } {'Gr_C '} {' ' } {'" was not executed	table([AndreasenEtAl.Q2 ; str2double(AndreasenEtAl.moments2(:,5)) ; str2double(AndreasenEtAl.moments2(:,6))],... [oo_.mo
+estimation/method_of_moments/CET/cet_rwmh.mod	function	unknown function or variable 'collect_latex_files'	collect_latex_files;
+estimation/method_of_moments/CET/cet_rwmh.mod	block	file-system, shell or interactive functions are not available	if system(['pdflatex -halt-on-error -interaction=batchmode ' M_.fname '_TeX_binder.tex'])
+discretionary_policy/dennis_1.mod	file	file-system, shell or interactive functions are not available	datatomfile('dennis_simul', {'y'; 'i'; 'pi';});
+histval_initval_file/ramst_data_generate.mod	file	file-system, shell or interactive functions are not available	fh = fopen('ramst_data.m', 'w');
+histval_initval_file/ramst_data_generate.mod	tainted	'fh' is unknown: "fh = fopen('ramst_data.m', 'w');" was not executed	fprintf(fh, 'INIT__ = ''1Y'';\n');
+histval_initval_file/ramst_data_generate.mod	tainted	'fh' is unknown: "fh = fopen('ramst_data.m', 'w');" was not executed	fprintf(fh, 'NAMES__ = {''c''; ''k''; ''x''};\n');
+histval_initval_file/ramst_data_generate.mod	tainted	'fh' is unknown: "fh = fopen('ramst_data.m', 'w');" was not executed	fprintf(fh, 'TEX__ = {''c''; ''k''; ''x''};\n');
+histval_initval_file/ramst_data_generate.mod	tainted	'fh' is unknown: "fh = fopen('ramst_data.m', 'w');" was not executed	fprintf(fh, 'c = [');
+histval_initval_file/ramst_data_generate.mod	tainted	'fh' is unknown: "fh = fopen('ramst_data.m', 'w');" was not executed	fprintf(fh, '%f ', oo_.endo_simul(1,:));
+histval_initval_file/ramst_data_generate.mod	tainted	'fh' is unknown: "fh = fopen('ramst_data.m', 'w');" was not executed	fprintf(fh, '];\n');
+histval_initval_file/ramst_data_generate.mod	tainted	'fh' is unknown: "fh = fopen('ramst_data.m', 'w');" was not executed	fprintf(fh, 'k = [');
+histval_initval_file/ramst_data_generate.mod	tainted	'fh' is unknown: "fh = fopen('ramst_data.m', 'w');" was not executed	fprintf(fh, '%f ', oo_.endo_simul(2,:));
+histval_initval_file/ramst_data_generate.mod	tainted	'fh' is unknown: "fh = fopen('ramst_data.m', 'w');" was not executed	fprintf(fh, 'x = [');
+histval_initval_file/ramst_data_generate.mod	tainted	'fh' is unknown: "fh = fopen('ramst_data.m', 'w');" was not executed	fprintf(fh, '%f ', oo_.exo_simul);
+histval_initval_file/ramst_data_generate.mod	tainted	'fh' is unknown: "fh = fopen('ramst_data.m', 'w');" was not executed	fclose(fh);
+histval_initval_file/ramst_data_generate.mod	file	file-system, shell or interactive functions are not available	save('ramst_data.mat', 'INIT__', 'NAMES__', ... 'TEX__', 'c', 'k', 'x');
+histval_initval_file/ramst_data_generate.mod	file	file-system, shell or interactive functions are not available	fh = fopen('ramst_data.csv', 'w');
+histval_initval_file/ramst_data_generate.mod	tainted	'fh' is unknown: "fh = fopen('ramst_data.csv', 'w');" was not executed	fprintf(fh, 'c,k,x\n');
+histval_initval_file/ramst_data_generate.mod	tainted	'fh' is unknown: "fh = fopen('ramst_data.csv', 'w');" was not executed	fprintf(fh, '%f, ', oo_.endo_simul(1:M_.orig_endo_nbr, i));
+histval_initval_file/ramst_data_generate.mod	tainted	'fh' is unknown: "fh = fopen('ramst_data.csv', 'w');" was not executed	fprintf(fh, '%f\n', oo_.exo_simul(i));
+steady_state/ramst_solve_algo_0.mod	block	the value depends on the MATLAB installation or the clock	if isoctave
+arima/mod1.mod	file	file-system, shell or interactive functions are not available	datatomfile('data1',[]);
+fs2000/fs2000_calib_dseries.mod	syntax	cannot parse: bad number or date literal "1950Q1)"	fsdata = dseries('fsdat_simul.m',1950Q1)
+fs2000/fs2000_calib_dseries.mod	syntax	cannot parse: bad number or date literal "1960Q1:"	fsdata = fsdata{'g@p,y@_obs'}(1960Q1:1980Q4)
+fs2000/fs2000_calib_dseries.mod	tainted	'fsdata' is unknown: "fsdata = fsdata{'g@p,y@_obs'}(1960Q1:1980Q4)" was not executed	fsdata
+minimal_state_space_system/sw_minimal.mod	results	M_.nstatic is not available in JDyn	indx = [M_.nstatic+(1:M_.nspred)]';
+minimal_state_space_system/sw_minimal.mod	tainted	'indx' is unknown: "indx = [M_.nstatic+(1:M_.nspred)]';" was not executed	SS.A = oo_.dr.ghx(indx,:);
+minimal_state_space_system/sw_minimal.mod	tainted	'indx' is unknown: "indx = [M_.nstatic+(1:M_.nspred)]';" was not executed	SS.B = oo_.dr.ghu(indx,:);
+minimal_state_space_system/sw_minimal.mod	tainted	value depends on a statement that was not executed: "SS.B = oo_.dr.ghu(indx,:);" was not executed	SS.C = oo_.dr.ghx(indy,:);
+minimal_state_space_system/sw_minimal.mod	tainted	value depends on a statement that was not executed: "SS.C = oo_.dr.ghx(indy,:);" was not executed	SS.D = oo_.dr.ghu(indy,:);
+minimal_state_space_system/sw_minimal.mod	function	unknown variable, package or object 'identification'	[CheckCO,minnx,minSS] = identification.get_minimal_state_representation(SS,0);
+minimal_state_space_system/sw_minimal.mod	tainted	'SS' is unknown: "SS.D = oo_.dr.ghu(indy,:);" was not executed	Sigmax_full = lyapunov_symm(SS.A, SS.B*M_.Sigma_e*SS.B', options_.lyapunov_fixed_point_tol, options_.qz_criterium, optio
+minimal_state_space_system/sw_minimal.mod	tainted	'SS' is unknown: "SS.D = oo_.dr.ghu(indy,:);" was not executed	Sigmay_full = SS.C*Sigmax_full*SS.C' + SS.D*M_.Sigma_e*SS.D';
+minimal_state_space_system/sw_minimal.mod	tainted	'minSS' is unknown: "[CheckCO,minnx,minSS] = identification.get_minimal_state_rep" was not executed	Sigmax_min = lyapunov_symm(minSS.A, minSS.B*M_.Sigma_e*minSS.B', options_.lyapunov_fixed_point_tol, options_.qz_criteriu
+minimal_state_space_system/sw_minimal.mod	tainted	'minSS' is unknown: "[CheckCO,minnx,minSS] = identification.get_minimal_state_rep" was not executed	Sigmay_min = minSS.C*Sigmax_min*minSS.C' + minSS.D*M_.Sigma_e*minSS.D';
+minimal_state_space_system/sw_minimal.mod	tainted	'Sigmay_full' is unknown: "Sigmay_full = SS.C*Sigmax_full*SS.C' + SS.D*M_.Sigma_e*SS.D'" was not executed	([Sigmay_full(:) - Sigmay_min(:)]');
+minimal_state_space_system/sw_minimal.mod	tainted	'Sigmay_full' is unknown: "Sigmay_full = SS.C*Sigmax_full*SS.C' + SS.D*M_.Sigma_e*SS.D'" was not executed	sqrt(([diag(Sigmay_full), diag(Sigmay_min)]'));
+minimal_state_space_system/sw_minimal.mod	tainted	'Sigmay_full' is unknown: "Sigmay_full = SS.C*Sigmax_full*SS.C' + SS.D*M_.Sigma_e*SS.D'" was not executed	dx = norm( Sigmay_full - Sigmay_min, Inf);
+minimal_state_space_system/sw_minimal.mod	block	'dx' is unknown: "dx = norm( Sigmay_full - Sigmay_min, Inf);" was not executed	if dx > 3e-8
+identification/as2007/as2007.mod	function	unknown function or variable 'collect_latex_files'	collect_latex_files;
+identification/as2007/as2007.mod	file	file-system, shell or interactive functions are not available	[status, cmdout]=system(['pdflatex -halt-on-error -interaction=nonstopmode ' M_.fname '_TeX_binder.tex']);
+identification/as2007/as2007.mod	block	'status' is unknown: "[status, cmdout]=system(['pdflatex -halt-on-error -interacti" was not executed	if status
+identification/BrockMirman/BrockMirman.mod	file	load with options or a path	load('BrockMirman/identification/BrockMirman_Current_params_identif.mat','ide_moments_point', 'ide_spectrum_point', 'ide
+identification/BrockMirman/BrockMirman.mod	block	unknown variable, package or object 'ide_moments_point'	if ~isequal(ide_moments_point.(strVars{:}) , chk.(strVars{:}))
+identification/BrockMirman/BrockMirman.mod	block	unknown variable, package or object 'ide_spectrum_point'	if ~isequal(ide_spectrum_point.(strVars{:}) , chk.(strVars{:}))
+identification/BrockMirman/BrockMirman.mod	block	unknown variable, package or object 'ide_minimal_point'	if ~isequal(ide_minimal_point.(strVars{:}) , chk.(strVars{:}))
+identification/correlated_errors/fs2000_corr.mod	function	unknown function or variable 'collect_latex_files'	collect_latex_files;
+identification/correlated_errors/fs2000_corr.mod	file	file-system, shell or interactive functions are not available	[status, cmdout]=system(['pdflatex -halt-on-error -interaction=nonstopmode ' M_.fname '_TeX_binder.tex']);
+identification/correlated_errors/fs2000_corr.mod	block	'status' is unknown: "[status, cmdout]=system(['pdflatex -halt-on-error -interacti" was not executed	if status
+kalman/lyapunov/fs2000_lyap.mod	block	the value depends on the MATLAB installation or the clock	if (isoctave && user_has_octave_package('control')) || (~isoctave && user_has_matlab_license('control_toolbox'))
+kalman_filter_smoother/test_compute_Pinf_Pstar_data.mod	results	simulation results are not available while the model is loaded	send_endogenous_variables_to_workspace;
+kalman_filter_smoother/test_compute_Pinf_Pstar_data.mod	file	file-system, shell or interactive functions are not available	save data_Pinf_Pstar.mat v1 v2 v3;
+kalman_filter_smoother/test_compute_Pinf_Pstar.mod	function	unknown variable, package or object 'bayestopt_'	mf = bayestopt_.smoother_var_list(bayestopt_.smoother_mf);
+kalman_filter_smoother/test_compute_Pinf_Pstar.mod	function	dynare_resolve is not run while loading	[T,R,SteadyState,info,oo_.dr,M_.params] = dynare_resolve(M_,options_,oo_.dr,oo_.steady_state,oo_.exo_steady_state,oo_.ex
+kalman_filter_smoother/test_compute_Pinf_Pstar.mod	tainted	'mf' is unknown: "mf = bayestopt_.smoother_var_list(bayestopt_.smoother_mf);" was not executed	[Pstar,Pinf] = compute_Pinf_Pstar(mf,T,R,Q,options_.qz_criterium);
+kalman_filter_smoother/test_compute_Pinf_Pstar.mod	block	'Pinf' is unknown: "[Pstar,Pinf] = compute_Pinf_Pstar(mf,T,R,Q,options_.qz_crite" was not executed	if norm(Pinf(kr(:),kc)) > 1e-14
+kalman_skewed/skew_in_shocks_block.mod	results	M_.Skew_e is not available in JDyn	disp(M_.Skew_e);
+kalman_skewed/skew_in_shocks_block.mod	results	M_.Skew_e is not available in JDyn	fprintf('Number of stored entries: %d\n\n', size(M_.Skew_e, 1));
+kalman_skewed/skew_in_shocks_block.mod	block	M_.Skew_e is not available in JDyn	for row = 1:size(M_.Skew_e, 1)
+kalman_skewed/skew_in_shocks_block.mod	block	'errors' is unknown: block "for row = 1:size(M_.Skew_e, 1)" was not executed	if errors == 0
+kalman_skewed/skew_in_shocks_block.mod	block	M_.Skew_e is not available in JDyn	for count = 1:size(M_.Skew_e, 1)
+kalman_skewed/skew_in_shocks_block.mod	block	M_.Skew_e is not available in JDyn	if size(M_.Skew_e, 1) == 0
+kalman_skewed/skew_in_shocks_block.mod	results	M_.Skew_e is not available in JDyn	val = skew_lookup(M_.Skew_e, i, i, i);
+kalman_skewed/skew_in_shocks_block.mod	block	'val' is unknown: "val = skew_lookup(M_.Skew_e, i, i, i);" was not executed	if abs(val) > 0
+kalman_skewed/skew_in_estimated_params.mod	function	unknown variable, package or object 'estim_params_'	disp(estim_params_.skew_exo)
+kalman_skewed/skew_in_estimated_params.mod	block	unknown variable, package or object 'estim_params_'	if ~isequaln(skew_exo, estim_params_.skew_exo)
+kalman_skewed/ireland2004_bayes.mod	function	unknown function or variable 'generate_trace_plots'	generate_trace_plots(1);
+kalman_skewed/ireland2004_bayes.mod	tainted	M_.params: the value of ["RHO_A", "RHO_E", "OMEGA", "RHO_PI", "RHO_G"] is unknown (it may have been changed by 'estimation')	trace_plot(options_,M_,estim_params_,'StructuralShock',1,'eta_e','eta_e','eta_e');
+kalman_skewed/ireland2004_bayes.mod	tainted	M_.params: the value of ["RHO_A", "RHO_E", "OMEGA", "RHO_PI", "RHO_G"] is unknown (it may have been changed by 'estimation')	mh_autocorrelation_function(options_,M_,estim_params_,'StructuralShock',1,'eta_e','eta_e','eta_e');
+ep/rbc_mc.mod	function	unknown function or variable 'extended_path_mc'	Simulations = extended_path_mc([], 10, 2, [], options_, M_, oo_);
+stochastic-backward-models/solow_ces.mod	function	unknown function or variable 'simul_backward_model'	simulations = simul_backward_model([], 500);
+deterministic_simulations/purely_forward/nk.mod	block	options_.dynatol has not been set in the .mod file (Dynare's defaults are not known to JDyn)	if max(abs(oo_.endo_simul(1,:)-expected_y))>options_.dynatol.x || ...
+deterministic_simulations/homotopy.mod	syntax	cannot parse: bad number or date literal "1Q1:"	plot(Simulated_time_series.Capital(1Q1:25Q4))
+deterministic_simulations/linear_approximation/sw.mod	block	options_.dynatol has not been set in the .mod file (Dynare's defaults are not known to JDyn)	if max(abs(endo_simul_0(:)-endo_simul_1(:)))>.01*options_.dynatol.f
+deterministic_simulations/linear_approximation/sw.mod	block	options_.dynatol has not been set in the .mod file (Dynare's defaults are not known to JDyn)	if max(abs(endo_simul_0(:)-endo_simul_2(:)))>.01*options_.dynatol.f
+deterministic_simulations/multiple_lead_lags/AR2_forward.mod	results	options_.periods was changed by a Dynare command; its value is not known to JDyn	junk=zeros(1,options_.periods+M_.maximum_lag);
+deterministic_simulations/multiple_lead_lags/AR2_forward.mod	tainted	value depends on a statement that was not executed: "junk=zeros(1,options_.periods+M_.maximum_lag);" was not executed	junk(1)=2;
+deterministic_simulations/multiple_lead_lags/AR2_forward.mod	tainted	value depends on a statement that was not executed: "junk(1)=2;" was not executed	junk(2)=1;
+deterministic_simulations/multiple_lead_lags/AR2_forward.mod	block	options_.periods was changed by a Dynare command; its value is not known to JDyn	for ii=3:options_.periods+M_.maximum_lag+M_.maximum_lead
+deterministic_simulations/multiple_lead_lags/AR2_forward.mod	block	'junk' is unknown: block "for ii=3:options_.periods+M_.maximum_lag+M_.maximu" was not executed	if max(abs(junk(M_.maximum_lag+1:end)-oo_.endo_simul(strmatch('y_backward',M_.endo_names,'exact'),1:end-M_.maximum_lead)
+deterministic_simulations/lbj/rbc.mod	block	options_.dynatol has not been set in the .mod file (Dynare's defaults are not known to JDyn)	if max(max(abs(oo0.endo_simul-oo1.endo_simul)))>options_.dynatol.x
+deterministic_simulations/lbj/rbc.mod	block	options_.dynatol has not been set in the .mod file (Dynare's defaults are not known to JDyn)	if max(max(abs(oo0.endo_simul-oo6.endo_simul)))>options_.dynatol.x
+shock_decomposition/fs2000_forecasts.mod	function	unknown function or variable 'collect_latex_files'	collect_latex_files;
+shock_decomposition/fs2000_forecasts.mod	file	file-system, shell or interactive functions are not available	[status, cmdout]=system(['pdflatex -halt-on-error -interaction=nonstopmode ' M_.fname '_TeX_binder.tex']);
+shock_decomposition/fs2000_forecasts.mod	block	'status' is unknown: "[status, cmdout]=system(['pdflatex -halt-on-error -interacti" was not executed	if status
+smoother2histval/fs2000_calib_smoother.mod	function	unknown function or variable 'dseries'	hf = dseries('fs2000_histval.mat');
+smoother2histval/fs2000_calib_smoother.mod	tainted	'hf' is unknown: "hf = dseries('fs2000_histval.mat');" was not executed	assert(all(hf.y.data == oo_.SmoothedVariables.y(4:5)))
+bgp/nk-1/nk.mod	function	unknown variable, package or object 'bgp'	bgp.write(M_);
+bgp/nk-1/nk.mod	function	handle to nk.bgpfun	[y, fval, exitflag] = fsolve(@nk.bgpfun, [y;g], options);
+bgp/nk-1/nk.mod	tainted	'y' is unknown: "[y, fval, exitflag] = fsolve(@nk.bgpfun, [y;g], options);" was not executed	assert(max(abs(y-1))<1e-9);
+model-inversion/bk-1/solow_ces.mod	function	unknown function or variable 'simul_backward_nonlinear_model'	TrueData = simul_backward_nonlinear_model([], 100, options_, M_, oo_);
+model-inversion/bk-1/solow_ces.mod	syntax	cannot parse: bad number or date literal "2Y:1"	subsample = 2Y:100Y
+model-inversion/bk-1/solow_ces.mod	tainted	'TrueData' is unknown: "TrueData = simul_backward_nonlinear_model([], 100, options_," was not executed	SimulatedData = copy(TrueData);
+model-inversion/bk-1/solow_ces.mod	tainted	'SimulatedData' is unknown: "SimulatedData = copy(TrueData);" was not executed	constrainedpaths = SimulatedData{'Output','PhysicalCapitalStock'}(subsample);
+model-inversion/bk-1/solow_ces.mod	syntax	cannot parse: bad number or date literal "1Y, "	exogenousvariables = dseries(NaN(100, 2), 1Y, {'e_x';'e_n'})
+model-inversion/bk-1/solow_ces.mod	tainted	'constrainedpaths' is unknown: "constrainedpaths = SimulatedData{'Output','PhysicalCapitalSt" was not executed	[endogenousvariables, exogenousvariables] = model_inversion(constrainedpaths, exogenousvariables, SimulatedData, M_, opt
+model-inversion/bk-1/solow_ces.mod	block	'constrainedpaths' is unknown: "constrainedpaths = SimulatedData{'Output','PhysicalCapitalSt" was not executed	if max(abs(constrainedpaths.Output(subsample).data-endogenousvariables.Output(subsample).data))>1e-12
+model-inversion/bk-1/solow_ces.mod	block	'constrainedpaths' is unknown: "constrainedpaths = SimulatedData{'Output','PhysicalCapitalSt" was not executed	if max(abs(constrainedpaths.PhysicalCapitalStock(subsample).data-endogenousvariables.PhysicalCapitalStock(subsample).dat
+model-inversion/bk-1/solow_ces.mod	tainted	'TrueData' is unknown: "TrueData = simul_backward_nonlinear_model([], 100, options_," was not executed	TrueEfficiency = TrueData.Efficiency;
+model-inversion/bk-1/solow_ces.mod	tainted	'TrueData' is unknown: "TrueData = simul_backward_nonlinear_model([], 100, options_," was not executed	TruePopulation = TrueData.Population;
+model-inversion/bk-1/solow_ces.mod	tainted	'TrueEfficiency' is unknown: "TrueEfficiency = TrueData.Efficiency;" was not executed	TrueEfficiencyTimesPopulation = TrueEfficiency*TruePopulation;
+model-inversion/bk-1/solow_ces.mod	tainted	'endogenousvariables' is unknown: "[endogenousvariables, exogenousvariables] = model_inversion(" was not executed	EfficiencyTimesPopulation = endogenousvariables.Efficiency*endogenousvariables.Population;
+model-inversion/bk-1/solow_ces.mod	block	cannot parse "if max(abs(TrueEfficiencyTimesPopulation(2Y:100Y).data-EfficiencyTimesPopulation": bad number or date literal "2Y:1"	if max(abs(TrueEfficiencyTimesPopulation(2Y:100Y).data-EfficiencyTimesPopulation(2Y:100Y).data))>tolerance
+model-inversion/bk-3a/varmodel.mod	function	unknown function or variable 'simul_backward_model'	TrueData = simul_backward_model([], 200);
+model-inversion/bk-3a/varmodel.mod	syntax	cannot parse: bad number or date literal "3Y:1"	subsample = 3Y:100Y
+model-inversion/bk-3a/varmodel.mod	tainted	'TrueData' is unknown: "TrueData = simul_backward_model([], 200);" was not executed	SimulatedData = copy(TrueData);
+model-inversion/bk-3a/varmodel.mod	tainted	'SimulatedData' is unknown: "SimulatedData = copy(TrueData);" was not executed	constrainedpaths = SimulatedData{'y1'}(subsample);
+model-inversion/bk-3a/varmodel.mod	tainted	'TrueData' is unknown: "TrueData = simul_backward_model([], 200);" was not executed	exogenousvariables = dseries([NaN(100, 1) TrueData{'e2','e3'}.data(1:100,:)], '1Y', M_.exo_names);
+model-inversion/bk-3a/varmodel.mod	tainted	'constrainedpaths' is unknown: "constrainedpaths = SimulatedData{'y1'}(subsample);" was not executed	[endogenousvariables, exogenousvariables] = model_inversion(constrainedpaths, exogenousvariables, SimulatedData, M_, opt
+model-inversion/bk-3a/varmodel.mod	block	'constrainedpaths' is unknown: "constrainedpaths = SimulatedData{'y1'}(subsample);" was not executed	if max(abs(constrainedpaths(subsample).y1.data-endogenousvariables(subsample).y1.data))>1e-12
+model-inversion/bk-3a/varmodel.mod	block	'exogenousvariables' is unknown: "[endogenousvariables, exogenousvariables] = model_inversion(" was not executed	if max(abs(exogenousvariables(subsample).e2.data-SimulatedData(subsample).e2.data))>1e-12
+model-inversion/bk-3a/varmodel.mod	block	'exogenousvariables' is unknown: "[endogenousvariables, exogenousvariables] = model_inversion(" was not executed	if max(abs(exogenousvariables(subsample).e3.data-SimulatedData(subsample).e3.data))>1e-12
+model-inversion/bk-3a/varmodel.mod	block	'SimulatedData' is unknown: "SimulatedData = copy(TrueData);" was not executed	if max(abs(SimulatedData(subsample).y2.data-endogenousvariables(subsample).y2.data))>1e-12
+model-inversion/bk-3a/varmodel.mod	block	'SimulatedData' is unknown: "SimulatedData = copy(TrueData);" was not executed	if max(abs(SimulatedData(subsample).y3.data-endogenousvariables(subsample).y3.data))>1e-12
+model-inversion/bk-3a/varmodel.mod	block	'exogenousvariables' is unknown: "[endogenousvariables, exogenousvariables] = model_inversion(" was not executed	if max(abs(exogenousvariables(subsample).e1.data-SimulatedData(subsample).e1.data))>1e-12
+model-inversion/bk-3b/varmodel.mod	function	unknown function or variable 'simul_backward_model'	TrueData = simul_backward_model([], 200);
+model-inversion/bk-3b/varmodel.mod	syntax	cannot parse: bad number or date literal "3Y:1"	subsample = 3Y:100Y
+model-inversion/bk-3b/varmodel.mod	tainted	'TrueData' is unknown: "TrueData = simul_backward_model([], 200);" was not executed	SimulatedData = copy(TrueData);
+model-inversion/bk-3b/varmodel.mod	tainted	'SimulatedData' is unknown: "SimulatedData = copy(TrueData);" was not executed	constrainedpaths = SimulatedData{'y1'}(subsample);
+model-inversion/bk-3b/varmodel.mod	tainted	'TrueData' is unknown: "TrueData = simul_backward_model([], 200);" was not executed	exogenousvariables = dseries([NaN(100, 1) TrueData{'e2','e3'}.data(1:100,:)], '1Y', M_.exo_names);
+model-inversion/bk-3b/varmodel.mod	tainted	'constrainedpaths' is unknown: "constrainedpaths = SimulatedData{'y1'}(subsample);" was not executed	[endogenousvariables, exogenousvariables] = model_inversion(constrainedpaths, exogenousvariables, SimulatedData, M_, opt
+model-inversion/bk-3b/varmodel.mod	block	'constrainedpaths' is unknown: "constrainedpaths = SimulatedData{'y1'}(subsample);" was not executed	if max(abs(constrainedpaths(subsample).y1.data-endogenousvariables(subsample).y1.data))>1e-12
+model-inversion/bk-3b/varmodel.mod	block	'exogenousvariables' is unknown: "[endogenousvariables, exogenousvariables] = model_inversion(" was not executed	if max(abs(exogenousvariables(subsample).e2.data-SimulatedData(subsample).e2.data))>1e-12
+model-inversion/bk-3b/varmodel.mod	block	'exogenousvariables' is unknown: "[endogenousvariables, exogenousvariables] = model_inversion(" was not executed	if max(abs(exogenousvariables(subsample).e3.data-SimulatedData(subsample).e3.data))>1e-12
+model-inversion/bk-3b/varmodel.mod	block	'SimulatedData' is unknown: "SimulatedData = copy(TrueData);" was not executed	if max(abs(SimulatedData(subsample).y2.data-endogenousvariables(subsample).y2.data))>1e-12
+model-inversion/bk-3b/varmodel.mod	block	'SimulatedData' is unknown: "SimulatedData = copy(TrueData);" was not executed	if max(abs(SimulatedData(subsample).y3.data-endogenousvariables(subsample).y3.data))>1e-12
+model-inversion/bk-3b/varmodel.mod	block	'exogenousvariables' is unknown: "[endogenousvariables, exogenousvariables] = model_inversion(" was not executed	if max(abs(exogenousvariables(subsample).e1.data-SimulatedData(subsample).e1.data))>1e-12
+model-inversion/bk-4/varmodel.mod	function	unknown function or variable 'simul_backward_model'	TrueData = simul_backward_model([], 200);
+model-inversion/bk-4/varmodel.mod	syntax	cannot parse: bad number or date literal "2Y:1"	subsample = 2Y:100Y
+model-inversion/bk-4/varmodel.mod	tainted	'TrueData' is unknown: "TrueData = simul_backward_model([], 200);" was not executed	SimulatedData = copy(TrueData);
+model-inversion/bk-4/varmodel.mod	tainted	'SimulatedData' is unknown: "SimulatedData = copy(TrueData);" was not executed	constrainedpaths = SimulatedData{'y1','y2','y3'}(subsample);
+model-inversion/bk-4/varmodel.mod	tainted	'TrueData' is unknown: "TrueData = simul_backward_model([], 200);" was not executed	exogenousvariables = dseries([NaN(100, 3) TrueData{'u1','u2','u3'}.data(1:100,:)], '1Y', M_.exo_names);
+model-inversion/bk-4/varmodel.mod	tainted	'constrainedpaths' is unknown: "constrainedpaths = SimulatedData{'y1','y2','y3'}(subsample);" was not executed	[endogenousvariables, exogenousvariables] = model_inversion(constrainedpaths, exogenousvariables, SimulatedData, M_, opt
+model-inversion/bk-4/varmodel.mod	block	'constrainedpaths' is unknown: "constrainedpaths = SimulatedData{'y1','y2','y3'}(subsample);" was not executed	if max(abs(constrainedpaths(subsample).y1.data-endogenousvariables(subsample).y1.data))>1e-12
+model-inversion/bk-4/varmodel.mod	block	'constrainedpaths' is unknown: "constrainedpaths = SimulatedData{'y1','y2','y3'}(subsample);" was not executed	if max(abs(constrainedpaths(subsample).y2.data-endogenousvariables(subsample).y2.data))>1e-12
+model-inversion/bk-4/varmodel.mod	block	'constrainedpaths' is unknown: "constrainedpaths = SimulatedData{'y1','y2','y3'}(subsample);" was not executed	if max(abs(constrainedpaths(subsample).y3.data-endogenousvariables(subsample).y3.data))>1e-12
+model-inversion/bk-4/varmodel.mod	block	'exogenousvariables' is unknown: "[endogenousvariables, exogenousvariables] = model_inversion(" was not executed	if max(abs(exogenousvariables(subsample).u1.data-SimulatedData(subsample).u1.data))>1e-12
+model-inversion/bk-4/varmodel.mod	block	'exogenousvariables' is unknown: "[endogenousvariables, exogenousvariables] = model_inversion(" was not executed	if max(abs(exogenousvariables(subsample).u2.data-SimulatedData(subsample).u2.data))>1e-12
+model-inversion/bk-4/varmodel.mod	block	'exogenousvariables' is unknown: "[endogenousvariables, exogenousvariables] = model_inversion(" was not executed	if max(abs(exogenousvariables(subsample).u3.data-SimulatedData(subsample).u3.data))>1e-12
+model-inversion/bk-4/varmodel.mod	block	'exogenousvariables' is unknown: "[endogenousvariables, exogenousvariables] = model_inversion(" was not executed	if max(abs(exogenousvariables(subsample).e1.data-SimulatedData(subsample).e1.data))>1e-12
+model-inversion/bk-4/varmodel.mod	block	'exogenousvariables' is unknown: "[endogenousvariables, exogenousvariables] = model_inversion(" was not executed	if max(abs(exogenousvariables(subsample).e2.data-SimulatedData(subsample).e2.data))>1e-12
+model-inversion/bk-4/varmodel.mod	block	'exogenousvariables' is unknown: "[endogenousvariables, exogenousvariables] = model_inversion(" was not executed	if max(abs(exogenousvariables(subsample).e3.data-SimulatedData(subsample).e3.data))>1e-12
+model-inversion/bk-5/varmodel.mod	function	unknown function or variable 'simul_backward_model'	TrueData = simul_backward_model([], 200);
+model-inversion/bk-5/varmodel.mod	syntax	cannot parse: bad number or date literal "3Y:1"	subsample = 3Y:100Y
+model-inversion/bk-5/varmodel.mod	tainted	'TrueData' is unknown: "TrueData = simul_backward_model([], 200);" was not executed	SimulatedData = copy(TrueData);
+model-inversion/bk-5/varmodel.mod	tainted	'SimulatedData' is unknown: "SimulatedData = copy(TrueData);" was not executed	constrainedpaths = SimulatedData{'y1','y2','y3'}(subsample);
+model-inversion/bk-5/varmodel.mod	tainted	'TrueData' is unknown: "TrueData = simul_backward_model([], 200);" was not executed	exogenousvariables = dseries([NaN(100, 3) TrueData{'u1','u2','u3'}.data(1:100,:)], '1Y', M_.exo_names);
+model-inversion/bk-5/varmodel.mod	tainted	'constrainedpaths' is unknown: "constrainedpaths = SimulatedData{'y1','y2','y3'}(subsample);" was not executed	[endogenousvariables, exogenousvariables] = model_inversion(constrainedpaths, exogenousvariables, SimulatedData, M_, opt
+model-inversion/bk-5/varmodel.mod	block	'constrainedpaths' is unknown: "constrainedpaths = SimulatedData{'y1','y2','y3'}(subsample);" was not executed	if max(abs(constrainedpaths(subsample).y1.data-endogenousvariables(subsample).y1.data))>1e-12
+model-inversion/bk-5/varmodel.mod	block	'constrainedpaths' is unknown: "constrainedpaths = SimulatedData{'y1','y2','y3'}(subsample);" was not executed	if max(abs(constrainedpaths(subsample).y2.data-endogenousvariables(subsample).y2.data))>1e-12
+model-inversion/bk-5/varmodel.mod	block	'constrainedpaths' is unknown: "constrainedpaths = SimulatedData{'y1','y2','y3'}(subsample);" was not executed	if max(abs(constrainedpaths(subsample).y3.data-endogenousvariables(subsample).y3.data))>1e-12
+model-inversion/bk-5/varmodel.mod	block	'exogenousvariables' is unknown: "[endogenousvariables, exogenousvariables] = model_inversion(" was not executed	if max(abs(exogenousvariables(subsample).u1.data-SimulatedData(subsample).u1.data))>1e-12
+model-inversion/bk-5/varmodel.mod	block	'exogenousvariables' is unknown: "[endogenousvariables, exogenousvariables] = model_inversion(" was not executed	if max(abs(exogenousvariables(subsample).u2.data-SimulatedData(subsample).u2.data))>1e-12
+model-inversion/bk-5/varmodel.mod	block	'exogenousvariables' is unknown: "[endogenousvariables, exogenousvariables] = model_inversion(" was not executed	if max(abs(exogenousvariables(subsample).u3.data-SimulatedData(subsample).u3.data))>1e-12
+model-inversion/bk-5/varmodel.mod	block	'exogenousvariables' is unknown: "[endogenousvariables, exogenousvariables] = model_inversion(" was not executed	if max(abs(exogenousvariables(subsample).e1.data-SimulatedData(subsample).e1.data))>1e-12
+model-inversion/bk-5/varmodel.mod	block	'exogenousvariables' is unknown: "[endogenousvariables, exogenousvariables] = model_inversion(" was not executed	if max(abs(exogenousvariables(subsample).e2.data-SimulatedData(subsample).e2.data))>1e-12
+model-inversion/bk-5/varmodel.mod	block	'exogenousvariables' is unknown: "[endogenousvariables, exogenousvariables] = model_inversion(" was not executed	if max(abs(exogenousvariables(subsample).e3.data-SimulatedData(subsample).e3.data))>1e-12
+model-inversion/bk-6/varmodel.mod	function	unknown function or variable 'simul_backward_model'	TrueData = simul_backward_model([], 200);
+model-inversion/bk-6/varmodel.mod	syntax	cannot parse: bad number or date literal "10Y:1"	subsample = 10Y:100Y
+model-inversion/bk-6/varmodel.mod	tainted	'TrueData' is unknown: "TrueData = simul_backward_model([], 200);" was not executed	SimulatedData = copy(TrueData);
+model-inversion/bk-6/varmodel.mod	tainted	'SimulatedData' is unknown: "SimulatedData = copy(TrueData);" was not executed	constrainedpaths = SimulatedData{'y1','y2','y3'}(subsample);
+model-inversion/bk-6/varmodel.mod	tainted	'TrueData' is unknown: "TrueData = simul_backward_model([], 200);" was not executed	exogenousvariables = dseries([NaN(100, 3) TrueData{'u1','u2','u3'}.data(1:100,:)], '1Y', M_.exo_names);
+model-inversion/bk-6/varmodel.mod	tainted	'constrainedpaths' is unknown: "constrainedpaths = SimulatedData{'y1','y2','y3'}(subsample);" was not executed	[endogenousvariables, exogenousvariables] = model_inversion(constrainedpaths, exogenousvariables, SimulatedData, M_, opt
+model-inversion/bk-6/varmodel.mod	block	'constrainedpaths' is unknown: "constrainedpaths = SimulatedData{'y1','y2','y3'}(subsample);" was not executed	if max(abs(constrainedpaths(subsample).y1.data-endogenousvariables(subsample).y1.data))>1e-12
+model-inversion/bk-6/varmodel.mod	block	'constrainedpaths' is unknown: "constrainedpaths = SimulatedData{'y1','y2','y3'}(subsample);" was not executed	if max(abs(constrainedpaths(subsample).y2.data-endogenousvariables(subsample).y2.data))>1e-12
+model-inversion/bk-6/varmodel.mod	block	'constrainedpaths' is unknown: "constrainedpaths = SimulatedData{'y1','y2','y3'}(subsample);" was not executed	if max(abs(constrainedpaths(subsample).y3.data-endogenousvariables(subsample).y3.data))>1e-12
+model-inversion/bk-6/varmodel.mod	block	'exogenousvariables' is unknown: "[endogenousvariables, exogenousvariables] = model_inversion(" was not executed	if max(abs(exogenousvariables(subsample).u1.data-SimulatedData(subsample).u1.data))>1e-12
+model-inversion/bk-6/varmodel.mod	block	'exogenousvariables' is unknown: "[endogenousvariables, exogenousvariables] = model_inversion(" was not executed	if max(abs(exogenousvariables(subsample).u2.data-SimulatedData(subsample).u2.data))>1e-12
+model-inversion/bk-6/varmodel.mod	block	'exogenousvariables' is unknown: "[endogenousvariables, exogenousvariables] = model_inversion(" was not executed	if max(abs(exogenousvariables(subsample).u3.data-SimulatedData(subsample).u3.data))>1e-12
+model-inversion/bk-6/varmodel.mod	block	'exogenousvariables' is unknown: "[endogenousvariables, exogenousvariables] = model_inversion(" was not executed	if max(abs(exogenousvariables(subsample).e1.data-SimulatedData(subsample).e1.data))>1e-12
+model-inversion/bk-6/varmodel.mod	block	'exogenousvariables' is unknown: "[endogenousvariables, exogenousvariables] = model_inversion(" was not executed	if max(abs(exogenousvariables(subsample).e2.data-SimulatedData(subsample).e2.data))>1e-12
+model-inversion/bk-6/varmodel.mod	block	'exogenousvariables' is unknown: "[endogenousvariables, exogenousvariables] = model_inversion(" was not executed	if max(abs(exogenousvariables(subsample).e3.data-SimulatedData(subsample).e3.data))>1e-12
+model-inversion/bk-8/varmodel.mod	function	unknown function or variable 'simul_backward_model'	TrueData = simul_backward_model([], 200);
+model-inversion/bk-8/varmodel.mod	syntax	cannot parse: bad number or date literal "10Y:1"	subsample = 10Y:100Y
+model-inversion/bk-8/varmodel.mod	tainted	'TrueData' is unknown: "TrueData = simul_backward_model([], 200);" was not executed	SimulatedData = copy(TrueData);
+model-inversion/bk-8/varmodel.mod	tainted	'SimulatedData' is unknown: "SimulatedData = copy(TrueData);" was not executed	constrainedpaths = SimulatedData{'y1','y2','y3'}(subsample);
+model-inversion/bk-8/varmodel.mod	tainted	'TrueData' is unknown: "TrueData = simul_backward_model([], 200);" was not executed	exogenousvariables = dseries([NaN(200, 3) TrueData{'u1','u2','u3'}.data(2:201,:)], '2Y', M_.exo_names);
+model-inversion/bk-8/varmodel.mod	syntax	cannot parse: bad number or date literal "2Y:1"	exogenousvariables{'e1','e2','e3'}(2Y:10Y-1) = SimulatedData{'e1','e2','e3'}(2Y:10Y-1)
+model-inversion/bk-8/varmodel.mod	tainted	'constrainedpaths' is unknown: "constrainedpaths = SimulatedData{'y1','y2','y3'}(subsample);" was not executed	[endogenousvariables, exogenousvariables] = model_inversion(constrainedpaths, exogenousvariables, SimulatedData, M_, opt
+model-inversion/bk-8/varmodel.mod	block	'constrainedpaths' is unknown: "constrainedpaths = SimulatedData{'y1','y2','y3'}(subsample);" was not executed	if max(abs(constrainedpaths(subsample).y1.data-endogenousvariables(subsample).y1.data))>1e-12
+model-inversion/bk-8/varmodel.mod	block	'constrainedpaths' is unknown: "constrainedpaths = SimulatedData{'y1','y2','y3'}(subsample);" was not executed	if max(abs(constrainedpaths(subsample).y2.data-endogenousvariables(subsample).y2.data))>1e-12
+model-inversion/bk-8/varmodel.mod	block	'constrainedpaths' is unknown: "constrainedpaths = SimulatedData{'y1','y2','y3'}(subsample);" was not executed	if max(abs(constrainedpaths(subsample).y3.data-endogenousvariables(subsample).y3.data))>1e-12
+model-inversion/bk-8/varmodel.mod	block	'exogenousvariables' is unknown: "[endogenousvariables, exogenousvariables] = model_inversion(" was not executed	if max(abs(exogenousvariables(subsample).u1.data-SimulatedData(subsample).u1.data))>1e-12
+model-inversion/bk-8/varmodel.mod	block	'exogenousvariables' is unknown: "[endogenousvariables, exogenousvariables] = model_inversion(" was not executed	if max(abs(exogenousvariables(subsample).u2.data-SimulatedData(subsample).u2.data))>1e-12
+model-inversion/bk-8/varmodel.mod	block	'exogenousvariables' is unknown: "[endogenousvariables, exogenousvariables] = model_inversion(" was not executed	if max(abs(exogenousvariables(subsample).u3.data-SimulatedData(subsample).u3.data))>1e-12
+model-inversion/bk-8/varmodel.mod	block	'exogenousvariables' is unknown: "[endogenousvariables, exogenousvariables] = model_inversion(" was not executed	if max(abs(exogenousvariables(subsample).e1.data-SimulatedData(subsample).e1.data))>1e-12
+model-inversion/bk-8/varmodel.mod	block	'exogenousvariables' is unknown: "[endogenousvariables, exogenousvariables] = model_inversion(" was not executed	if max(abs(exogenousvariables(subsample).e2.data-SimulatedData(subsample).e2.data))>1e-12
+model-inversion/bk-8/varmodel.mod	block	'exogenousvariables' is unknown: "[endogenousvariables, exogenousvariables] = model_inversion(" was not executed	if max(abs(exogenousvariables(subsample).e3.data-SimulatedData(subsample).e3.data))>1e-12
+model-inversion/bk-9/msm2.mod	function	unknown function or variable 'simul_static_model'	TrueData = simul_static_model(1000);
+model-inversion/bk-9/msm2.mod	syntax	cannot parse: bad number or date literal "501Y;"	initperiod = 501Y
+model-inversion/bk-9/msm2.mod	syntax	cannot parse: bad number or date literal "600Y;"	lastperiod = 600Y
+model-inversion/bk-9/msm2.mod	tainted	'initperiod' is unknown: "initperiod = 501Y" was not executed	subsample = initperiod:lastperiod;
+model-inversion/bk-9/msm2.mod	tainted	'TrueData' is unknown: "TrueData = simul_static_model(1000);" was not executed	SimulatedData = copy(TrueData);
+model-inversion/bk-9/msm2.mod	tainted	'SimulatedData' is unknown: "SimulatedData = copy(TrueData);" was not executed	constrainedpaths = SimulatedData{'y1','y2','y3'}(subsample);
+model-inversion/bk-9/msm2.mod	tainted	'initperiod' is unknown: "initperiod = 501Y" was not executed	exogenousvariables = dseries([NaN(100, 3)], initperiod, M_.exo_names);
+model-inversion/bk-9/msm2.mod	tainted	'constrainedpaths' is unknown: "constrainedpaths = SimulatedData{'y1','y2','y3'}(subsample);" was not executed	[endogenousvariables, exogenousvariables] = model_inversion(constrainedpaths, exogenousvariables, [], M_, options_, oo_)
+model-inversion/bk-9/msm2.mod	block	'constrainedpaths' is unknown: "constrainedpaths = SimulatedData{'y1','y2','y3'}(subsample);" was not executed	if max(abs(constrainedpaths(subsample).y1.data-endogenousvariables(subsample).y1.data))>1e-12
+model-inversion/bk-9/msm2.mod	block	'constrainedpaths' is unknown: "constrainedpaths = SimulatedData{'y1','y2','y3'}(subsample);" was not executed	if max(abs(constrainedpaths(subsample).y2.data-endogenousvariables(subsample).y2.data))>1e-12
+model-inversion/bk-9/msm2.mod	block	'constrainedpaths' is unknown: "constrainedpaths = SimulatedData{'y1','y2','y3'}(subsample);" was not executed	if max(abs(constrainedpaths(subsample).y3.data-endogenousvariables(subsample).y3.data))>1e-12
+model-inversion/bk-9/msm2.mod	block	'exogenousvariables' is unknown: "[endogenousvariables, exogenousvariables] = model_inversion(" was not executed	if max(abs(exogenousvariables(subsample).e1.data-SimulatedData(subsample).e1.data))>1e-8
+model-inversion/bk-9/msm2.mod	block	'exogenousvariables' is unknown: "[endogenousvariables, exogenousvariables] = model_inversion(" was not executed	if max(abs(exogenousvariables(subsample).e2.data-SimulatedData(subsample).e2.data))>1e-8
+model-inversion/bk-9/msm2.mod	block	'exogenousvariables' is unknown: "[endogenousvariables, exogenousvariables] = model_inversion(" was not executed	if max(abs(exogenousvariables(subsample).e3.data-SimulatedData(subsample).e3.data))>1e-8
+model-inversion/bk-9/msm2.mod	tainted	'exogenousvariables' is unknown: "[endogenousvariables, exogenousvariables] = model_inversion(" was not executed	TrueData2 = simul_static_model(100, exogenousvariables(subsample));
+model-inversion/bk-9/msm2.mod	block	'TrueData2' is unknown: "TrueData2 = simul_static_model(100, exogenousvariables(subsa" was not executed	if max(abs(TrueData2(subsample).y1.data-TrueData(subsample).y1.data))>1e-5
+model-inversion/bk-diff-2/varmodel.mod	syntax	cannot parse: bad number or date literal "3Y, "	innovations = dseries(ones(200,1), 3Y, 'e')
+model-inversion/bk-diff-2/varmodel.mod	syntax	cannot parse: bad number or date literal "1Y, "	initialconditions = dseries(initdata, 1Y, vertcat(M_.endo_names(1:M_.orig_endo_nbr), M_.exo_names))
+model-inversion/bk-diff-2/varmodel.mod	tainted	'initialconditions' is unknown: "initialconditions = dseries(initdata, 1Y, vertcat(M_.endo_na" was not executed	TrueData = simul_backward_model(initialconditions, 200, innovations);
+model-inversion/bk-diff-2/varmodel.mod	syntax	cannot parse: bad number or date literal "3Y:1"	subsample = 3Y:100Y
+model-inversion/bk-diff-2/varmodel.mod	tainted	'TrueData' is unknown: "TrueData = simul_backward_model(initialconditions, 200, inno" was not executed	SimulatedData = copy(TrueData);
+model-inversion/bk-diff-2/varmodel.mod	tainted	'SimulatedData' is unknown: "SimulatedData = copy(TrueData);" was not executed	constrainedpaths = SimulatedData{'y'}(subsample);
+model-inversion/bk-diff-2/varmodel.mod	syntax	cannot parse: bad number or date literal "3Y, "	exogenousvariables = dseries(NaN(98, 1), 3Y, M_.exo_names)
+model-inversion/bk-diff-2/varmodel.mod	tainted	'constrainedpaths' is unknown: "constrainedpaths = SimulatedData{'y'}(subsample);" was not executed	[endogenousvariables, exogenousvariables] = model_inversion(constrainedpaths, exogenousvariables, SimulatedData, M_, opt
+model-inversion/bk-diff-2/varmodel.mod	tainted	'exogenousvariables' is unknown: "[endogenousvariables, exogenousvariables] = model_inversion(" was not executed	assert(all(exogenousvariables.e.data==1), 'Inversion is wrong!');
+model-inversion/bk-diff-4/varmodel.mod	syntax	cannot parse: bad number or date literal "1Y, "	initialconditions = dseries(zeros(2,6), 1Y, vertcat(M_.endo_names(1:M_.orig_endo_nbr), M_.exo_names))
+model-inversion/bk-diff-4/varmodel.mod	tainted	'initialconditions' is unknown: "initialconditions = dseries(zeros(2,6), 1Y, vertcat(M_.endo_" was not executed	TrueData = simul_backward_model(initialconditions, 200);
+model-inversion/bk-diff-4/varmodel.mod	syntax	cannot parse: bad number or date literal "3Y:1"	subsample = 3Y:100Y
+model-inversion/bk-diff-4/varmodel.mod	tainted	'TrueData' is unknown: "TrueData = simul_backward_model(initialconditions, 200);" was not executed	SimulatedData = copy(TrueData);
+model-inversion/bk-diff-4/varmodel.mod	tainted	'SimulatedData' is unknown: "SimulatedData = copy(TrueData);" was not executed	constrainedpaths = SimulatedData{'y1'}(subsample);
+model-inversion/bk-diff-4/varmodel.mod	syntax	cannot parse: bad number or date literal "3Y, "	exogenousvariables = dseries([NaN(98, 1) TrueData{'e2','e3'}.data(3:100,:)], 3Y, M_.exo_names)
+model-inversion/bk-diff-4/varmodel.mod	tainted	'constrainedpaths' is unknown: "constrainedpaths = SimulatedData{'y1'}(subsample);" was not executed	[endogenousvariables, exogenousvariables] = model_inversion(constrainedpaths, exogenousvariables, SimulatedData, M_, opt
+model-inversion/bk-diff-4/varmodel.mod	block	'constrainedpaths' is unknown: "constrainedpaths = SimulatedData{'y1'}(subsample);" was not executed	if max(abs(constrainedpaths(subsample).y1.data-endogenousvariables(subsample).y1.data))>1e-12
+model-inversion/bk-diff-4/varmodel.mod	block	'exogenousvariables' is unknown: "[endogenousvariables, exogenousvariables] = model_inversion(" was not executed	if max(abs(exogenousvariables(subsample).e2.data-SimulatedData(subsample).e2.data))>1e-12
+model-inversion/bk-diff-4/varmodel.mod	block	'exogenousvariables' is unknown: "[endogenousvariables, exogenousvariables] = model_inversion(" was not executed	if max(abs(exogenousvariables(subsample).e3.data-SimulatedData(subsample).e3.data))>1e-12
+model-inversion/bk-diff-4/varmodel.mod	block	'SimulatedData' is unknown: "SimulatedData = copy(TrueData);" was not executed	if max(abs(SimulatedData(subsample).y2.data-endogenousvariables(subsample).y2.data))>1e-12
+model-inversion/bk-diff-4/varmodel.mod	block	'SimulatedData' is unknown: "SimulatedData = copy(TrueData);" was not executed	if max(abs(SimulatedData(subsample).y3.data-endogenousvariables(subsample).y3.data))>1e-12
+model-inversion/bk-diff-4/varmodel.mod	block	'exogenousvariables' is unknown: "[endogenousvariables, exogenousvariables] = model_inversion(" was not executed	if max(abs(exogenousvariables(subsample).e1.data-SimulatedData(subsample).e1.data))>1e-12
+model-inversion/nk-1/simulate.mod	function	unknown function or variable 'Simulated_time_series'	data = [Simulated_time_series dseries(oo_.exo_simul, '2Y', {'e_y', 'e_pi', 'e_i'})];
+model-inversion/nk-1/simulate.mod	file	file-system, shell or interactive functions are not available	save(data,'truedata', 'mat');
+model-inversion/nk-1/invert.mod	syntax	cannot parse: bad number or date literal "2Y:1"	subsample = 2Y:100Y
+model-inversion/nk-1/invert.mod	function	unknown function or variable 'dseries'	SimulatedData = dseries('truedata.mat');
+model-inversion/nk-1/invert.mod	tainted	'SimulatedData' is unknown: "SimulatedData = dseries('truedata.mat');" was not executed	constrainedpaths = SimulatedData{'y','pi','i'}(subsample);
+model-inversion/nk-1/invert.mod	syntax	cannot parse: bad number or date literal "2Y, "	exogenousvariables = dseries(NaN(99, 3), 2Y, {'e_y';'e_pi';'e_i'})
+model-inversion/nk-1/invert.mod	tainted	'constrainedpaths' is unknown: "constrainedpaths = SimulatedData{'y','pi','i'}(subsample);" was not executed	[endogenousvariables, exogenousvariables] = model_inversion(constrainedpaths, exogenousvariables, SimulatedData, M_, opt
+model-inversion/nk-1/invert.mod	block	'endogenousvariables' is unknown: "[endogenousvariables, exogenousvariables] = model_inversion(" was not executed	if max(abs(endogenousvariables.y(subsample).data-SimulatedData.y(subsample).data))>1e-6 || max(abs(endogenousvariables.p
+model-inversion/nk-1/invert.mod	tainted	'exogenousvariables' is unknown: "[endogenousvariables, exogenousvariables] = model_inversion(" was not executed	plot(exogenousvariables.e_y-SimulatedData.e_y)
+model-inversion/nk-1/invert.mod	tainted	'exogenousvariables' is unknown: "[endogenousvariables, exogenousvariables] = model_inversion(" was not executed	plot(exogenousvariables.e_pi-SimulatedData.e_pi)
+model-inversion/nk-1/invert.mod	tainted	'exogenousvariables' is unknown: "[endogenousvariables, exogenousvariables] = model_inversion(" was not executed	plot(exogenousvariables.e_i-SimulatedData.e_i)
+model-inversion/nk-1/invert.mod	tainted	'endogenousvariables' is unknown: "[endogenousvariables, exogenousvariables] = model_inversion(" was not executed	id = find(endogenousvariables.i.data==-.05);
+model-inversion/nk-1/invert.mod	tainted	'id' is unknown: "id = find(endogenousvariables.i.data==-.05);" was not executed	plot(id, zeros(1,length(id)), 'or')
+trend-component-and-var-models/vm4.mod	function	unknown function or variable 'get_companion_matrix_legacy'	[~, b0] = get_companion_matrix_legacy('toto');
+trend-component-and-var-models/vm4.mod	function	unknown function or variable 'get_companion_matrix'	[~, ~, b1] = get_companion_matrix('toto');
+trend-component-and-var-models/vm4.mod	block	'b0' is unknown: "[~, b0] = get_companion_matrix_legacy('toto');" was not executed	if any(abs(b0(:)-b1(:))>1e-9)
+trend-component-and-var-models/tcm1.mod	function	unknown function or variable 'get_companion_matrix'	[EC, A0star, AR, T] = get_companion_matrix('toto');
+trend-component-and-var-models/tcm1.mod	block	'EC' is unknown: "[EC, A0star, AR, T] = get_companion_matrix('toto');" was not executed	if max(max(abs(EC-B)))>1e-12
+trend-component-and-var-models/tcm1.mod	tainted	'AR' is unknown: "[EC, A0star, AR, T] = get_companion_matrix('toto');" was not executed	A1fake = AR(:,:,1);
+trend-component-and-var-models/tcm1.mod	block	'A1fake' is unknown: "A1fake = AR(:,:,1);" was not executed	if max(max(abs(A1fake-A1)))>1e-12
+trend-component-and-var-models/tcm1.mod	block	'AR' is unknown: "[EC, A0star, AR, T] = get_companion_matrix('toto');" was not executed	if max(max(abs(AR(:,:,2)-A2)))>1e-12
+trend-component-and-var-models/tcm1.mod	block	'AR' is unknown: "[EC, A0star, AR, T] = get_companion_matrix('toto');" was not executed	if max(max(abs(AR(:,:,3)-A3)))>1e-12
+trend-component-and-var-models/tcm3.mod	function	unknown function or variable 'get_companion_matrix'	[EC, A0star, AR, T] = get_companion_matrix('toto');
+trend-component-and-var-models/tcm3.mod	block	'EC' is unknown: "[EC, A0star, AR, T] = get_companion_matrix('toto');" was not executed	if max(max(abs(EC-B)))>1e-12
+trend-component-and-var-models/tcm3.mod	tainted	'AR' is unknown: "[EC, A0star, AR, T] = get_companion_matrix('toto');" was not executed	A1fake = AR(:,:,1);
+trend-component-and-var-models/tcm3.mod	block	'A1fake' is unknown: "A1fake = AR(:,:,1);" was not executed	if max(max(abs(A1fake-A1)))>1e-12
+trend-component-and-var-models/tcm3.mod	block	'AR' is unknown: "[EC, A0star, AR, T] = get_companion_matrix('toto');" was not executed	if max(max(abs(AR(:,:,2)-A2)))>1e-12
+trend-component-and-var-models/tcm3.mod	block	'AR' is unknown: "[EC, A0star, AR, T] = get_companion_matrix('toto');" was not executed	if max(max(abs(AR(:,:,3)-A3)))>1e-12
+trend-component-and-var-models/tcm5.mod	function	unknown function or variable 'get_companion_matrix'	[EC, A0star, AR, T] = get_companion_matrix('toto');
+trend-component-and-var-models/tcm5.mod	block	'EC' is unknown: "[EC, A0star, AR, T] = get_companion_matrix('toto');" was not executed	if max(max(abs(EC-B)))>1e-12
+trend-component-and-var-models/tcm5.mod	tainted	'AR' is unknown: "[EC, A0star, AR, T] = get_companion_matrix('toto');" was not executed	A1fake = AR(:,:,1);
+trend-component-and-var-models/tcm5.mod	block	'A1fake' is unknown: "A1fake = AR(:,:,1);" was not executed	if max(max(abs(A1fake-A1)))>1e-12
+trend-component-and-var-models/tcm5.mod	block	'AR' is unknown: "[EC, A0star, AR, T] = get_companion_matrix('toto');" was not executed	if max(max(abs(AR(:,:,2)-A2)))>1e-12
+trend-component-and-var-models/tcm5.mod	block	'AR' is unknown: "[EC, A0star, AR, T] = get_companion_matrix('toto');" was not executed	if max(max(abs(AR(:,:,3)-A3)))>1e-12
+trend-component-and-var-models/tcm9.mod	function	unknown function or variable 'get_companion_matrix'	[A0, A0star, AR, T] = get_companion_matrix('toto');
+trend-component-and-var-models/tcm9.mod	block	'A0' is unknown: "[A0, A0star, AR, T] = get_companion_matrix('toto');" was not executed	if max(max(abs(A0-B)))>1e-12
+trend-component-and-var-models/tcm9.mod	block	'A0star' is unknown: "[A0, A0star, AR, T] = get_companion_matrix('toto');" was not executed	if max(max(abs(A0star-Bstar)))>1e-12
+trend-component-and-var-models/tcm9.mod	tainted	'AR' is unknown: "[A0, A0star, AR, T] = get_companion_matrix('toto');" was not executed	A1fake = AR(:,:,1);
+trend-component-and-var-models/tcm9.mod	block	'A1fake' is unknown: "A1fake = AR(:,:,1);" was not executed	if max(max(abs(A1fake-A1)))>1e-12
+trend-component-and-var-models/tcm9.mod	block	'AR' is unknown: "[A0, A0star, AR, T] = get_companion_matrix('toto');" was not executed	if max(max(abs(AR(:,:,2)-A2)))>1e-12
+trend-component-and-var-models/tcm9.mod	block	'AR' is unknown: "[A0, A0star, AR, T] = get_companion_matrix('toto');" was not executed	if max(max(abs(AR(:,:,3)-A3)))>1e-12
+trend-component-and-var-models/tcm11.mod	function	unknown function or variable 'get_companion_matrix'	[A0, A0star, AR, T] = get_companion_matrix('toto');
+trend-component-and-var-models/tcm11.mod	block	'A0' is unknown: "[A0, A0star, AR, T] = get_companion_matrix('toto');" was not executed	if max(max(abs(A0-B)))>1e-12
+trend-component-and-var-models/tcm11.mod	block	'A0star' is unknown: "[A0, A0star, AR, T] = get_companion_matrix('toto');" was not executed	if max(max(abs(A0star-Bstar)))>1e-12
+trend-component-and-var-models/tcm11.mod	tainted	'AR' is unknown: "[A0, A0star, AR, T] = get_companion_matrix('toto');" was not executed	A1fake = AR(:,:,1);
+trend-component-and-var-models/tcm11.mod	block	'A1fake' is unknown: "A1fake = AR(:,:,1);" was not executed	if max(max(abs(A1fake-A1)))>1e-12
+trend-component-and-var-models/tcm11.mod	block	'AR' is unknown: "[A0, A0star, AR, T] = get_companion_matrix('toto');" was not executed	if max(max(abs(AR(:,:,2)-A2)))>1e-12
+trend-component-and-var-models/tcm11.mod	block	'AR' is unknown: "[A0, A0star, AR, T] = get_companion_matrix('toto');" was not executed	if max(max(abs(AR(:,:,3)-A3)))>1e-12
+trend-component-and-var-models/legacy/tcm2.mod	function	unknown function or variable 'get_companion_matrix_legacy'	[EC, AR, T] = get_companion_matrix_legacy('toto');
+trend-component-and-var-models/legacy/tcm2.mod	block	'EC' is unknown: "[EC, AR, T] = get_companion_matrix_legacy('toto');" was not executed	if max(max(abs(EC-B)))>1e-12
+trend-component-and-var-models/legacy/tcm2.mod	block	'AR' is unknown: "[EC, AR, T] = get_companion_matrix_legacy('toto');" was not executed	if max(max(abs(AR(:,:,1)-A1(1:2,1:2))))>1e-12
+trend-component-and-var-models/legacy/tcm2.mod	block	'AR' is unknown: "[EC, AR, T] = get_companion_matrix_legacy('toto');" was not executed	if max(max(abs(AR(:,:,2)-A2(1:2,1:2))))>1e-12
+trend-component-and-var-models/legacy/tcm2.mod	block	'AR' is unknown: "[EC, AR, T] = get_companion_matrix_legacy('toto');" was not executed	if max(max(abs(AR(:,:,3)-A3(1:2,1:2))))>1e-12
+trend-component-and-var-models/legacy/tcm4.mod	function	unknown function or variable 'get_companion_matrix_legacy'	[EC, AR, T] = get_companion_matrix_legacy('toto');
+trend-component-and-var-models/legacy/tcm4.mod	block	'EC' is unknown: "[EC, AR, T] = get_companion_matrix_legacy('toto');" was not executed	if max(max(abs(EC-B)))>1e-12
+trend-component-and-var-models/legacy/tcm4.mod	block	'AR' is unknown: "[EC, AR, T] = get_companion_matrix_legacy('toto');" was not executed	if max(max(abs(AR(:,:,1)-A1(1:2,1:2))))>1e-12
+trend-component-and-var-models/legacy/tcm4.mod	block	'AR' is unknown: "[EC, AR, T] = get_companion_matrix_legacy('toto');" was not executed	if max(max(abs(AR(:,:,2)-A2(1:2,1:2))))>1e-12
+trend-component-and-var-models/legacy/tcm4.mod	block	'AR' is unknown: "[EC, AR, T] = get_companion_matrix_legacy('toto');" was not executed	if max(max(abs(AR(:,:,3)-A3(1:2,1:2))))>1e-12
+pac/trend-component-13b/example1.mod	function	unknown variable, package or object 'pac'	pac.initialize('pacman');
+pac/trend-component-13b/example1.mod	block	M_.pac is not available in JDyn	if ~isequal(M_.pac.pacman.ec.istarget, [true, false])
+pac/trend-component-20-1/example1.mod	block	M_.pac is not available in JDyn	if ~isequal(M_.endo_names(M_.pac.pacman.non_optimizing_behaviour.vars), {'y'; 'x'})
+pac/trend-component-20-3/example1.mod	block	M_.pac is not available in JDyn	if ~isequal(M_.endo_names(M_.pac.pacman.non_optimizing_behaviour.vars), {'y'; 'x'})
+write/example1.mod	block	M_.observed_exo_names is not available in JDyn	if ~isequal(M_.observed_exo_names, {'ey'; 'ex'})
+ecb/backward-models/irf/solow_2.mod	function	unknown function or variable 'dseries'	irfs1 = backward_model_irf([], dseries(), listofshocks, listofvariables, 50);
+ecb/backward-models/irf/solow_2.mod	function	unknown function or variable 'dseries'	simshocks = {dseries(x0_1, 2, M_.exo_names), dseries(x0_2, 2, M_.exo_names) };
+ecb/backward-models/irf/solow_2.mod	function	unknown function or variable 'dseries'	irfs2 = backward_model_irf([], dseries(), simshocks, listofvariables, 50);
+ecb/backward-models/irf/solow_2.mod	block	'irfs1' is unknown: "irfs1 = backward_model_irf([], dseries(), listofshocks, list" was not executed	if max(abs(irfs1.e_x.Efficiency.data-irfs2.experiment_1.Efficiency.data))>1e-12
+ecb/backward-models/irf/solow_2.mod	block	'irfs1' is unknown: "irfs1 = backward_model_irf([], dseries(), listofshocks, list" was not executed	if max(abs(irfs1.e_x.Output.data-irfs2.experiment_1.Output.data))>1e-12
+ecb/contribution-plots/contrib2.mod	syntax	cannot parse: bad number or date literal "1990Q1,"	ds1 = dseries(randn(30, 3), 1990Q1, {'ffr', 'unrate', 'cpi'})
+ecb/contribution-plots/contrib2.mod	tainted	'ds1' is unknown: "ds1 = dseries(randn(30, 3), 1990Q1, {'ffr', 'unrate', 'cpi'}" was not executed	ffr_lag_1 = dseries(ds1.ffr(-1).data, ds1.firstdate, 'ffr_lag_1');
+ecb/contribution-plots/contrib2.mod	tainted	'ds1' is unknown: "ds1 = dseries(randn(30, 3), 1990Q1, {'ffr', 'unrate', 'cpi'}" was not executed	ffr_lag_2 = dseries(ds1.ffr(-2).data, ds1.firstdate, 'ffr_lag_2');
+ecb/contribution-plots/contrib2.mod	tainted	'ds1' is unknown: "ds1 = dseries(randn(30, 3), 1990Q1, {'ffr', 'unrate', 'cpi'}" was not executed	ffr_lag_3 = dseries(ds1.ffr(-3).data, ds1.firstdate, 'ffr_lag_3');
+ecb/contribution-plots/contrib2.mod	tainted	'ds1' is unknown: "ds1 = dseries(randn(30, 3), 1990Q1, {'ffr', 'unrate', 'cpi'}" was not executed	unrate_lag_1 = dseries(ds1.unrate(-1).data, ds1.firstdate, 'unrate_lag_1');
+ecb/contribution-plots/contrib2.mod	tainted	'ds1' is unknown: "ds1 = dseries(randn(30, 3), 1990Q1, {'ffr', 'unrate', 'cpi'}" was not executed	cpi_lag_4 = dseries(ds1.cpi(-4).data, ds1.firstdate, 'cpi_lag_4');
+ecb/contribution-plots/contrib2.mod	tainted	'ds1' is unknown: "ds1 = dseries(randn(30, 3), 1990Q1, {'ffr', 'unrate', 'cpi'}" was not executed	ds1 = [ds1, ffr_lag_1, ffr_lag_2, ffr_lag_3, unrate_lag_1, cpi_lag_4];
+ecb/contribution-plots/contrib2.mod	syntax	cannot parse: bad number or date literal "1990Q1,"	ds0 = dseries(zeros(30, 8), 1990Q1, {'ffr', 'unrate', 'cpi', 'ffr_lag_1', 'ffr_lag_2', 'ffr_lag_3', 'unrate_lag_1', 'cpi
+ecb/contribution-plots/contrib2.mod	syntax	cannot parse: unexpected "ffr"	plot_contributions ffr ds1 ds0
+particle/first_spec_xfail_1.mod	results	simulation results are not available while the model is loaded	send_endogenous_variables_to_workspace;
+particle/first_spec_xfail_1.mod	file	file-system, shell or interactive functions are not available	save('my_data.mat','q','ca');
+../examples/reporting/collard_2001_reporting.mod	results	simulation results are not available while the model is loaded	send_irfs_to_workspace;
+../examples/reporting/collard_2001_reporting.mod	function	unknown function or variable 'dseries'	shocke = dseries();
+../examples/reporting/collard_2001_reporting.mod	function	unknown function or variable 'dseries'	shocku = dseries();
+../examples/reporting/collard_2001_reporting.mod	syntax	cannot parse: bad number or date literal "2014q3,"	shocke = [shocke dseries(y_e, 2014q3, 'y')]
+../examples/reporting/collard_2001_reporting.mod	syntax	cannot parse: bad number or date literal "2014q3,"	shocku = [shocku dseries(y_u, 2014q3, 'y')]
+../examples/reporting/collard_2001_reporting.mod	syntax	cannot parse: bad number or date literal "2014q3,"	shocke = [shocke dseries(c_e, 2014q3, 'c')]
+../examples/reporting/collard_2001_reporting.mod	syntax	cannot parse: bad number or date literal "2014q3,"	shocku = [shocku dseries(c_u, 2014q3, 'c')]
+../examples/reporting/collard_2001_reporting.mod	syntax	cannot parse: bad number or date literal "2014q3,"	shocke = [shocke dseries(k_e, 2014q3, 'k')]
+../examples/reporting/collard_2001_reporting.mod	syntax	cannot parse: bad number or date literal "2014q3,"	shocku = [shocku dseries(k_u, 2014q3, 'k')]
+../examples/reporting/collard_2001_reporting.mod	syntax	cannot parse: bad number or date literal "2014q3,"	shocke = [shocke dseries(a_e, 2014q3, 'a')]
+../examples/reporting/collard_2001_reporting.mod	syntax	cannot parse: bad number or date literal "2014q3,"	shocku = [shocku dseries(a_u, 2014q3, 'a')]
+../examples/reporting/collard_2001_reporting.mod	syntax	cannot parse: bad number or date literal "2014q3,"	shocke = [shocke dseries(h_e, 2014q3, 'h')]
+../examples/reporting/collard_2001_reporting.mod	syntax	cannot parse: bad number or date literal "2014q3,"	shocku = [shocku dseries(h_u, 2014q3, 'h')]
+../examples/reporting/collard_2001_reporting.mod	syntax	cannot parse: bad number or date literal "2014q3,"	shocke = [shocke dseries(b_e, 2014q3, 'b')]
+../examples/reporting/collard_2001_reporting.mod	syntax	cannot parse: bad number or date literal "2014q3,"	shocku = [shocku dseries(b_u, 2014q3, 'b')]
+../examples/reporting/collard_2001_reporting.mod	function	unknown function or variable 'report'	r = report();
+../examples/reporting/collard_2001_reporting.mod	tainted	'r' is unknown: "r = report();" was not executed	r = r.addPage('title',{'Dseries/Report Example','Shock e'},... 'titleFormat', {'\Large\bfseries', '\large\bfseries'});
+../examples/reporting/collard_2001_reporting.mod	tainted	'r' is unknown: "r = r.addPage('title',{'Dseries/Report Example','Shock e'},." was not executed	r = r.addSection('cols', 2);
+../examples/reporting/collard_2001_reporting.mod	tainted	'r' is unknown: "r = r.addSection('cols', 2);" was not executed	r = r.addGraph('data', shocke.y, 'title', 'y', ... 'showGrid', false, 'yTickLabelPrecision', 2, ... 'yTickLabelZeroFill'
+../examples/reporting/collard_2001_reporting.mod	tainted	'r' is unknown: "r = r.addGraph('data', shocke.y, 'title', 'y', ... 'showGrid" was not executed	r = r.addGraph('data', shocke.c, 'title', 'c', ... 'showGrid', false, 'yTickLabelPrecision', 2, ... 'yTickLabelZeroFill'
+../examples/reporting/collard_2001_reporting.mod	tainted	'r' is unknown: "r = r.addGraph('data', shocke.c, 'title', 'c', ... 'showGrid" was not executed	r = r.addGraph('data', shocke.k, 'title', 'k', ... 'showGrid', false, 'yTickLabelPrecision', 2, ... 'yTickLabelZeroFill'
+../examples/reporting/collard_2001_reporting.mod	tainted	'r' is unknown: "r = r.addGraph('data', shocke.k, 'title', 'k', ... 'showGrid" was not executed	r = r.addGraph('data', shocke.a, 'title', 'a', ... 'showGrid', false, 'yTickLabelPrecision', 2, ... 'yTickLabelZeroFill'
+../examples/reporting/collard_2001_reporting.mod	tainted	'r' is unknown: "r = r.addGraph('data', shocke.a, 'title', 'a', ... 'showGrid" was not executed	r = r.addGraph('data', shocke.h, 'title', 'h', ... 'showGrid', false, 'yTickLabelPrecision', 2, ... 'yTickLabelZeroFill'
+../examples/reporting/collard_2001_reporting.mod	tainted	'r' is unknown: "r = r.addGraph('data', shocke.h, 'title', 'h', ... 'showGrid" was not executed	r = r.addGraph('data', shocke.b, 'title', 'b', ... 'showGrid', false, 'yTickLabelPrecision', 2, ... 'yTickLabelZeroFill'
+../examples/reporting/collard_2001_reporting.mod	tainted	'r' is unknown: "r = r.addGraph('data', shocke.b, 'title', 'b', ... 'showGrid" was not executed	r = r.addVspace('number', 2);
+../examples/reporting/collard_2001_reporting.mod	tainted	'r' is unknown: "r = r.addVspace('number', 2);" was not executed	r = r.addSection('cols', 1);
+../examples/reporting/collard_2001_reporting.mod	syntax	cannot parse: bad number or date literal "2022q1:"	r = r.addTable('range', 2022q1:2024q1, 'precision', 5)
+../examples/reporting/collard_2001_reporting.mod	tainted	'r' is unknown: "r = r.addTable('range', 2022q1:2024q1, 'precision', 5)" was not executed	r = r.addSeries('data', shocke.y);
+../examples/reporting/collard_2001_reporting.mod	tainted	'r' is unknown: "r = r.addSeries('data', shocke.y);" was not executed	r = r.addSeries('data', shocke.c);
+../examples/reporting/collard_2001_reporting.mod	tainted	'r' is unknown: "r = r.addSeries('data', shocke.c);" was not executed	r = r.addSeries('data', shocke.k);
+../examples/reporting/collard_2001_reporting.mod	tainted	'r' is unknown: "r = r.addSeries('data', shocke.k);" was not executed	r = r.addSeries('data', shocke.a);
+../examples/reporting/collard_2001_reporting.mod	tainted	'r' is unknown: "r = r.addSeries('data', shocke.a);" was not executed	r = r.addSeries('data', shocke.h);
+../examples/reporting/collard_2001_reporting.mod	tainted	'r' is unknown: "r = r.addSeries('data', shocke.h);" was not executed	r = r.addSeries('data', shocke.b);
+../examples/reporting/collard_2001_reporting.mod	tainted	'r' is unknown: "r = r.addSeries('data', shocke.b);" was not executed	r = r.addPage('title',{'Dseries/Report Example','Shock u'},... 'titleFormat', {'\Large\bfseries', '\large\bfseries'});
+../examples/reporting/collard_2001_reporting.mod	tainted	'r' is unknown: "r = r.addSection('cols', 2);" was not executed	r = r.addGraph('data', shocku.y, 'title', 'y', ... 'showGrid', false, 'yTickLabelPrecision', 2, ... 'yTickLabelZeroFill'
+../examples/reporting/collard_2001_reporting.mod	tainted	'r' is unknown: "r = r.addGraph('data', shocku.y, 'title', 'y', ... 'showGrid" was not executed	r = r.addGraph('data', shocku.c, 'title', 'c', ... 'showGrid', false, 'yTickLabelPrecision', 2, ... 'yTickLabelZeroFill'
+../examples/reporting/collard_2001_reporting.mod	tainted	'r' is unknown: "r = r.addGraph('data', shocku.c, 'title', 'c', ... 'showGrid" was not executed	r = r.addGraph('data', shocku.k, 'title', 'k', ... 'showGrid', false, 'yTickLabelPrecision', 2, ... 'yTickLabelZeroFill'
+../examples/reporting/collard_2001_reporting.mod	tainted	'r' is unknown: "r = r.addGraph('data', shocku.k, 'title', 'k', ... 'showGrid" was not executed	r = r.addGraph('data', shocku.a, 'title', 'a', ... 'showGrid', false, 'yTickLabelPrecision', 2, ... 'yTickLabelZeroFill'
+../examples/reporting/collard_2001_reporting.mod	tainted	'r' is unknown: "r = r.addGraph('data', shocku.a, 'title', 'a', ... 'showGrid" was not executed	r = r.addGraph('data', shocku.h, 'title', 'h', ... 'showGrid', false, 'yTickLabelPrecision', 2, ... 'yTickLabelZeroFill'
+../examples/reporting/collard_2001_reporting.mod	tainted	'r' is unknown: "r = r.addGraph('data', shocku.h, 'title', 'h', ... 'showGrid" was not executed	r = r.addGraph('data', shocku.b, 'title', 'b', ... 'showGrid', false, 'yTickLabelPrecision', 2, ... 'yTickLabelZeroFill'
+../examples/reporting/collard_2001_reporting.mod	tainted	'r' is unknown: "r = r.addTable('range', 2022q1:2024q1, 'precision', 5)" was not executed	r = r.addSeries('data', shocku.y);
+../examples/reporting/collard_2001_reporting.mod	tainted	'r' is unknown: "r = r.addSeries('data', shocku.y);" was not executed	r = r.addSeries('data', shocku.c);
+../examples/reporting/collard_2001_reporting.mod	tainted	'r' is unknown: "r = r.addSeries('data', shocku.c);" was not executed	r = r.addSeries('data', shocku.k);
+../examples/reporting/collard_2001_reporting.mod	tainted	'r' is unknown: "r = r.addSeries('data', shocku.k);" was not executed	r = r.addSeries('data', shocku.a);
+../examples/reporting/collard_2001_reporting.mod	tainted	'r' is unknown: "r = r.addSeries('data', shocku.a);" was not executed	r = r.addSeries('data', shocku.h);
+../examples/reporting/collard_2001_reporting.mod	tainted	'r' is unknown: "r = r.addSeries('data', shocku.h);" was not executed	r = r.addSeries('data', shocku.b);
+../examples/reporting/collard_2001_reporting.mod	tainted	'r' is unknown: "r = r.addSeries('data', shocku.b);" was not executed	r.write();
+../examples/reporting/collard_2001_reporting.mod	tainted	'r' is unknown: "r = r.addSeries('data', shocku.b);" was not executed	r.compile();
