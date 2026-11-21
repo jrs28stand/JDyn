@@ -112,7 +112,7 @@ function tokenize(lines::Vector)
                     if j <= n && (isletter(text[j]) || text[j] == '_')
                         push!(toks, Tok(:err, "bad number or date literal $(repr(text[i:min(n, j+2)]))", ws, ln, i))
                     else
-                        push!(toks, Tok(:num, parse(Float64, replace(replace(s, 'd' => 'e'), 'D' => 'e')), ws, ln, i))
+                        push!(toks, Tok(:num, Float64(parse(BigFloat, replace(replace(s, 'd' => 'e'), 'D' => 'e'))), ws, ln, i))
                     end
                     i = j; ws = false
                     continue

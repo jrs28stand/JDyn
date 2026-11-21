@@ -86,8 +86,41 @@ if section("semantics")
         end
     end
 
+    @testset "extra semantics against Octave (JDyn's own cases)" begin
+        # test/matlab_extra_cases.txt, reference test/matlab_extra.mat from test/r_matlab_extra.m (Octave 8.4).
+        # A case must give Octave's value, or be refused (Unsupported); a case that fails in Octave must fail.
+        xcases = split(read(joinpath(@__DIR__, "matlab_extra_cases.txt"), String), "\n%%\n")
+        xexp = vec(matread(joinpath(@__DIR__, "matlab_extra.mat"))["results"])
+        @test length(xcases) == length(xexp)
+        nref = 0
+        for k in eachindex(xcases)
+            want = xexp[k]
+            got = try
+                run_m(String(xcases[k]))["r"]
+            catch e
+                e
+            end
+            ok = if want isa AbstractString && startswith(want, "ERROR")
+                got isa MatlabError || got isa Unsupported
+            elseif got isa Unsupported
+                nref += 1
+                true
+            elseif got isa Exception || want isa Complex || (want isa AbstractArray && eltype(want) <: Complex)
+                false
+            else
+                close_nan(as_matrix(got), as_matrix(want isa Bool ? Float64(want) : want))
+            end
+            ok || @info "extra case $k" xcases[k] got want
+            @test ok
+        end
+        println("  extra semantics: $(length(xcases)) cases, $nref refused (Unsupported)")
+    end
+
     @testset "MATLAB-specific behaviour" begin
         @test run_m("r = sprintf('%d', 1.5);")["r"] == "1.500000e+00"       # Octave prints 1.5
+        @test run_m("r = sprintf('%s', 3.5);")["r"] == "3.500000e+00"       # MATLAB: %e for a non-integer with %s
+        @test run_m("r = sprintf('%d\\n');")["r"] == "\n"                    # Octave returns ''
+        @test_throws MatlabError run_m("r = 3 && [];")                       # Octave: false
         @test run_m("r = isoctave;")["r"] == false
         @test_throws Unsupported run_m("r = [\"a\" \"b\"];")             # "..." strings are string objects in MATLAB
     end
@@ -650,6 +683,69 @@ if section("review")
             m = rv(RV_SSM_A * body * "\n"; head=RV_RBC, name=name)
             @test isapprox(m.params, expected; rtol=1e-14) || (@info name m.params; false)
         end
+    end
+end
+end
+
+"""
+Port of pydyn's tools/sweep_matlab.py `mutators`: scan Dynare's matlab/ tree for functions that change the
+calibration behind the caller's back (declare `global M_` or return M_, and assign M_.params, M_.Sigma_e,
+M_.H, M_.Correlation_matrix(_ME), M_.Skew_e or M_ as a whole), then the functions calling one of the global
+writers (transitively, matched as `name(`). Returns the names missing from JDyn's refusal lists.
+"""
+function mutators(src)
+    codes = Dict{String,String}()
+    for (root, _, fs) in walkdir(joinpath(src, "matlab"))
+        for f in fs
+            endswith(f, ".m") || continue
+            rel = relpath(root, joinpath(src, "matlab"))
+            pk = [x[2:end] for x in splitpath(rel) if startswith(x, "+")]
+            codes[join(vcat(pk, [f[1:end-2]]), ".")] = replace(read(joinpath(root, f), String), r"%[^\n]*" => "")
+        end
+    end
+    direct = Dict{String,String}()
+    global_writers = Set{String}()
+    for (name, code) in codes
+        writes = occursin(r"\bM_\.(params|Sigma_e|H|Correlation_matrix|Correlation_matrix_ME|Skew_e)\b\s*(\([^=\n]*\))?\s*=(?!=)", code)
+        whole = occursin(r"(?m)^\s*M_\s*=(?!=)|\[[^\]\n]*\bM_\b(?!\.)[^\]\n]*\]\s*=(?!=)", code)
+        head = match(r"(?m)^\s*function\s+(?:(\[[^\]]*\]|\w+)\s*=\s*)?([\w.]+)", code)
+        ((writes || whole) && head !== nothing) || continue
+        has_global = occursin(r"(?m)^\s*global\b[^\n]*\bM_\b", code)
+        returns = occursin(r"\bM_\b", something(head.captures[1], ""))
+        if has_global || returns
+            direct[name] = has_global ? "global" : "returns M_"
+            has_global && push!(global_writers, name)
+        end
+    end
+    closure = setdiff(global_writers, Set(["steady", "prior", "global_initialization", "gui.stochastic-simulation.read"]))
+    pats = Dict{String,Regex}()
+    changed = true
+    while changed
+        changed = false
+        for (name, code) in codes
+            name in closure && continue
+            if any(w -> occursin(get!(() -> Regex("(?<![\\w.])" * replace(w, "." => "\\.", "-" => "\\-") * "\\s*\\("), pats, w), code), closure)
+                push!(closure, name)
+                changed = true
+            end
+        end
+    end
+    names = sort(collect(union(Set(keys(direct)), closure)))
+    known = union(JDyn.MUTATORS, JDyn.MUTATOR_DOTTED, JDyn.SOLVE_FUNCS,
+                  Set(["set_param_value", "set_shock_stderr_value", "steady", "gui.stochastic-simulation.read"]))
+    [n for n in names if !(n in known)]
+end
+
+if section("review")
+@testset "mutator list is complete for the Dynare tree" begin
+    # review E: every Dynare function that writes the calibration through `global M_` (or returns a changed M_)
+    # is in JDyn's refusal lists
+    if isdir(joinpath(DYNARE_SRC, "matlab"))
+        missing_ = mutators(DYNARE_SRC)
+        isempty(missing_) || @info "missing from JDyn.MUTATORS" missing_
+        @test isempty(missing_)
+    else
+        @info "Dynare source tree not available: mutator scan skipped"
     end
 end
 end

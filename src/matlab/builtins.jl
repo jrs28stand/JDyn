@@ -9,7 +9,14 @@ const LAZY = Dict{String,Function}()
 bi!(f, names...) = (for n in names; BUILTINS[n] = f; end; f)
 lazy!(f, names...) = (for n in names; LAZY[n] = f; end; f)
 
-_nargs(a, lo, hi=lo, name="function") = (lo <= length(a) <= hi) || merr("$name: wrong number of arguments ($(length(a)))")
+"""Argument count check. Too few arguments is a MATLAB error; more than JDyn implements may be a valid
+MATLAB call (round(x, n), sum(x, 'omitnan'), ...), so it is refused, not raised as a MATLAB error that a
+try/catch would catch."""
+function _nargs(a, lo, hi=lo, name="function")
+    length(a) < lo && merr("$name: not enough input arguments ($(length(a)))")
+    length(a) > hi && throw(Unsupported("$name with $(length(a)) arguments", "feature"))
+    true
+end
 
 _isemptyarr(x) = x isa AbstractMatrix && isempty(x)
 
@@ -531,6 +538,8 @@ function _str(v, name)
     if !(v isa AbstractString)
         _isemptyarr(v) && return ""
         v isa Tainted && throw(Unsupported("unknown value", "tainted"))
+        # many MATLAB text functions also take cell arrays (or string objects): refused, not a MATLAB error
+        (v isa Cell || v isa MStruct || v isa HostStruct) && throw(Unsupported("$name with a $(mclass(v)) argument", "feature"))
         merr("$name: a char array is required")
     end
     String(v)
@@ -554,12 +563,34 @@ BUILTINS["strcmp"] = _strcmp((p, q, n) -> p == q)
 BUILTINS["strcmpi"] = _strcmp((p, q, n) -> lowercase(p) == lowercase(q))
 BUILTINS["strncmp"] = _strcmp((p, q, n) -> length(p) >= n && length(q) >= n && p[1:n] == q[1:n])
 BUILTINS["strncmpi"] = _strcmp((p, q, n) -> length(p) >= n && length(q) >= n && lowercase(p[1:n]) == lowercase(q[1:n]))
-BUILTINS["upper"] = BUILTINS["toupper"] = (I, a, nout) -> uppercase(_str(a[1], "upper"))
-BUILTINS["lower"] = BUILTINS["tolower"] = (I, a, nout) -> lowercase(_str(a[1], "lower"))
+_cellmap(f, x, name) = x isa Cell ? Cell(Any[f(_str(v, name)) for v in x.items], x.shape) : f(_str(x, name))
+BUILTINS["upper"] = BUILTINS["toupper"] = (I, a, nout) -> (_nargs(a, 1, 1, "upper"); _cellmap(uppercase, a[1], "upper"))
+BUILTINS["lower"] = BUILTINS["tolower"] = (I, a, nout) -> (_nargs(a, 1, 1, "lower"); _cellmap(lowercase, a[1], "lower"))
 const _WS0 = (' ', '\t', '\n', '\v', '\f', '\r', '\0')
 BUILTINS["strtrim"] = (I, a, nout) -> String(strip(c -> c in _WS0, _str(a[1], "strtrim")))
 BUILTINS["deblank"] = (I, a, nout) -> String(rstrip(c -> c in _WS0, _str(a[1], "deblank")))
-BUILTINS["strrep"] = (I, a, nout) -> a[2] != "" ? replace(_str(a[1], "strrep"), _str(a[2], "strrep") => _str(a[3], "strrep")) : a[1]
+"MATLAB's strrep: every occurrence is replaced, overlapping ones included (strrep('aaa', 'aa', 'b') is 'bb')."
+function _strrep(s::String, p::String, r::String)
+    isempty(p) && return s
+    n = length(p)
+    cs = collect(s)
+    pos = [i for i in 1:(length(cs) - n + 1) if String(cs[i:i+n-1]) == p]
+    isempty(pos) && return s
+    out = IOBuffer()
+    write(out, String(cs[1:pos[1]-1]))
+    for (k, i) in enumerate(pos)
+        k > 1 && i >= pos[k-1] + n && write(out, String(cs[pos[k-1]+n:i-1]))
+        write(out, r)
+    end
+    write(out, String(cs[pos[end]+n:end]))
+    String(take!(out))
+end
+bi!("strrep") do I, a, nout
+    _nargs(a, 3, 3, "strrep")
+    p, r = _str(a[2], "strrep"), _str(a[3], "strrep")
+    a[1] isa Cell && return Cell(Any[_strrep(_str(x, "strrep"), p, r) for x in a[1].items], a[1].shape)
+    _strrep(_str(a[1], "strrep"), p, r)
+end
 BUILTINS["blanks"] = (I, a, nout) -> " "^as_index_int(a[1])
 BUILTINS["strcat"] = (I, a, nout) -> join(rstrip(c -> c in (' ', '\t', '\n', '\v', '\f', '\r'), _str(x, "strcat")) for x in a)
 BUILTINS["int2str"] = (I, a, nout) -> _num2str(_mround(scalar(a[1], "int2str argument")))
@@ -594,7 +625,7 @@ function _cfmt(spec::AbstractString, x::Float64)
             sp = occursin('.', spec) ? spec[1:end-1] * "e" : replace(spec[1:end-1], r"\.\d+" => "") * "e"
             return Printf.format(Printf.Format(sp), x)
         end
-        return Printf.format(Printf.Format(replace(spec[1:end-1], r"\.\d+" => "") * "d"), BigInt(x))
+        return Printf.format(Printf.Format(spec[1:end-1] * "d"), BigInt(x))      # %.3d: at least 3 digits
     end
     if conv in "xXou"
         (x != round(x) || x < 0) && return Printf.format(Printf.Format(spec[1:end-1] * "e"), x)
@@ -614,7 +645,7 @@ function _num2str(x, fmt=nothing)
     end
     x = Float64(x)
     if fmt !== nothing
-        fmt isa AbstractString && return _sprintf(fmt, Any[x])
+        fmt isa AbstractString && return String(lstrip(_sprintf(fmt, Any[x])))     # num2str trims leading blanks
         return _cfmt("%." * string(as_index_int(fmt)) * "g", x)
     end
     isnan(x) && return "NaN"
@@ -682,8 +713,12 @@ function _sprintf(fmt::AbstractString, args)
                 end
             elseif m.captures[4] == "s"
                 x = Float64(v)
-                s = (x == round(x) && 0 <= x < 0x110000) ? string(Char(Int(x))) : _shortg(x)
-                write(out, Printf.format(Printf.Format(spec[1:end-1] * "s"), s))
+                if x == round(x) && 0 <= x < 0x110000
+                    write(out, Printf.format(Printf.Format(spec[1:end-1] * "s"), string(Char(Int(x)))))
+                else
+                    # "a text conversion for a numeric value: MATLAB overrides the conversion and uses %e"
+                    write(out, _cfmt(replace(spec[1:end-1], r"\.\d+" => "") * "e", x))
+                end
             else
                 write(out, _cfmt(spec, Float64(v)))
             end
@@ -722,8 +757,20 @@ bi!("char") do I, a, nout
 end
 bi!("strsplit") do I, a, nout
     s = _str(a[1], "strsplit")
-    d = length(a) > 1 ? _str(a[2], "strsplit") : " "
-    Cell(Any[String(x) for x in split(s, d)])
+    ds = length(a) < 2 ? [" "] : a[2] isa Cell ? [_unescape(_str(x, "strsplit")) for x in a[2].items] : [_unescape(_str(a[2], "strsplit"))]
+    collapse = true                       # MATLAB's default: consecutive delimiters count as one
+    rest = a[3:end]
+    while length(rest) >= 2
+        key = lowercase(_str(rest[1], "strsplit"))
+        key == "collapsedelimiters" || _unsup("strsplit option $(repr(rest[1]))")
+        collapse = truth(rest[2])
+        rest = rest[3:end]
+    end
+    isempty(rest) || merr("strsplit: options must come in name-value pairs")
+    any(isempty, ds) && merr("strsplit: delimiters must not be empty")
+    alt = join([replace(d, r"([\\^$.|?*+()\[\]{}])" => s"\\\1") for d in sort(ds; by=length, rev=true)], "|")
+    re = Regex(collapse ? "(?:$alt)+" : "(?:$alt)")
+    Cell(Any[String(x) for x in split(s, re)])
 end
 bi!("strjoin") do I, a, nout
     a[1] isa Cell || merr("strjoin: a cell array is required")
@@ -869,23 +916,32 @@ BUILTINS["isoctave"] = (I, a, nout) -> ISOCTAVE[]
 
 bi!("error") do I, a, nout
     isempty(a) && merr("error")
-    a[1] isa MStruct && merr(string(get(a[1], "message", "error")))
+    a[1] isa MStruct && throw(MatlabError(string(get(a[1], "message", "error")), string(get(a[1], "identifier", ""))))
     fmt = a[1] isa AbstractString ? a[1] : "error"
     rest = a[2:end]
+    id = ""
     if !isempty(rest) && occursin(r"^[A-Za-z]\w*(:[\w-]+)+$", fmt) && rest[1] isa AbstractString
+        id = fmt
         fmt, rest = rest[1], rest[2:end]
     end
+    # error(msg) alone prints msg as it is; with an identifier or arguments it is a format
     msg = try
-        (!isempty(rest) || occursin('%', fmt) || occursin('\\', fmt)) ? _sprintf(fmt, rest) : fmt
+        (length(a) > 1) ? _sprintf(fmt, rest) : fmt
     catch
         fmt
     end
-    merr(msg)
+    throw(MatlabError(msg, id))
+end
+bi!("rethrow") do I, a, nout
+    _nargs(a, 1, 1, "rethrow")
+    e = a[1]
+    e isa MStruct || merr("rethrow: the argument must be an error struct")
+    throw(MatlabError(string(get(e, "message", "")), string(get(e, "identifier", ""))))
 end
 bi!("assert") do I, a, nout
     isempty(a) && merr("assert: argument missing")
     (length(a) >= 2 && !(a[2] isa AbstractString)) && _unsup("assert(observed, expected, tol) form")
-    truth(a[1]) || merr("assertion failed" * (length(a) > 1 ? ": " * a[2] : ""))
+    truth(a[1]) || merr(length(a) > 1 ? _sprintf(a[2], a[3:end]) : "Assertion failed.")
     Any[]
 end
 bi!("exist") do I, a, nout

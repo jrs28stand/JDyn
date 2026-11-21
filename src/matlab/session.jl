@@ -769,7 +769,7 @@ function run_stmt!(s::ModSession, st)
             elseif e isa MatlabError
                 s.in_try -= 1
                 try
-                    st.ident === nothing || (sc.vars[st.ident] = MStruct(["message" => e.msg, "identifier" => "", "stack" => MStruct()]))
+                    st.ident === nothing || (sc.vars[st.ident] = MStruct(["message" => e.msg, "identifier" => e.id, "stack" => MStruct()]))
                     return run_block!(s, st.handler)
                 finally
                     s.in_try += 1
