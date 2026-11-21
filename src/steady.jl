@@ -109,6 +109,17 @@ function fill_auxiliary(m::Model, ys, x, params)
     for i in aux
         isfinite(ys[i]) || (ys[i] = 0.0)
     end
+    # var(log): the auxiliary variable is log of its original variable (the equation is not linear in it)
+    logaux = Int[]
+    for d in get_or(m.raw, "aux_vars", [])
+        (get(d, "type", -1) == 7 && haskey(d, "orig_index")) || continue
+        i, o = Int(d["endo_index"]), Int(d["orig_index"])
+        if isfinite(ys[o]) && ys[o] > 0
+            ys[i] = log(ys[o]); push!(logaux, i)
+        end
+    end
+    aux = [i for i in aux if !(i in logaux)]
+    isempty(aux) && return ys
     J = static_jac(m, ys, x, params)
     diagc = Float64[J[i, i] for i in aux]
     exact = all(isfinite, diagc) && all(!iszero, diagc)
@@ -137,7 +148,7 @@ function steady_state(m::Model; params=nothing, guess=nothing, tol=nothing, chec
     warn_unused(m, "steady", Set(["solve_tolf", "steadystate.nocheck", "homotopy_mode", "homotopy_steps"]), "steady_state")
     params = params === nothing ? copy(m.params) : Vector{Float64}(params)
     x = exo === nothing ? exo_steady(m) : Vector{Float64}(exo)
-    ys, params = _steady_state(m, params, guess, x)
+    ys, params = _steady_state(m, params, guess, x; tolf=tol)
     if check
         res = maximum(abs, static_resid(m, ys, x, params); init=0.0)
         res < tol || throw(SteadyStateError("steady state not found: max |residual| = $(round(res; sigdigits=4))"))
@@ -146,7 +157,7 @@ function steady_state(m::Model; params=nothing, guess=nothing, tol=nothing, chec
     ys, params
 end
 
-function _steady_state(m::Model, params, guess, x)
+function _steady_state(m::Model, params, guess, x; tolf=DYNARE_TOLF)
     fn = m.steady_state_fn
     if fn === nothing && m.steady_state_model === nothing && m.steady_state_file !== nothing
         fn = steady_state_file_fn(m)
@@ -178,18 +189,241 @@ function _steady_state(m::Model, params, guess, x)
     else
         y0 = guess === nothing ? fill_auxiliary(m, _initval_vector(m), x, params) : Vector{Float64}(guess)
         all(isfinite, y0) || throw(SteadyStateError("initial guess for the steady state is not finite"))
-        ys = _solve_static(m, y0, x, params)
+        ys = _solve_static(m, y0, x, params; tolf=tolf)
     end
     ys, params
 end
 
-function _solve_static(m::Model, y0, x, params)
+"""
+Dynare's `dogleg.m`: the Gauss-Newton step `r \\ b` (minimum-norm least squares when `r` is singular, as Octave's
+backslash falls back) cut to the trust region of radius `delta`.
+"""
+function _dogleg(r::AbstractMatrix, b::AbstractVector, d::AbstractVector, delta::Real)
+    x = try
+        F = lu(r; check=false)
+        issuccess(F) && size(r, 1) == size(r, 2) && rcond_ok(F, r) ? F \ b : pinv(r) * b
+    catch
+        pinv(r) * b
+    end
+    qnorm = norm(d .* x)
+    qnorm <= delta && return x
+    s = (r' * b) ./ d
+    gnorm = norm(s)
+    if gnorm > 0
+        s = (s ./ gnorm) ./ d
+        temp0 = norm(r * s)
+        sgnorm = gnorm / (temp0 * temp0)
+        if sgnorm < delta
+            bnorm = norm(b)
+            temp1 = delta / qnorm
+            temp2 = sgnorm / delta
+            temp0 = bnorm * bnorm * temp2 / (gnorm * qnorm)
+            temp0 = temp0 - temp1 * temp2 * temp2 + sqrt((temp0 - temp1)^2 + (1.0 - temp1 * temp1) * (1.0 - temp2 * temp2))
+            alpha = temp1 * (1.0 - temp2 * temp2) / temp0
+        else
+            alpha = 0.0
+        end
+    else
+        alpha = delta / qnorm
+        sgnorm = 0.0
+    end
+    alpha > 0 ? alpha .* x .+ (1.0 - alpha) * min(sgnorm, delta) .* s : min(sgnorm, delta) .* s
+end
+rcond_ok(F, r) = (c = try; 1 / cond(r, 1); catch; 0.0; end; c > eps())
+
+"""
+Dynare's `trust_region.m` (the default `solve_algo = 4` solver) on the equations `j1` and the unknowns `j2` of
+`fun(x)` (residual vector) with Jacobian `jac(x)`. Returns `(x, errorflag)`.
+"""
+function _dynare_trust_region(fun, jac, x::Vector{Float64}, j1, j2; tolf, tolx, maxiter, factor=1.0)
+    radiusfactor = 0.5; actualreductionthreshold = 0.001; relativereductionthreshold = 0.1
+    x = copy(x)
+    errorflag = true
+    iter = 1; info = 0; delta = 0.0; ncsucc = 0; ncslow = 0
+    xinit = copy(x)
+    fval = fun(x)[j1]
+    fjac = jac(x)[j1, j2]
+    fnorm = norm(fval)
+    (all(isfinite, fval) && all(isfinite, fjac)) || return x, true
+    fnorm < tolf && return x, false
+    fjacnorm_ = ones(length(j2))
+    xnorm = 0.0
+    while iter <= maxiter && info == 0
+        fjacnorm = vec(sqrt.(sum(abs2, fjac; dims=1)))
+        if iter == 1
+            fjacnorm_ = copy(fjacnorm)
+            fjacnorm_[fjacnorm .< eps(1.0)] .= 1.0
+            xnorm = norm(fjacnorm_ .* x[j2])
+            delta = xnorm > 0 ? xnorm * factor : factor
+        else
+            fjacnorm_ = max.(0.1 .* fjacnorm_, fjacnorm)
+            xnorm = norm(fjacnorm_ .* x[j2])
+        end
+        p = _dogleg(fjac, fval, fjacnorm_, delta)
+        pnorm = norm(fjacnorm_ .* p)
+        xx = copy(x); x0 = copy(x)
+        xx[j2] .= x[j2] .- p
+        ww = fval .- fjac * p
+        fval1 = fun(xx)[j1]
+        if !all(isfinite, fval1)
+            delta *= radiusfactor
+            iter += 1
+            continue
+        end
+        fnorm1 = norm(fval1)
+        if fnorm1 < tolf
+            x = xx; errorflag = false; info = 1
+            continue
+        end
+        actualreduction = fnorm1 < fnorm ? 1.0 - (fnorm1 / fnorm)^2 : -1.0
+        tt = norm(ww)
+        predictedreduction = tt < fnorm ? 1.0 - (tt / fnorm)^2 : 0.0
+        ratio = predictedreduction > 0 ? actualreduction / predictedreduction : 0.0
+        iter == 1 && (delta = min(delta, pnorm))
+        if ratio < relativereductionthreshold
+            ncsucc = 0
+            delta *= radiusfactor
+        else
+            ncsucc += 1
+            if abs(ratio - 1.0) < relativereductionthreshold
+                delta = pnorm / radiusfactor
+            elseif ratio >= radiusfactor || ncsucc > 1
+                delta = max(delta, pnorm / radiusfactor)
+            end
+        end
+        if ratio > 1e-4
+            x = xx; fval = fval1
+            xnorm = norm(fjacnorm_ .* x[j2])
+            fnorm = fnorm1
+        end
+        ncslow += 1
+        actualreduction >= actualreductionthreshold && (ncslow = 0)
+        iter += 1
+        if iter == maxiter
+            info = 2; x = copy(xinit)
+            continue
+        end
+        if delta < tolx * xnorm
+            info = 3; x = copy(xinit); errorflag = true
+            continue
+        end
+        if tolx > 0 && max(0.1 * delta, pnorm) <= 10 * eps(xnorm) * xnorm
+            info = 5; x = copy(xinit); errorflag = true
+            continue
+        end
+        if ncslow == 15
+            info = 4; x = copy(xinit); errorflag = true
+            continue
+        end
+        fjac0 = fjac
+        fjac = jac(x)[j1, j2]
+        if !all(isfinite, fjac)
+            x = x0; fjac = fjac0
+            delta *= radiusfactor
+        end
+    end
+    x, errorflag
+end
+
+"""
+Dynare's `dynare_solve.m` for the default `solve_algo = 4` with a Jacobian: returns `(x, ok, rows, cols, why)`: the equations and
+unknowns of the blocks that were actually solved, and why it failed (`:singular` for an over-determined block). The Jacobian at the initial guess is split with the
+Dulmage-Mendelsohn decomposition and the blocks are solved from the last to the first; a non-square block whose
+equations already hold at the initial guess is skipped (so the variables that only appear in identically satisfied
+equations stay at their initial values); `j2(j)` is indexed with the *row* positions of the block, as in Dynare.
+"""
+function _dynare_solve(fun, jac, x0::Vector{Float64}; tolf, tolx, maxit)
+    x = copy(x0)
+    nn = length(x)
+    fvec = fun(x)
+    if all(isfinite, fvec) && maximum(abs, fvec; init=0.0) < tolf
+        return x, true, Int[], Int[], :none
+    end
+    fjac = jac(x)
+    if !(all(isfinite, fvec) && all(isfinite, fjac))
+        # options_.solve_randomize_initial_guess (true by default): replace the default (zero) initial values by random
+        # numbers, first positive (rand*10), then normal (randn*10), then negative, until the model can be evaluated
+        idx = any(!iszero, x) ? findall(iszero, x) : collect(1:nn)
+        in0 = length(idx)
+        good = false
+        for gen in (() -> rand(in0) .* 10, () -> randn(in0) .* 10, () -> -rand(in0) .* 10)
+            for _ in 0:in0*10
+                x[idx] .= gen()
+                fvec = fun(x); fjac = jac(x)
+                good = all(isfinite, fvec) && all(isfinite, fjac)
+                good && break
+            end
+            good && break
+        end
+        good || return x0, false, Int[], Int[], :failed
+    end
+    j1, j2, r, s = dmperm(fjac)
+    srows = Int[]; moved = Int[]
+    for i in length(r)-1:-1:1
+        j = r[i]:r[i+1]-1
+        blocklength = r[i+1] - r[i]
+        blockcolumns = s[i+1] - s[i]
+        if blockcolumns != blocklength
+            fval_check = fun(x)
+            if norm(fval_check[j1[j]]) < tolf
+                continue
+            end
+        end
+        if blockcolumns >= blocklength
+            x, errorflag = _dynare_trust_region(fun, jac, x, j1[j], j2[j]; tolf=tolf, tolx=tolx, maxiter=maxit)
+            errorflag && return x, false, srows, moved, :failed
+            append!(srows, j1[j]); append!(moved, j2[j])
+        else
+            return x, false, srows, moved, :singular     # over-determined block: the Jacobian is singular
+        end
+    end
+    fvec = fun(x)
+    if !(maximum(abs, fvec; init=0.0) <= tolf)
+        x, errorflag = _dynare_trust_region(fun, jac, x, collect(1:nn), collect(1:nn); tolf=tolf, tolx=tolx, maxiter=maxit)
+        errorflag && return x, false, srows, moved, :failed
+        srows = collect(1:nn); moved = collect(1:nn)
+    end
+    x, true, srows, moved, :none
+end
+
+function _solve_static(m::Model, y0, x, params; tolf=DYNARE_TOLF, tolx=eps(Float64)^(2 / 3), maxit=50)
+    f(y) = static_resid(m, y, x, params)
+    jac(y) = static_jac(m, y, x, params)
+    y0 = Vector{Float64}(y0)
+    # Dynare's solve_algo = 4 first; the old robust search below is only used where it fails
+    ys, ok, srows, moved, why = try
+        _dynare_solve(f, jac, y0; tolf=tolf, tolx=tolx, maxit=maxit)
+    catch e
+        e isa LinearAlgebra.SingularException || e isa LinearAlgebra.LAPACKException || e isa DomainError || rethrow()
+        y0, false, Int[], Int[], :failed
+    end
+    if ok
+        # polish the unknowns that were solved for (Dynare stops at |f| < tolf; JDyn goes on to machine precision)
+        if !isempty(moved)
+            for _ in 1:3
+                r = f(ys)
+                (all(isfinite, r) && maximum(abs, r[srows]) > 1e-14) || break
+                J = jac(ys)
+                Jb = J[srows, moved]
+                F = lu(Jb; check=false)
+                issuccess(F) || break
+                ys[moved] .-= F \ r[srows]
+            end
+        end
+        return ys
+    end
+    why == :singular && warn_once(m, "the static Jacobian is singular at the initial values (Dulmage-Mendelsohn decomposition: an over-determined block, which Dynare's solve_algo=4 refuses): falling back to a general least-squares search; variables the equations do not pin down may move away from initval")
+    _solve_static_robust(m, y0, x, params)
+end
+
+function _solve_static_robust(m::Model, y0, x, params)
     f!(r, y) = (r .= static_resid(m, y, x, params))
     j!(J, y) = (J .= static_jac(m, y, x, params))
     ys = try
         sol = NLsolve.nlsolve(f!, j!, copy(y0); method=:trust_region, ftol=1e-13, xtol=0.0, iterations=1000)
         sol.zero
     catch e
+        e isa NLsolve.IsFiniteException && throw(SteadyStateError("steady state not found: the static equations are not finite along the search (Dynare's solvers would also fail from this initial point)"))
         e isa LinearAlgebra.SingularException || e isa LinearAlgebra.LAPACKException || rethrow()
         copy(y0)
     end
@@ -218,14 +452,8 @@ const COSMETIC = Set(["nograph", "nodisplay", "graph_format", "noprint", "nocorr
     "nodiagnostic", "console_mode", "silent_optimizer", "debug", "plot_priors", "no_graph.plot_shock_decomposition",
     "graph_save_formats", "sub_draws", "irf_plot_threshold", "impulse_responses.plot_threshold", "dirname", "verbosity", "simul.debug"])
 
-"Options of the model's solution commands, later commands taking precedence as in Dynare."
-function stoch_options(m::Model)
-    out = Dict{String,Any}()
-    for kind in ("check", "stoch_simul", "estimation", "calib_smoother")
-        merge!(out, get(m.options, kind, Dict{String,Any}()))
-    end
-    out
-end
+"Options of the model's solution commands: those of every `check`, `stoch_simul`, `estimation` and `calib_smoother` statement in file order, later ones taking precedence (Dynare's `options_` persists)."
+stoch_options(m::Model) = copy(get(m.options, "options_", Dict{String,Any}()))
 """
 Option `name` of the model's solution commands, else a value the .mod file assigned to `options_.name` in
 MATLAB code (Dynare's commands read that field too, e.g. select_qz_criterium_value.m), else `default`.

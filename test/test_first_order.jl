@@ -30,6 +30,13 @@ const FO_CASES = Dict(
         ours = maximum(abs, JDyn.static_resid(m, ys, nothing, params))
         theirs = maximum(abs, JDyn.static_resid(m, rys, nothing, rparams))
         println("$name: max |ys - Dynare| = $(maximum(abs, ys .- rys)), residual $ours (Dynare's $theirs)")
+        # Dynare's solve_algo=4 itself (Dulmage-Mendelsohn blocks + trust_region.m) stops at the same point as Dynare, to the last bit
+        if name == "collard_2001_simulated_moments"
+            y0 = JDyn.fill_auxiliary(m, JDyn._initval_vector(m), JDyn.exo_steady(m), rparams)
+            fr(y) = JDyn.static_resid(m, y, nothing, rparams); jc(y) = JDyn.static_jac(m, y, nothing, rparams)
+            yd, ok = JDyn._dynare_solve(fr, jc, y0; tolf=JDyn.DYNARE_TOLF, tolx=eps()^(2 / 3), maxit=50)
+            @test ok && maximum(abs, yd .- rys) < 1e-12
+        end
         @test ours <= max(theirs, 1e-12)
     end
 

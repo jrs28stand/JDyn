@@ -71,6 +71,8 @@ common case, by the user's `initval`; JDyn's is not. R09's `%ld` sub-case and R0
 
 ### R01 (S1, confirmed, reframed) Steady state of models with a continuum of steady states
 
+**Status: fixed** (branch `fix-model`: `steady_state` now follows `dynare_solve.m` for `solve_algo = 4`: initial-residual check, Dulmage-Mendelsohn blocks (`src/dmperm.jl`, a port of CSparse `cs_dmperm`, checked against `libcxsparse` on 7000 random patterns and against Octave's `dmperm`), blocks solved last to first with Dynare's `trust_region.m`/`dogleg.m` (`_dynare_trust_region`), a non-square block whose equations hold is skipped, and Dynare's `j2(j)` indexing by row positions. Repro: `[0.2, 0.7328416548961019]` as Dynare, ghx `[1, 0.73284]`; cointegrated variant: `var x z` gives `[0.2, 0.2]`, `var z x` gives `[z,x] = [0.1, 0.1]`, both as Octave (note: which variable moves depends on the declaration order, through the matching). The solved unknowns are still polished to machine precision (Dynare stops at 6e-6), the skipped ones are left alone. Where the Dynare algorithm fails (50 iterations, over-determined block) the old trust-region search is used as a fallback. Not done: the warning on a singular static Jacobian (Dynare prints one only for over-determined blocks, where JDyn falls back silently))
+
 Repro (`y = y(-1) + e; c = 0.5*c(+1) + gam*exp(y)`, `initval y = 0.2, c = 1`, `steady`):
 Dynare 7.2 `oo_.steady_state = [0.2, 0.7328416548961019]`, `ghx = [1; 0.73284]`; JDyn `[0.32432, 0.82986]`, `ghx(c) = 0.830`.
 Both are exact steady states (JDyn's residual is 0); the problem is indeterminate.
@@ -123,6 +125,8 @@ the flipped `@test_broken` in test/test_review2_findings.jl.
 
 ### R11 (S1, confirmed) `set_shock_stderr!` zeroes the covariances
 
+**Status: fixed** (`set_shock_stderr!` sets `Sigma_e(i,i) = value^2` only, as Dynare; unknown names raise `ModelError`)
+
 `shocks; var e = 1; var u = 4; corr e,u = 0.5; end;` then `set_shock_stderr!(m, "u", 3.0)`: JDyn `[1 0; 0 9]`.
 Dynare's `matlab/accessors/set_shock_stderr_value.m` is `M_.Sigma_e(i,i) = value^2` -> `[1 1; 1 9]` (it keeps the
 covariance, so the correlation changes; neither keeps the correlation). The function is exported and undocumented.
@@ -130,6 +134,8 @@ Cause `src/model.jl:356-361`. Fix: diagonal only, as Dynare and as JDyn's own `.
 document it (optionally `keep_correlation=true`).
 
 ### R12 (S3), R17 (S3), R18 (S3) confirmed as described (`src/model.jl:351-355`, `:320-322`, `:284` and the dates parse).
+
+**Status: fixed** (R12: `set_params!` validates every name first; R17: `load(...; extra_args=[...])` reaches the preprocessor; R18: external functions (also in `static.json`), unloadable generated Julia and `dates(...)` in `shocks` periods raise `ModelError`. Ramsey models still load as ordinary models (a Ramsey steady state is not computed specially): unchanged)
 
 ### R13 (S3, confirmed) `steady_state_model` reaches Julia's namespace
 
@@ -141,6 +147,8 @@ functions take numbers only).
 
 ### R14 (S3, confirmed) `DomainError` from moments near a unit root
 
+**Status: fixed** (negative variances give NaN standard deviations/correlations and one warning instead of `DomainError`; the `dynare()` catch in `results.jl` was not touched)
+
 Reproduced (`rho = 1.0000005`). On the results branch `stoch_simul!` only catches `ArgumentError`/`ModelError`
 (`src/results.jl:273`), so `dynare()` aborts on a file Dynare runs (S2 there). Fix: NaN plus a warning.
 
@@ -150,7 +158,11 @@ Reproduced (`rho = 1.0000005`). On the results branch `stoch_simul!` only catche
 
 ### R16 (S3, confirmed) `irf_figures` order 1 without a warning (`stoch_simul(irf=4)`, default order 2): reproduced.
 
+**Status: fixed** (`irf_figures` warns (once per model) when the file's `stoch_simul` asks for order > 1; it still returns the first-order responses)
+
 ### R21 (S2, confirmed) `k_order` with an unused NaN parameter
+
+**Status: fixed** (`k_order` checks the derivatives for NaN, not every parameter; an unused NaN parameter is passed to the C++ solver as 0)
 
 RBC plus `parameters unused;` (never set): `first_order` works, `k_order(m; order=2)` throws `KOrderError ... NaN`.
 Cause `src/korder.jl:90-91` (finiteness of all `params`). Fix: test only the parameters that appear in the
@@ -185,6 +197,8 @@ a 70-expression sweep (`round`, `mod`, `rem`, `sign`, `fix`, `floor`, `ceil`, `m
 
 ### R23 (S1) The load API keeps only the last `stoch_simul` statement's options
 
+**Status: fixed** (`m.options` accumulates the options of every `stoch_simul`/`estimation`/`calib_smoother` statement (and `steady`/`check`) in file order, like `options_`; `stoch_options` reads the accumulated dict, and the default variable list is that of the last `stoch_simul` statement. `Estimation(m)` still reads the options of the last `estimation` statement only)
+
 ```
 <RBC>; steady;
 stoch_simul(order=1, irf=0, hp_filter=1600);
@@ -201,6 +215,8 @@ dict (with the preprocessor's explicit `order` default), and read every option f
 
 ### R24 (S3) `homotopy_setup(from_initval_to_endval)` is ignored
 
+**Status: fixed** (`homotopy_setup(from_initval_to_endval)`: a `steady(homotopy_mode=...)` statement moves the exogenous variables to their `endval` values (error without `endval`, as `steady.m`); Dynare's test file gives `[6.12244879311, 51.0204019802]` (JDyn solves directly at the final values instead of stepping 50 times; both agree to 1e-6))
+
 Dynare's own `tests/steady_state/homotopy/homotopy_from_initval_to_endval.mod`: Dynare 7.2
 `oo_.steady_state = [6.12244879311, 51.0204019802, 2]`, `oo_.exo_steady_state = 2`. JDyn `steady_state(m)`:
 `[1.5306, 12.7551, 1]` (at `x = 1`), with only a load-time "statements not handled: homotopy" warning; `m.oo` meanwhile
@@ -211,6 +227,8 @@ tolerance, 1.2e-5 relative for mode 1. Homotopy stepping, pass-1 suspicion 1, is
 where that changes the answer: with `x` 1 -> 1000 or 1e5 Dynare's own homotopy fails.)
 
 ### R25 (S3) Stochastic singularity is accepted silently
+
+**Status: fixed** (the smoother raises `SmootherError` ("F is singular in stationary period") unless `use_univariate_smoother_if_singularity_is_detected` or `noprint` is set; `estimate` runs `initial_estimation_checks` (error on info 50))
 
 - `calib_smoother` with `varobs y w` and `w = y` (singular forecast-error covariance): Dynare 7.2 stops with
   "Kalman filter: F is singular in stationary period. Stochastic singularity detected." (`DsgeSmoother.m:317-323`;

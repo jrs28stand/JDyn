@@ -64,7 +64,21 @@ w = [NaN; NaN; -1.02068155763; 0.981111876598; 0.840076435146; 1.88292275402; 2.
         """)
     ys, _ = steady_state(m)
     @test maximum(abs, JDyn.static_resid(m, ys)) < 1e-12          # a valid steady state (the problem has a continuum)
-    @test_broken isapprox(ys, [0.2, 0.7328416548961019]; rtol=1e-10)   # Dynare 7.2: y stays at initval; JDyn y = 0.324
+    @test isapprox(ys, [0.2, 0.7328416548961019]; rtol=1e-10)   # Dynare 7.2: y stays at initval (was y = 0.324)
+    # cointegrated variant: Dynare 7.2 (Octave) moves the variable its Dulmage-Mendelsohn matching picks, which depends on the
+    # variable order: `var x z` -> [0.2, 0.2] (z moves), `var z x` -> [z, x] = [0.1, 0.1] (x moves)
+    for (ord, want) in (("x z", [0.2, 0.2]), ("z x", [0.1, 0.1]))
+        m2 = build("""
+            var $ord; varexo e u;
+            model; x = x(-1) + e; z = x + 0.5*(z(-1)-x(-1)) + u; end;
+            initval; x = 0.2; z = 0.1; end;
+            shocks; var e = 0.01; var u = 0.01; end;
+            steady;
+            """)
+        @test isapprox(steady_state(m2)[1], want; atol=1e-12)
+    end
+    # JDyn.dmperm is CSparse's cs_dmperm (what MATLAB/Octave dmperm return): Octave 8.4 gives these for [0 0; 1 1]
+    @test JDyn.dmperm([0.0 0; 1 1]) == ([2, 1], [2, 1], [1, 2, 3], [1, 3, 3])
 end
 
 @testset "R02 R03 R05 R19 R20 interpreter: silently wrong values (Octave 8.4 ground truth)" begin
@@ -105,13 +119,13 @@ end
         shocks; var e = 1; var u = 4; corr e,u = 0.5; end;
         """)
     set_shock_stderr!(m, "u", 3.0)
-    @test_broken m.Sigma_e == [1.0 1.0; 1.0 9.0]
+    @test m.Sigma_e == [1.0 1.0; 1.0 9.0]
 end
 
 @testset "R12 set_params! is not atomic" begin
     m = build("var y; varexo e; parameters a b; a = 0.5; b = 1;\nmodel; y = a*y(-1) + b*e; end;\n")
     try; set_params!(m, ["a" => 0.9, "nonexistent" => 1.0]); catch; end
-    @test_broken get_param(m, "a") == 0.5
+    @test get_param(m, "a") == 0.5
 end
 
 @testset "R13 steady_state_model can call Julia's exit()" begin
@@ -132,7 +146,7 @@ end
 @testset "R14 negative variance inside the QZ criterion: raw DomainError" begin
     m = build("var y; varexo e; parameters rho; rho = 1.0000005;\nmodel; y = rho*y(-1) + e; end;\nshocks; var e = 1; end;\nsteady;\nstoch_simul(order=1, irf=0);\n")
     r = try; stoch_simul_moments(m); nothing; catch e; e; end
-    @test_broken !(r isa DomainError)
+    @test !(r isa DomainError)
 end
 
 @testset "R15 (S4, fixed) irf_plot_threshold makes stoch_simul_moments warn" begin
@@ -151,20 +165,20 @@ end
         JDyn.irf_figures(m)
     end
     @test res.order == 1
-    @test_broken any(l -> occursin("order", string(l.message)), lg.logs)
+    @test any(l -> occursin("order", string(l.message)), lg.logs)
 end
 
 @testset "R17 load() does not forward extra_args" begin
     d = mktempdir(); write(joinpath(d, "mac.mod"), "@#ifndef A\n@#define A = 1\n@#endif\nvar y; varexo e; parameters a; a = 0.1*@{A};\nmodel; y = a*y(-1) + e; end;\n")
     r = try; quietly(() -> JDyn.load(joinpath(d, "mac.mod"); extra_args=["-DA=3"])); catch e; e; end
-    @test_broken r isa JDyn.Model && r.params[1] ≈ 0.3
+    @test r isa JDyn.Model && r.params[1] ≈ 0.3
 end
 
 @testset "R18 refusals as raw Julia exceptions" begin
     f = joinpath(DYNARE_SRC, "tests", "deterministic_simulations", "ramst_dseries.mod")
     if isfile(f)
         r = try; load_copy(f); nothing; catch e; e; end
-        @test_broken r === nothing || r isa ModelError
+        @test r === nothing || r isa ModelError
     end
 end
 
@@ -173,7 +187,20 @@ end
     @test isnan(get_param(m, "unused"))
     @test first_order(m) isa JDyn.FirstOrderSolution
     r = try; k_order(m; order=2); catch e; e; end
-    @test_broken r isa AbstractDict
+    @test r isa AbstractDict
+    # the real case: sw_big (Smets-Wouters, 40 variables) leaves ccs, cinvs, crdpi unset. Dynare 7.2 (Octave, stoch_simul(order=2))
+    # gives ghx, ghu that k_order matches to 1.3e-13 (checked once against an Octave dump; here against first_order)
+    sw = joinpath(REF, "sw_big.mod")
+    if isfile(sw)
+        d = mktempdir(); cp(sw, joinpath(d, "sw_big.mod")); cp(joinpath(REF, "sw_data.m"), joinpath(d, "sw_data.m"))
+        msw = quietly(() -> JDyn.load(joinpath(d, "sw_big.mod"); output="second"))
+        @test any(isnan, msw.params)
+        k2 = k_order(msw; order=2)
+        fo = first_order(msw)
+        @test k2["order_var"] == fo.order_var
+        @test isapprox(k2["ghx"], JDyn.ghx(fo); atol=1e-9) && isapprox(k2["ghu"], JDyn.ghu(fo); atol=1e-9)
+        @test maximum(abs, k2["ghxx"]) == 0.0           # sw_big is linear
+    end
 end
 
 # ====================================================================== new findings (load API)
@@ -194,7 +221,11 @@ end
     m = build(RBC * "stoch_simul(order=1, irf=0, hp_filter=1600);\nstoch_simul(order=1, irf=3) c;\n")
     mo = stoch_simul_moments(m)
     # Dynare 7.2 (Octave): the second stoch_simul keeps options_.hp_filter = 1600; oo_.var = 0.00347420017853539
-    @test_broken isapprox(mo.var[1, 1], 0.00347420017853539; rtol=1e-6)    # JDyn: 0.007660 (unfiltered)
+    @test isapprox(mo.var[1, 1], 0.00347420017853539; rtol=1e-6)    # JDyn: 0.007660 (unfiltered)
+    # the options of the earlier statement (nomoments) persist too, and the results are those of the last statement
+    m2 = build(RBC * "stoch_simul(order=1, irf=0, nocorr);\nstoch_simul(order=1, irf=3) k;\n")
+    @test JDyn.stoch_options(m2)["nocorr"] == true && JDyn.stoch_options(m2)["irf"] == 3
+    @test mo.var_names == ["c"]
 end
 
 @testset "R24 homotopy_setup(from_initval_to_endval) ignored: steady state at the initval exogenous value" begin
@@ -203,7 +234,7 @@ end
         m = load_copy(f; extra=[joinpath(dirname(f), "common.mod")])
         ys, _ = steady_state(m)
         # Dynare 7.2 (Octave): oo_.steady_state = [6.12244879311, 51.0204019802, 2], exo_steady_state = 2
-        @test_broken isapprox(ys[1:2], [6.12244879311, 51.0204019802]; rtol=1e-6)   # JDyn: [1.5306, 12.755] (x = 1)
+        @test isapprox(ys[1:2], [6.12244879311, 51.0204019802]; rtol=1e-6)   # JDyn: [1.5306, 12.755] (x = 1)
     end
 end
 
@@ -219,7 +250,50 @@ end
     m = build(base * "calib_smoother(datafile=dat1);\n"; files=Dict("dat1.m" => DAT1))
     # Dynare 7.2: DsgeSmoother error 'F is singular in stationary period' (use_univariate_smoother_if_singularity_is_detected is false)
     r = try; quietly(() -> smooth(m)); catch e; e; end
-    @test_broken r isa Exception
+    @test r isa JDyn.SmootherError
+end
+
+@testset "R25 estimate: initial check refuses a stochastically singular model (Dynare initial_estimation_checks)" begin
+    m = build("""
+        var y x w; varexo e u; parameters rho;
+        rho = 0.9;
+        model; y = rho*y(-1) + e; x = 0.5*x(-1) + u; w = y + 1e-7*x; end;
+        shocks; var e = 1; var u = 0.25; end;
+        steady;
+        varobs y w;
+        estimated_params; rho, 0.8; stderr e, 0.9; end;
+        estimation(datafile=dat1, mode_compute=0);
+        """; files=Dict("dat1.m" => DAT1))
+    r = try; quietly(() -> estimate(m)); catch e; e; end
+    @test r isa JDyn.EstimationError
+    @test occursin("singular", r.msg)
+end
+
+@testset "R01 steady state with var(log) auxiliaries and default (zero) initial values (coordinator case)" begin
+    f = joinpath(DYNARE_SRC, "tests", "log_transform", "ramst.mod")
+    if isfile(f)
+        m = load_copy(f)
+        ys, _ = steady_state(m)
+        @test maximum(abs, JDyn.static_resid(m, ys, JDyn.exo_steady(m), m.params)) < 1e-8
+        @test ys[3:4] ≈ log.(ys[1:2])
+    end
+    f = joinpath(DYNARE_SRC, "tests", "deterministic_simulations", "homotopy_linearization_condpaths.mod")
+    if isfile(f)
+        # initval gives no values: Dynare's solve_randomize_initial_guess (on by default) finds a finite starting point
+        m = load_copy(f; extra=[joinpath(dirname(f), "homotopy_linearization.inc")])
+        ys, _ = steady_state(m)
+        @test isapprox(ys[1:2], [2.020491801834886, 17.98359420006648]; rtol=1e-8)
+    end
+end
+
+@testset "R01 over-determined static Jacobian: Dynare's solver refuses (the load API warns and falls back)" begin
+    f(y) = [y[1] - 1, 2 * y[1] - 2, y[2] + y[3] - 1]
+    jc(y) = [1.0 0 0; 2 0 0; 0 1 1]
+    _, ok, _, _, why = JDyn._dynare_solve(f, jc, [2.0, 0, 0]; tolf=1e-6, tolx=1e-10, maxit=50)
+    @test !ok && why == :singular
+    # a block whose equations already hold is skipped, so the unknowns that only it contains stay put
+    _, ok2, rows, cols, _ = JDyn._dynare_solve(f, jc, [1.0, 0, 0]; tolf=1e-6, tolx=1e-10, maxit=50)
+    @test ok2 && 1 ∉ cols
 end
 
 @testset "R25 checked clean: diffuse smoother and likelihood with missing data on a unit-root model" begin

@@ -12,7 +12,7 @@ criterion where Dynare's and JDyn's QZ round differently). The higher-order test
 |---|---|---|
 | Calibration of `.mod` files with MATLAB code | the 157 files of Dynare's test suite in pydyn's corpus: `M_.params`, `M_.Sigma_e` (and `oo_.steady_state` for 67 of them) | 157 identical, 0 different, 0 refused (rtol 1e-10) |
 | MATLAB semantics | 82 cases of pydyn plus 376 new ones against Octave (122 from the second review: logical class, shapes, empty arrays, deletion, `any`/`all`/`unique` with NaN, `scalar^matrix`, `sprintf` of char data) | all match or are refused (60 of the 376 refused) |
-| Steady state | analytical blocks, `_steadystate.m` files (interpreted), helper functions, numerical solve | exact; 1.6e-6 on collard, where Dynare stops its solver early (JDyn's residual 1.8e-15) |
+| Steady state | analytical blocks, `_steadystate.m` files (interpreted), helper functions, numerical solve (Dynare's `solve_algo=4`: Dulmage-Mendelsohn blocks and trust region; variables of identically satisfied equations stay at `initval`) | exact; 1.6e-6 on collard, where Dynare stops its solver early (JDyn's residual 1.8e-15) |
 | First-order decision rules | collard, rbc_occbin, schorfheide (ghx, ghu, order_var) | 8e-15 |
 | IRFs, parameter loops | schorfheide IRFs; 6 parameter sets in one load; nk_baseline with Julia or `.m` steady state | 5e-16 (IRFs), 4e-14 (rules), 3e-9 (nk_baseline) |
 | Shipped examples (first order) | gali_2015, schorfheide_2000, bkk_1992, rbc_occbin, aguiar_gopinath_2007_trend, nk_baseline, collard_* | 1e-14 to 4e-10 |
@@ -157,6 +157,14 @@ maximum_lag + periods + maximum_lead) and `exo_simul` (rows x n_exo) have Dynare
 - `.mod` files: MATLAB code that could change the model and cannot be followed makes loading fail; code
   that cannot change it is skipped with one warning (`model.matlab_skipped` lists it).
 - Options the code does not act on produce a warning (once per model), never a silent change.
+- Options persist from one statement to the next as in Dynare's `options_`: `stoch_simul(hp_filter=1600)` followed by
+  `stoch_simul(irf=3)` keeps the filter (the preprocessor writes an explicit `order` for each `stoch_simul`).
+- `set_shock_stderr!` changes the variance only (covariances stay, as Dynare's `set_shock_stderr_value`); `set_params!` is
+  all-or-nothing; `load(file; extra_args=["-DA=1"])` passes options to the preprocessor.
+- `homotopy_setup(from_initval_to_endval)` with `steady(homotopy_mode=...)` gives the steady state at the `endval` exogenous
+  values (solved directly, not stepped). The smoother and `estimate` refuse a stochastically singular model as Dynare does
+  (set `use_univariate_smoother_if_singularity_is_detected` for the smoother).
+- A parameter that no equation uses may stay unset (NaN): `k_order` accepts it; `irf_figures` warns when the file asks for order > 1.
 - The 7.2 preprocessor refuses `use_dll` with Julia output: JDyn drops that option (it only concerns
   MATLAB compilation) and preprocesses again.
 - The 7.2 preprocessor's Julia output writes `normcdf(mu, sigma, x)` (reversed argument order) and

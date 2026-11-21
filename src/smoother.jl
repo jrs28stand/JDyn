@@ -32,7 +32,10 @@ const _SM_DEFAULTS = Dict{String,Any}("datafile" => nothing, "first_obs" => 1, "
     "kalman_algo" => 0, "kalman_tol" => 1e-10, "diffuse_kalman_tol" => 1e-6, "qz_criterium" => nothing,
     "filtered_vars" => false, "filter_step_ahead" => nothing, "filter_covariance" => false,
     "smoothed_state_uncertainty" => false, "parameter_set" => "calibration", "varobs" => nothing,
-    "replicate_dynare_bugs" => false, "Harvey_scale_factor" => 10.0)
+    "replicate_dynare_bugs" => false, "Harvey_scale_factor" => 10.0,
+    "use_univariate_smoother_if_singularity_is_detected" => false, "noprint" => false)
+"Set by `_smoother_multivariate` when it stops because F is singular in a stationary period (Dynare's error flag 422)."
+const _SINGULAR_F = Ref(false)
 const PARAMETER_SETS = ("calibration", "posterior_mode", "posterior_mean", "posterior_median", "mle_mode", "prior_mode", "prior_mean")
 # options of the estimation statement that concern the optimiser, the sampler or its output, not the smoother
 const _ESTIMATION_ONLY = Set(["mode_compute", "mode_file", "mode_check", "mode_check.status", "mh_replic", "mh_nblck", "mh_nblocks",
@@ -309,11 +312,11 @@ function _smoother_multivariate(T, Z, R, Q, H, Pinf1, Pstar1, Y, di, nk, kalman_
             v[d_, t] = vt
             F = ZZ * P[:, :, t] * ZZ' + H[d_, d_]
             dF = diag(F)
-            any(<(kalman_tol), dF) && return nothing                              # error 422
+            any(<(kalman_tol), dF) && (_SINGULAR_F[] = true; return nothing)      # error 422
             sig = sqrt.(dF)
             ss = sig * sig'
             iFs, rc = _inv_rcond(F ./ ss)
-            rc < kalman_tol && return nothing
+            rc < kalman_tol && (_SINGULAR_F[] = true; return nothing)             # error 422
             iFt = iFs ./ ss
             iFv[t] = iFt
             PZI = P[:, :, t] * ZZ' * iFt
@@ -919,8 +922,17 @@ function smooth(m::Model, data=nothing; sol=nothing, estimation=nothing, theta=n
 
     out = nothing
     if algo in (1, 3)
+        _SINGULAR_F[] = false
         out = _smoother_multivariate(G, Z, Hs, Q, Hme, Pinf, Pstar, Yd, di, nk, ktol, dtol, want_V, want_PK, compat, a_pred, a_zero)
-        out === nothing && (algo += 1)             # Dynare: switch to the univariate filter
+        if out === nothing
+            # DsgeSmoother.m: stochastic singularity in a stationary period is an error (print_info) unless
+            # use_univariate_smoother_if_singularity_is_detected is set (or noprint)
+            if _SINGULAR_F[] && !_flag(_unwrap1(opts["use_univariate_smoother_if_singularity_is_detected"])) && !_flag(_unwrap1(opts["noprint"]))
+                throw(SmootherError("Kalman filter: F is singular in stationary period. Stochastic singularity detected. " *
+                                    "(set use_univariate_smoother_if_singularity_is_detected to switch to the univariate smoother)"))
+            end
+            algo += 1                              # Dynare: switch to the univariate filter
+        end
     end
     if out === nothing
         if !Hdiagonal && !expanded

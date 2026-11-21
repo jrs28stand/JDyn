@@ -333,9 +333,14 @@ function Model(json_dir::AbstractString; functions=Dict{String,Any}(), steady_st
     (info["maximum_endo_lag"] > 1 || info["maximum_endo_lead"] > 1) &&
         throw(ModelError("expected the preprocessor to reduce the model to one lead/lag"))
     # external functions in the model block are not supported (the generated code would call them)
-    dynj = joinpath(json_dir, "dynamic.json")
-    if isfile(dynj) && occursin("external_functions_temporary_terms\":[{", replace(read(dynj, String), " " => ""))
-        throw(ModelError("external functions in the model block are not supported"))
+    for fj in ("dynamic.json", "static.json")
+        p = joinpath(json_dir, fj)
+        if isfile(p)
+            txt = replace(read(p, String), " " => "")
+            (occursin("external_functions_temporary_terms\":[{", txt) || occursin("\"external_function_term\"", txt) ||
+             occursin("\"external_function\":", txt)) &&
+                throw(ModelError("external functions in the model block are not supported"))
+        end
     end
     ssm = nothing
     ssm_path = joinpath(json_dir, "steady_state_model.json")
@@ -349,7 +354,13 @@ function Model(json_dir::AbstractString; functions=Dict{String,Any}(), steady_st
         used = Set(m.match for m in eachmatch(r"[A-Za-z_]\w*", read(ssm_path, String)))
         mfuns = helper_functions(mod_dir, used, union(Set(keys(fnames)), Set(keys(BUILTINS))))
     end
-    fns = load_model_functions(json_dir, raw; helpers=fnames)
+    fns = try
+        load_model_functions(json_dir, raw; helpers=fnames)
+    catch e
+        e isa LoadError || rethrow()
+        throw(ModelError("the preprocessor's Julia code for the model could not be loaded (a construct the Julia output does not support, such as external functions): " *
+                         first(sprint(showerror, e.error), 200)))
+    end
     ssfile = joinpath(mod_dir, name * "_steadystate.m")
     m = Model(json_dir, mod_dir, name, raw, endo, exo, par,
               Dict(v => i for (i, v) in enumerate(endo)), Dict(v => i for (i, v) in enumerate(exo)),
@@ -368,10 +379,11 @@ end
 """
     load(modfile; kwargs...) -> Model
 
-Run the preprocessor on `modfile` and load the model (`Model(run_preprocessor(modfile))`).
+Run the preprocessor on `modfile` and load the model (`Model(run_preprocessor(modfile))`). `extra_args` are
+command-line options of the preprocessor (e.g. `["-DA=3"]` macro definitions, `"-I path"`), as in `dynare file -DA=3`.
 """
-function load(modfile::AbstractString; preprocessor=nothing, output=nothing, kwargs...)
-    Model(run_preprocessor(modfile; preprocessor=preprocessor, output=output); kwargs...)
+function load(modfile::AbstractString; preprocessor=nothing, output=nothing, extra_args=String[], kwargs...)
+    Model(run_preprocessor(modfile; preprocessor=preprocessor, output=output, extra_args=String.(extra_args)); kwargs...)
 end
 
 "Read modfile.json, repairing the invalid JSON the 7.2 preprocessor writes for a few statements."
@@ -401,14 +413,22 @@ param_dict(m::Model) = Dict(zip(m.param_names, m.params))
 get_param(m::Model, name::AbstractString) = m.params[m.ip[name]]
 "Counterpart of Dynare's `set_param_value`; takes effect at the next solve."
 set_param!(m::Model, name::AbstractString, value::Real) = (m.params[m.ip[name]] = Float64(value); m)
+"All-or-nothing: every name is checked before any parameter is changed."
 function set_params!(m::Model, values=Dict(); kw...)
-    for (k, v) in values; set_param!(m, String(k), v); end
-    for (k, v) in kw; set_param!(m, String(k), v); end
+    pairs = Tuple{String,Float64}[(String(k), Float64(v)) for (k, v) in Iterators.flatten((values, kw))]
+    for (k, _) in pairs
+        haskey(m.ip, k) || throw(ModelError("set_params!: $k is not a parameter of the model"))
+    end
+    for (k, v) in pairs; m.params[m.ip[k]] = v; end
     m
 end
+"""
+Counterpart of Dynare's `set_shock_stderr_value`: sets the diagonal element `Sigma_e(i,i) = value^2` only. As in
+Dynare, covariances given earlier (`corr`/`covariance` in a `shocks` block) are kept, so the implied correlation changes.
+"""
 function set_shock_stderr!(m::Model, name::AbstractString, value::Real)
+    haskey(m.ix, name) || throw(ModelError("set_shock_stderr!: $name is not an exogenous variable of the model"))
     i = m.ix[name]
-    m.Sigma_e[i, :] .= 0.0; m.Sigma_e[:, i] .= 0.0
     m.Sigma_e[i, i] = Float64(value)^2
     m
 end
@@ -586,6 +606,11 @@ const _STORED_KINDS = Set(["stoch_simul", "estimation", "occbin_solver", "estima
 const _LATEX_KINDS = Set(["write_latex_dynamic_model", "write_latex_static_model", "write_latex_original_model",
     "write_latex_steady_state_model", "collect_latex_files", "write_latex_definitions"])
 
+# commands whose options live in Dynare's shared `options_`
+const _ACCUMULATED_KINDS = Set(["stoch_simul", "estimation", "calib_smoother"])
+"`options_` of the solution commands: the options of all their statements, in file order (key \"options_\" of `m.options`)."
+_accumulate_options!(m::Model, o) = (m.options["options_"] = merge(get(m.options, "options_", Dict{String,Any}()), o))
+
 "One Dynare statement of the .mod file."
 function _exec_statement!(m::Model, st)
     kind = st["statementName"]
@@ -619,16 +644,32 @@ function _exec_statement!(m::Model, st)
         _shocks!(m, st)
     elseif kind == "occbin_constraints"
         m.occbin_constraints = collect(Any, st["constraints"])
-    elseif kind == "homotopy" && !isempty(get_or(st, "values", [])) &&
-           all(d -> haskey(m.ip, d["name"]) || haskey(m.ix, d["name"]), st["values"])
+    elseif kind == "homotopy" && isempty(get_or(st, "values", []))
+        # homotopy_setup(from_initval_to_endval): the exogenous variables move from their initval to their endval
+        # values (Dynare's steady.m adds one row per exogenous variable not listed explicitly)
+        m.options["homotopy_from_initval_to_endval"] = true
+    elseif kind == "homotopy" && all(d -> haskey(m.ip, d["name"]) || haskey(m.ix, d["name"]), st["values"])
         m.homotopy = st["values"]
+        delete!(m.options, "homotopy_from_initval_to_endval")
     elseif kind in ("occbin_setup", "occbin_solver")
         # Dynare applies every occbin_setup / occbin_solver statement to options_.occbin in order: merge them
         o = get_or(st, "options", Dict{String,Any}())
         m.options[kind] = merge(get(m.options, kind, Dict{String,Any}()), o)
         m.options["occbin_options"] = merge(get(m.options, "occbin_options", Dict{String,Any}()), o)
     elseif kind in ("steady", "check", "occbin_graph", "rplot")
-        haskey(m.options, kind) || (m.options[kind] = get_or(st, "options", Dict{String,Any}()))
+        # Dynare's options_ persists from one statement to the next: later statements add to (and override) earlier ones
+        o = get_or(st, "options", Dict{String,Any}())
+        m.options[kind] = merge(get(m.options, kind, Dict{String,Any}()), o)
+        kind == "check" && _accumulate_options!(m, o)
+        if kind == "steady" && get(get_or(st, "options", Dict()), "homotopy_mode", 0) != 0 && get(m.options, "homotopy_from_initval_to_endval", false) == true
+            isempty(m.endval) && throw(ModelError("homotopy_setup: the from_initval_to_endval option cannot be used without an endval block"))
+            # exogenous variables explicitly listed in the homotopy_setup block keep the user's values (handled below)
+            listed = m.homotopy === nothing ? Set{String}() : Set(String(d["name"]) for d in m.homotopy if haskey(m.ix, d["name"]))
+            for (nm, v) in m.endval
+                (haskey(m.ix, nm) && !(nm in listed)) || continue
+                m.initval[nm] = v; m.oo[nm] = v
+            end
+        end
         if kind == "steady" && get(get_or(st, "options", Dict()), "homotopy_mode", nothing) !== nothing && m.homotopy !== nothing
             # Dynare's steady moves these parameters and exogenous variables to their final values
             for d in m.homotopy
@@ -641,7 +682,17 @@ function _exec_statement!(m::Model, st)
             end
         end
     elseif kind in _STORED_KINDS
-        m.options[kind] = kind == "estimated_params" ? st : get_or(st, "options", Dict{String,Any}())
+        if kind == "estimated_params"
+            m.options[kind] = st
+        elseif kind in _ACCUMULATED_KINDS
+            # options_ persists: an option given to an earlier stoch_simul (hp_filter, nomoments, ...) still applies to
+            # the later ones (the preprocessor writes an explicit `order` for every stoch_simul, which resets it)
+            o = get_or(st, "options", Dict{String,Any}())
+            m.options[kind] = merge(get(m.options, kind, Dict{String,Any}()), o)
+            _accumulate_options!(m, o)
+        else
+            m.options[kind] = get_or(st, "options", Dict{String,Any}())
+        end
     elseif kind in ("native", "verbatim") || kind in _LATEX_KINDS
         # native lines are run by the MATLAB session
     else
@@ -689,6 +740,10 @@ function _shocks!(m::Model, st)
     end
 end
 _numval(x::Real) = x
-_numval(x::AbstractString) = parse(Float64, x)
+function _numval(x::AbstractString)
+    v = tryparse(Float64, x)
+    v === nothing && throw(ModelError("shock period $(repr(x)) is not a number (dates are not supported in `shocks` blocks of the load API)"))
+    v
+end
 
 warn_once(m::Model, msg::AbstractString) = (msg in m.warned) || (push!(m.warned, msg); @warn msg)
