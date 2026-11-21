@@ -27,11 +27,12 @@ include("matlab/session.jl")
 include("steady.jl")
 include("perturbation.jl")
 include("simulate.jl")
+include("korder.jl")
 include("moments.jl")
 include("plotting.jl")
 
 export run_preprocessor, load, Model, ModelError, steady_state, SteadyStateError, first_order, FirstOrderSolution,
        BlanchardKahnError, ghx, ghu, irf, simulate, set_param!, set_params!, get_param, set_shock_stderr!,
-       stoch_simul_moments, theoretical_moments, plot_irfs, irf_figures, irf_table, write_csv, pltorg, IRFResult, IRFFigure
+       stoch_simul_moments, theoretical_moments, k_order, KOrderError, korder_library, plot_irfs, irf_figures, irf_table, write_csv, pltorg, IRFResult, IRFFigure
 
 end
