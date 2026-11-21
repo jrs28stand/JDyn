@@ -121,9 +121,6 @@ bi!("eye") do I, a, nout
     r, c = _dims(a)
     ret(Matrix{Float64}(LinearAlgebra.I, r, c))
 end
-bi!("rand", "randn", "randi", "randperm", "normrnd", "unifrnd", "mvnrnd", "gamrnd", "betarnd") do I, a, nout
-    throw(Unsupported("random numbers are not reproduced by JDyn", "random"))
-end
 # set_dynare_seed(n | 'default' | 'clock' | 'reset' | algo, n): seeds the model's own stream (src/seeds.jl)
 bi!("set_dynare_seed") do I, a, nout
     nout > 0 && merr("set_dynare_seed: too many output arguments")
@@ -926,25 +923,32 @@ function _noop(I, argnodes, sc, nout)
     Any[]
 end
 lazy!(_noop, "disp", "display", "fprintf", "printf", "fdisp", "dprintf", "skipline", "warning", "more", "beep", "fflush",
-      "rng", "tic", "format", "clc", "diary", "echo", "commandwindow", "dbstop", "profile",
+      "rng", "format", "clc", "diary", "echo", "commandwindow", "dbstop", "profile",
       "close", "hold", "drawnow", "pause", "fclose", "print_info")
 
 const PLOT_FUNCS = split("figure plot subplot title legend xlabel ylabel zlabel axis print saveas line bar histogram hist grid box " *
     "plot3 surf mesh colorbar suptitle sgtitle xlim ylim annotation text orient hgsave savefig fill area " *
     "scatter stairs semilogy semilogx loglog clf set get gca gcf colormap shading dyn_saveas dyn_figure " *
     "errorbar patch contour quiver fplot ezplot rplot")
-_plot(I, argnodes, sc, nout) = throw(Unsupported("plotting", "plot"))
+function _plot(I, argnodes, sc, nout)
+    ALLOW_RANDOM[] || throw(Unsupported("plotting", "plot"))
+    # run by dynare() (as with the `nograph` option): drawing is skipped, the arguments are still evaluated
+    for a in argnodes
+        (a isa Str || a isa Num || a isa ColonAll) || ev_multi(I, a, sc, 1)
+    end
+    nout > 0 ? Any[1.0] : Any[]
+end
 lazy!(_plot, PLOT_FUNCS...)
 
-const FILE_FUNCS = split("save fopen fread fwrite fgetl fgets fscanf textscan importdata xlsread xlswrite csvread csvwrite " *
-    "dlmread dlmwrite readtable writetable readmatrix writematrix delete copyfile movefile mkdir rmdir " *
-    "addpath rmpath cd pwd dir ls system unix dos isfile isfolder isdir fileparts fullfile exist_file " *
-    "datatomfile matfile which websave urlread unzip zip tempdir tempname getenv setenv " *
+const FILE_FUNCS = split("fopen fread fwrite fgetl fgets fscanf textscan importdata xlsread xlswrite csvread csvwrite " *
+    "dlmread dlmwrite readtable writetable readmatrix writematrix delete copyfile movefile rmdir " *
+    "addpath rmpath cd dir ls system unix dos exist_file " *
+    "datatomfile matfile which websave urlread unzip zip tempdir tempname setenv " *
     "open winopen edit type input keyboard dbstack mfilename genpath path userpath")
 _file(I, argnodes, sc, nout) = throw(Unsupported("file-system, shell or interactive functions are not available", "file"))
 lazy!(_file, FILE_FUNCS...)
 
-bi!("toc", "clock", "now", "date", "datestr", "cputime", "etime", "datetime", "version", "ver", "computer",
+bi!("clock", "now", "date", "datestr", "etime", "datetime", "version", "ver", "computer",
     "ispc", "isunix", "ismac", "matlab_ver_less_than", "octave_ver_less_than", "user_has_matlab_license",
     "user_has_octave_package", "matlabroot", "OCTAVE_VERSION", "dynare_version", "feature", "gcp", "maxNumCompThreads") do I, a, nout
     nout == 0 && return Any[]
@@ -957,7 +961,7 @@ BUILTINS["isoctave"] = (I, a, nout) -> ISOCTAVE[]
 
 bi!("error") do I, a, nout
     isempty(a) && merr("error")
-    a[1] isa MStruct && throw(MatlabError(string(get(a[1], "message", "error")), string(get(a[1], "identifier", ""))))
+    a[1] isa MStruct && throw(MatlabError(string(get(a[1], "message", "error")), string(get(a[1], "identifier", "")), true))
     fmt = a[1] isa AbstractString ? a[1] : "error"
     rest = a[2:end]
     id = ""
@@ -971,18 +975,18 @@ bi!("error") do I, a, nout
     catch
         fmt
     end
-    throw(MatlabError(msg, id))
+    throw(MatlabError(msg, id, true))
 end
 bi!("rethrow") do I, a, nout
     _nargs(a, 1, 1, "rethrow")
     e = a[1]
     e isa MStruct || merr("rethrow: the argument must be an error struct")
-    throw(MatlabError(string(get(e, "message", "")), string(get(e, "identifier", ""))))
+    throw(MatlabError(string(get(e, "message", "")), string(get(e, "identifier", "")), true))
 end
 bi!("assert") do I, a, nout
     isempty(a) && merr("assert: argument missing")
     (length(a) >= 2 && !(a[2] isa AbstractString)) && _unsup("assert(observed, expected, tol) form")
-    truth(a[1]) || merr(length(a) > 1 ? _sprintf(a[2], a[3:end]) : "Assertion failed.")
+    truth(a[1]) || throw(MatlabError(length(a) > 1 ? _sprintf(a[2], a[3:end]) : "assert (cond) failed", "", true))
     Any[]
 end
 bi!("exist") do I, a, nout

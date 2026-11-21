@@ -268,8 +268,51 @@ function index_args(I::Interp, v, argnodes, sc)
     end
     out
 end
+"Names of a chain `a.b.c` of field accesses over an identifier, or nothing."
+function _pkg_chain(n)
+    names = String[]
+    while n isa FieldE
+        n.name === nothing && return nothing
+        pushfirst!(names, n.name); n = n.base
+    end
+    n isa Id || return nothing
+    pushfirst!(names, n.name)
+end
+
+"The unit of the package function `+a/+b/c.m` (in the model directory) that the chain `a.b.c` names, or nothing."
+function pkg_unit(I::Interp, sc, chain)
+    (chain === nothing || I.dir === nothing || getvar(I, sc, chain[1]) !== MISSING_) && return nothing
+    key = "+" * join(chain, ".")
+    haskey(I.units, key) && return I.units[key]
+    p = joinpath(I.dir, ["+" * c for c in chain[1:end-1]]..., chain[end] * ".m")
+    u = nothing
+    if isfile(p)
+        try
+            body, funcs = mparse(read(p, String))
+            u = Unit(p, body, funcs)
+        catch exc
+            exc isa ParseError || rethrow()
+            throw(Unsupported("$(join(chain, ".")) cannot be parsed: $(exc.msg)", "syntax"))
+        end
+    end
+    I.units[key] = u
+end
+function pkg_call(I::Interp, u::Unit, argnodes, nargout, sc)
+    is_script(u) && merr("$(u.path) is a script, not a package function")
+    args = Any[a isa ColonAll ? ":" : ev(I, a, sc) for a in argnodes]
+    call_user(I, u.main, u.funcs, args, nargout)
+end
+
 function ev(I::Interp, n::IndexE, sc)
     base = n.base
+    if base isa FieldE && !n.brace
+        u = pkg_unit(I, sc, _pkg_chain(base))
+        if u !== nothing
+            r = pkg_call(I, u, n.args, 1, sc)
+            isempty(r) && merr("'$(base.name)' returns no value")
+            return r[1]
+        end
+    end
     if base isa Id
         v = getvar(I, sc, base.name)
         if v === MISSING_
@@ -326,6 +369,10 @@ function ev_multi(I::Interp, n, sc, nargout)
         base = n.base
         if base isa Id && getvar(I, sc, base.name) === MISSING_
             return call_node(I, base.name, n.args, nargout, sc)
+        end
+        if base isa FieldE
+            u = pkg_unit(I, sc, _pkg_chain(base))
+            u !== nothing && return pkg_call(I, u, n.args, nargout, sc)
         end
         if !(base isa Id) || getvar(I, sc, base.name) isa Handle
             v = ev(I, base, sc)
@@ -663,6 +710,15 @@ function command(I::Interp, s, sc)
         return nothing
     end
     name == "load" && return load_file(I, collect(String, args), sc)
+    if name == "save"
+        push!(I.scope_stack, sc)
+        try
+            BUILTINS["save"](I, Any[String(strip(a, ['\'', '"'])) for a in args], 0)
+            return nothing
+        finally
+            pop!(I.scope_stack)
+        end
+    end
     if name == "run"
         push!(I.scope_stack, sc)
         try
@@ -756,6 +812,9 @@ bi!("clear", "clearvars") do I, a, nout
     r === nothing ? Any[] : r
 end
 bi!("load") do I, a, nout
+    if nout > 0 && !isempty(a) && all(x -> x isa AbstractString, a)
+        return _load_to_struct(I, a)
+    end
     (nout > 0 || isempty(a) || !all(x -> x isa AbstractString, a)) && throw(Unsupported("load with an output or computed arguments", "file"))
     r = load_file(I, collect(String, a), I.scope_stack[end])
     r === nothing ? Any[] : r

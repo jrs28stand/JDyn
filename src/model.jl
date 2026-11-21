@@ -3,7 +3,9 @@
 
 struct ModelError <: Exception
     msg::String
+    cause::Any          # the exception (e.g. a MatlabError raised by the file's own error()) this wraps, or nothing
 end
+ModelError(msg::AbstractString) = ModelError(String(msg), nothing)
 Base.showerror(io::IO, e::ModelError) = print(io, "ModelError: ", e.msg)
 
 "Locate the Dynare 7.2 preprocessor: explicit path, \$DYNARE_PREPROCESSOR, or `dynare-preprocessor` on the PATH."
@@ -645,6 +647,8 @@ function _exec_statement!(m::Model, st)
                 push!(m.session.oo_written, d["name"])
             end
         end
+    elseif kind in ("ramsey_model", "ramsey_policy")
+        throw(ModelError("$kind (optimal policy) is not supported by JDyn: the Ramsey problem's steady state and policy rule are not computed"))
     elseif kind == "shocks" && get(st, "surprise", false) == true
         m.n_surprise += 1
         push!(get!(m.options, "shock_paths", Any[]), st)

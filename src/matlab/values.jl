@@ -7,8 +7,10 @@
 struct MatlabError <: Exception
     msg::String
     id::String          # the identifier of error('pkg:id', ...), else ""
+    user::Bool          # raised by the program's own error()/assert() (not by the interpreter's runtime checks)
 end
-MatlabError(msg::AbstractString) = MatlabError(String(msg), "")
+MatlabError(msg::AbstractString, id::AbstractString) = MatlabError(String(msg), String(id), false)
+MatlabError(msg::AbstractString) = MatlabError(String(msg), "", false)
 Base.showerror(io::IO, e::MatlabError) = print(io, "MatlabError: ", e.msg)
 
 "The interpreter cannot evaluate this code; `kind` classifies the reason."

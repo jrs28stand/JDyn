@@ -764,6 +764,53 @@ if section("review")
     @test run_m("r = strrep('aéa', 'é', 'x');")["r"] == "axa"
 end
 
+@testset "built-ins added for the Dynare test suite (values checked against Octave 8.4)" begin
+    @test run_m("r = cell2mat({1 2; 3 4});")["r"] == [1.0 2.0; 3.0 4.0]
+    @test run_m("r = cell2mat({[1 2], 3; [4 5], 6});")["r"] == [1.0 2.0 3.0; 4.0 5.0 6.0]
+    @test run_m("r = cell2mat({'ab','cd'});")["r"] == "abcd"
+    @test_throws MatlabError run_m("r = cell2mat({1, 'a'});")
+    @test run_m("s.a = 1; s.b = 'x'; z = struct2cell(s); r = size(z); q = z{2};")["r"] == [2.0 1.0]
+    @test run_m("s.a = 1; s.b = [2 3; 4 5]; r = struct2array(s)';")["r"] == [1.0 2.0 4.0 3.0 5.0]
+    @test run_m("r = num2cell([1 2; 3 4]); q = r{2,1};")["q"] == 3.0
+    @test run_m("r = class(cellstr('abc  '));")["r"] == "cell"
+    @test run_m("r = isequaln([1 NaN], [1 NaN]);")["r"] === true
+    @test run_m("r = isequaln([1 NaN], [1 2]);")["r"] === false
+    @test run_m("r = union([3 1 2], [2 5]);")["r"] == [1.0 2.0 3.0 5.0]
+    @test size(run_m("r = union([3;1], [2;5]);")["r"]) == (4, 1)
+    w = run_m("[c, ia, ib] = intersect([5 1 3 3], [3 5 7]);")
+    @test w["c"] == [3.0 5.0] && vec(w["ia"]) == [3.0, 1.0] && vec(w["ib"]) == [1.0, 2.0]
+    w = run_m("[d, ia] = setdiff([5 1 3 3 9], 3);")
+    @test w["d"] == [1.0 5.0 9.0] && vec(w["ia"]) == [2.0, 1.0, 5.0]
+    @test size(run_m("r = setdiff([5;1;3], 3);")["r"]) == (2, 1)
+    @test run_m("r = setdiff({'z','b','a'}, {'b'});")["r"].items == Any["a", "z"]
+    @test size(run_m("r = intersect([1 2], [3 4]);")["r"]) == (1, 0)
+    @test_throws Unsupported run_m("r = union([1 2], [3; 4]);")        # MATLAB and Octave disagree
+    @test run_m("t = tic; r = toc(t) >= 0;")["r"] === true
+    # varlist_indices (Dynare's matlab/varlist_indices.m)
+    @test run_m("r = varlist_indices('b', {'a';'b';'c'});")["r"] == 2.0
+    @test run_m("r = varlist_indices({'c','a'}, {'a';'b';'c'});")["r"] == [3.0 1.0]
+    @test_throws MatlabError run_m("r = varlist_indices({'z'}, {'a';'b'});")
+    @test run_m("[r, n] = varlist_indices({'z','a'}, {'a';'b'}, 1);")["n"] == 1.0
+    # random numbers: refused by the loader, available (dimensions as MATLAB) when ALLOW_RANDOM is set
+    @test_throws Unsupported run_m("r = randn(2);")
+    JDyn.ALLOW_RANDOM[] = true
+    try
+        @test size(run_m("r = rand(2,3);")["r"]) == (2, 3)
+        @test size(run_m("r = randn(3);")["r"]) == (3, 3)
+        @test size(run_m("r = randn([3 2]);")["r"]) == (3, 2)
+        @test run_m("r = randi([3 5], 1, 50); q = all(r >= 3 & r <= 5);")["q"] === true
+        @test sort(vec(run_m("r = randperm(4);")["r"])) == [1.0, 2.0, 3.0, 4.0]
+        @test run_m("randn('state', 3); a = randn(); randn('state', 3); b = randn(); r = a == b;")["r"] === true
+    finally
+        JDyn.ALLOW_RANDOM[] = false
+    end
+    # error()/assert() are flagged as the file's own
+    e = try; run_m("error('mine');"); catch ex; ex; end
+    @test e isa MatlabError && e.user
+    e = try; run_m("x = [1 2](5);"); catch ex; ex; end
+    @test e isa MatlabError && !e.user
+end
+
 @testset "steady_state_model runs with MATLAB semantics in a bare module (REVIEW2 R22, R13)" begin
     function ssm(expr; a=2.5, extra="", files=Dict{String,String}())
         m = build("var y; varexo e; parameters a b; a = $a; b = 0;\nmodel; y = 0.5*y(-1) + e; end;\nsteady_state_model; y = $expr; end;\n" * extra;
