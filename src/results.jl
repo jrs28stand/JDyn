@@ -577,7 +577,12 @@ function dynare(modfile::AbstractString; output=nothing, shocks=Dict{Int,Any}(),
         wsref[] = ws
         st -> _run_in_place!(ws, st, nss, shocks, rng)
     end
-    m = load(modfile; output=output, on_command=factory, kw...)
+    allow0 = ALLOW_RANDOM[]; ALLOW_RANDOM[] = true         # as in MATLAB, the file's rand/randn calls draw numbers
+    m = try
+        load(modfile; output=output, on_command=factory, kw...)
+    finally
+        ALLOW_RANDOM[] = allow0
+    end
     ws = wsref[]
     m.session.host.oo.results = nothing             # the struct now belongs to the workspace alone
     _apply_matlab_options!(ws)

@@ -121,9 +121,6 @@ bi!("eye") do I, a, nout
     r, c = _dims(a)
     ret(Matrix{Float64}(LinearAlgebra.I, r, c))
 end
-bi!("rand", "randn", "randi", "randperm", "normrnd", "unifrnd", "mvnrnd", "gamrnd", "betarnd") do I, a, nout
-    throw(Unsupported("random numbers are not reproduced by JDyn", "random"))
-end
 bi!("i", "j", "complex", "imag", "angle") do I, a, nout
     _unsup("complex numbers")
 end
@@ -920,7 +917,7 @@ function _noop(I, argnodes, sc, nout)
     Any[]
 end
 lazy!(_noop, "disp", "display", "fprintf", "printf", "fdisp", "dprintf", "skipline", "warning", "more", "beep", "fflush",
-      "set_dynare_seed", "rng", "tic", "format", "clc", "diary", "echo", "commandwindow", "dbstop", "profile",
+      "set_dynare_seed", "rng", "format", "clc", "diary", "echo", "commandwindow", "dbstop", "profile",
       "close", "hold", "drawnow", "pause", "fclose", "print_info")
 
 const PLOT_FUNCS = split("figure plot subplot title legend xlabel ylabel zlabel axis print saveas line bar histogram hist grid box " *
@@ -938,7 +935,7 @@ const FILE_FUNCS = split("save fopen fread fwrite fgetl fgets fscanf textscan im
 _file(I, argnodes, sc, nout) = throw(Unsupported("file-system, shell or interactive functions are not available", "file"))
 lazy!(_file, FILE_FUNCS...)
 
-bi!("toc", "clock", "now", "date", "datestr", "cputime", "etime", "datetime", "version", "ver", "computer",
+bi!("clock", "now", "date", "datestr", "etime", "datetime", "version", "ver", "computer",
     "ispc", "isunix", "ismac", "matlab_ver_less_than", "octave_ver_less_than", "user_has_matlab_license",
     "user_has_octave_package", "matlabroot", "OCTAVE_VERSION", "dynare_version", "feature", "gcp", "maxNumCompThreads") do I, a, nout
     nout == 0 && return Any[]
@@ -951,7 +948,7 @@ BUILTINS["isoctave"] = (I, a, nout) -> ISOCTAVE[]
 
 bi!("error") do I, a, nout
     isempty(a) && merr("error")
-    a[1] isa MStruct && throw(MatlabError(string(get(a[1], "message", "error")), string(get(a[1], "identifier", ""))))
+    a[1] isa MStruct && throw(MatlabError(string(get(a[1], "message", "error")), string(get(a[1], "identifier", "")), true))
     fmt = a[1] isa AbstractString ? a[1] : "error"
     rest = a[2:end]
     id = ""
@@ -965,18 +962,18 @@ bi!("error") do I, a, nout
     catch
         fmt
     end
-    throw(MatlabError(msg, id))
+    throw(MatlabError(msg, id, true))
 end
 bi!("rethrow") do I, a, nout
     _nargs(a, 1, 1, "rethrow")
     e = a[1]
     e isa MStruct || merr("rethrow: the argument must be an error struct")
-    throw(MatlabError(string(get(e, "message", "")), string(get(e, "identifier", ""))))
+    throw(MatlabError(string(get(e, "message", "")), string(get(e, "identifier", "")), true))
 end
 bi!("assert") do I, a, nout
     isempty(a) && merr("assert: argument missing")
     (length(a) >= 2 && !(a[2] isa AbstractString)) && _unsup("assert(observed, expected, tol) form")
-    truth(a[1]) || merr(length(a) > 1 ? _sprintf(a[2], a[3:end]) : "Assertion failed.")
+    truth(a[1]) || throw(MatlabError(length(a) > 1 ? _sprintf(a[2], a[3:end]) : "assert (cond) failed", "", true))
     Any[]
 end
 bi!("exist") do I, a, nout

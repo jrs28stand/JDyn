@@ -22,6 +22,7 @@ import SpecialFunctions
 include("matlab/values.jl")
 include("matlab/parser.jl")
 include("matlab/builtins.jl")
+include("matlab/builtins_extra.jl")
 include("matlab/interp.jl")
 include("model.jl")
 include("matlab/session.jl")
