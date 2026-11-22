@@ -604,7 +604,8 @@ function dynare(modfile::AbstractString; output=nothing, shocks=Dict{Int,Any}(),
     ws.M_.endo_histval = h
     haskey(ws.state, :H) && (ws.M_.H = ws.state[:H])           # the measurement-error covariance estimation left (results_estimation.jl)
     _mark_synced!(ws)
-    try; save_results_mat(dirname(abspath(modfile)), splitext(basename(modfile))[1], ws.M_, ws.oo_, ws.options_); catch e; @debug "results.mat not written" e; end
+    # Dynare writes <fname>/Output/<fname>_results.mat; not while precompiling (the fixture lives in the package source)
+    _json_dir === nothing && (try; save_results_mat(dirname(abspath(modfile)), splitext(basename(modfile))[1], ws.M_, ws.oo_, ws.options_); catch e; @debug "results.mat not written" e; end)
     haskey(ws.oo_, "steady_state") || (ws.oo_.steady_state = _col(Float64[get(m.oo, v, 0.0) for v in m.endo_names]))
     haskey(ws.oo_, "exo_steady_state") || (ws.oo_.exo_steady_state = _col(exo_steady(m)))
     for (k, v) in m.session.sc.vars
