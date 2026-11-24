@@ -63,14 +63,17 @@ _vec(a::ObcAffine) = vcat(a.c, a.g)
 One constraint of the `occbin_constraints` block, as the post-processor sees it (docs/OBC_PROGRESS.md, contract
 section 3):
 
-- `name`, `param` (index of `occbin_<name>_bind`), `equations` (indices of the equations containing it) and
-  `eq_names` (their `name` tags);
+- `name`, `param` (index of `occbin_<name>_bind`), `equations` (indices of the equations whose linearisation at the
+  steady state changes with it: what a first-order method switches) and `eq_names` (their `name` tags);
+  `inert_equations`: equations that contain the parameter but whose linearisation does not change (switching them
+  does nothing at order 1);
 - `ref_resid`, `alt_resid`: for each such equation, its residual with the parameter at 0 (reference regime) and at 1
   (alternative regime), as `ObcAffine` functions at the reference steady state;
 - `s_g`, `s_y`: the signs that make `g = s_g * alt_resid` and `y = s_y * ref_resid` non-negative with `g * y = 0`
   (the `bind` condition is `g < 0`, leaving the alternative regime is `y < 0`); 0 when undetermined;
 - `entry`, `exit`: the fitted `(a, b)` with `d_b = a*alt_resid + b*ref_resid` and `(c, e)` with
-  `d_r = c*ref_resid + e*alt_resid`, and `fit_err` the relative residuals of the two fits;
+  `d_r = c*ref_resid + e*alt_resid`, and `fit_err` the relative residuals of the two fits; `approx` the larger of the
+  two when it is above `OBC_FIT_TOL` (an approximate complementarity constraint), 0 otherwise;
 - `g_ss`: the gap at the steady state; `class`: `:complementarity`, `:multi_equation`, `:shared_equation` or
   `:inconsistent`; `why`: the reason for the last three.
 """
@@ -79,6 +82,7 @@ struct ObcConstraint
     param::Int
     equations::Vector{Int}
     eq_names::Vector{String}
+    inert_equations::Vector{Int}
     ref_resid::Vector{ObcAffine}
     alt_resid::Vector{ObcAffine}
     bind::String
@@ -88,13 +92,15 @@ struct ObcConstraint
     entry::Tuple{Float64,Float64}
     exit::Tuple{Float64,Float64}
     fit_err::Tuple{Float64,Float64}
+    approx::Float64
     g_ss::Float64
     class::Symbol
     why::String
 end
 Base.show(io::IO, c::ObcConstraint) = print(io, "ObcConstraint(", c.name, ": ", c.class, isempty(c.why) ? "" : " - " * c.why, ")")
 
-const OBC_FIT_TOL = 1e-8          # relative residual of the entry / exit fits
+const OBC_FIT_TOL = 1e-6          # entry / exit fits are exact below this relative residual (contract rule 6)
+const OBC_APPROX_TOL = 0.05       # ... and still accepted, as approximate, up to this one
 
 # a comparison L op R as "d < 0 means the condition holds": d = L - R for < and <=, R - L for > and >=
 function _negative_side(ex)
@@ -136,27 +142,20 @@ function _fit2(target, u, v)
     coef[1], coef[2], r
 end
 
-"Indices of the equations whose residual depends on parameter `ip` (text of the JSON model, then numerically)."
-function _equations_with_param(m::Model, ip::Int, ys, x0, base)
-    pname = m.param_names[ip]
-    rx = Regex("\\b" * pname * "\\b")
-    eqs = Set{Int}()
-    model = get_or(m.raw, "model", Any[])
-    for (e, eq) in enumerate(model)
-        (occursin(rx, string(get(eq, "lhs", ""))) || occursin(rx, string(get(eq, "rhs", "")))) && push!(eqs, e)
-    end
-    # numerically, at a point near the steady state (equations the JSON text does not show, e.g. auxiliary ones)
-    rng = MersenneTwister(20261124)
-    n = length(ys)
-    yy = vcat(ys, ys, ys) .* (1 .+ 1e-3 .* randn(rng, 3n)) .+ 1e-4 .* randn(rng, 3n)
-    p0 = copy(base); p0[ip] = 0.0
-    p1 = copy(base); p1[ip] = 1.0
-    r0 = dynamic_resid(m, yy, x0, p0, ys)
-    r1 = dynamic_resid(m, yy, x0, p1, ys)
-    for e in 1:n
-        (isfinite(r0[e]) && isfinite(r1[e]) && abs(r1[e] - r0[e]) > 1e-12 * max(1.0, abs(r0[e]), abs(r1[e]))) && push!(eqs, e)
-    end
-    sort(collect(eqs))
+"Indices of the equations whose text (JSON model) contains parameter `ip`."
+function _equations_naming_param(m::Model, ip::Int)
+    rx = Regex("\\b" * m.param_names[ip] * "\\b")
+    [e for (e, eq) in enumerate(get_or(m.raw, "model", Any[]))
+     if occursin(rx, string(get(eq, "lhs", ""))) || occursin(rx, string(get(eq, "rhs", "")))]
+end
+
+"Rows whose residual or Jacobian at the steady state changes between two parameter vectors (what order 1 sees)."
+function _changed_rows(r0, J0, r1, J1)
+    n = length(r0)
+    [e for e in 1:n if begin
+        sc = max(1.0, abs(r0[e]), abs(r1[e]), maximum(abs, view(J0, e, :); init=0.0), maximum(abs, view(J1, e, :); init=0.0))
+        abs(r1[e] - r0[e]) > 1e-12 * sc || maximum(abs, view(J1, e, :) .- view(J0, e, :); init=0.0) > 1e-12 * sc
+    end]
 end
 
 _eq_name(m::Model, e::Int) = (model = get_or(m.raw, "model", Any[]);
@@ -170,14 +169,21 @@ The post-processor: one `ObcConstraint` per constraint of the `occbin_constraint
 reference and alternative regimes, the sign normalisation of gap and wedge and its class. The reference regime is the
 one with every `occbin_<name>_bind` at 0 (OccBin's), at the reference steady state (computed unless `ys` is given).
 
-Classification (contract section 3, plus `shared_equation`, see docs/OBC_PROGRESS.md):
-1. more than one equation contains the parameter: `multi_equation`;
-2. the equation also contains another constraint's parameter: `shared_equation`;
-3. entry test: the linearised `bind` condition `d_b < 0` must be `a*alt_resid + b*ref_resid` with `a != 0`; `s_g = sign(a)`;
-4. exit test: the linearised `relax` condition `d_r < 0` (or `-d_b` without one) must be `c*ref_resid + e*alt_resid`
-   with `c != 0`; `s_y = sign(c)`;
+Classification (contract section 3 as amended 2026-11-24, plus `shared_equation` and the orientation test, see
+docs/OBC_PROGRESS.md). "Equations" are those whose linearisation at the steady state changes with the parameter.
+1. more than one equation: `multi_equation`;
+2. the equation also changes with another constraint's parameter: `shared_equation`;
+3. entry test: the linearised `bind` condition, written `d_b < 0`, must be `a*alt_resid + b*ref_resid` with `a != 0`;
+   `s_g = sign(a)`;
+4. exit test: the linearised `relax` condition, written `d_r > 0` ("leave"; `d_r = d_b` when there is no `relax`), must
+   be `c*ref_resid + e*alt_resid` with `c != 0`; `s_y = -sign(c)`;
 5. the gap at the steady state must be strictly positive;
-failures of 3 to 5 (and conditions that are not a single `<`, `<=`, `>` or `>=` comparison): `inconsistent`.
+6. fits are exact below a relative residual of `OBC_FIT_TOL` (1e-6) and accepted as approximate up to `OBC_APPROX_TOL`
+   (0.05), recorded in `approx`;
+7. orientation: the bind condition carried into the alternative regime must not say "leave" while the wedge is
+   positive, nor the relax condition carried into the reference regime say "stay" while the gap is positive
+   (`b*s_y <= 0` and `e*s_g >= 0`): otherwise entering and leaving contradict each other;
+failures of 3 to 7 (and conditions that are not a single `<`, `<=`, `>` or `>=` comparison): `inconsistent`.
 """
 function obc_constraints(m::Model; params=nothing, ys=nothing)
     isempty(m.occbin_constraints) && throw(ModelError("the model has no occbin_constraints block"))
@@ -196,21 +202,26 @@ function obc_constraints(m::Model; params=nothing, ys=nothing)
     x0 = exo_steady(m)
     yy = vcat(ys, ys, ys)
     n = m.n_endo
-    eqsets = [_equations_with_param(m, s, ys, x0, base) for s in switch]
+    r0, J0 = dynamic_resid(m, yy, x0, base, ys), dynamic_jac(m, yy, x0, base, ys)
+    lin = map(switch) do ip
+        p1 = copy(base); p1[ip] = 1.0
+        (dynamic_resid(m, yy, x0, p1, ys), dynamic_jac(m, yy, x0, p1, ys))
+    end
+    eqsets = [_changed_rows(r0, J0, r1, J1) for (r1, J1) in lin]
     out = ObcConstraint[]
     for (j, c) in enumerate(m.occbin_constraints)
         nm, ip, eqs = names[j], switch[j], eqsets[j]
-        p1 = copy(base); p1[ip] = 1.0
-        r0, r1 = dynamic_resid(m, yy, x0, base, ys), dynamic_resid(m, yy, x0, p1, ys)
-        J0, J1 = dynamic_jac(m, yy, x0, base, ys), dynamic_jac(m, yy, x0, p1, ys)
+        r1, J1 = lin[j]
+        inert = setdiff(_equations_naming_param(m, ip), eqs)
         ref = [ObcAffine(r0[e], J0[e, :]) for e in eqs]
         alt = [ObcAffine(r1[e], J1[e, :]) for e in eqs]
         bindtxt = string(get(c, "bind", ""))
         relaxtxt = strip(string(something(get(c, "relax", ""), "")))
-        mk(cls, why; s_g=0, s_y=0, entry=(NaN, NaN), exit=(NaN, NaN), fit=(NaN, NaN), g_ss=NaN) =
-            ObcConstraint(nm, ip, eqs, [_eq_name(m, e) for e in eqs], ref, alt, bindtxt, relaxtxt, s_g, s_y, entry, exit, fit, g_ss, cls, why)
+        mk(cls, why; s_g=0, s_y=0, entry=(NaN, NaN), exit=(NaN, NaN), fit=(NaN, NaN), approx=0.0, g_ss=NaN) =
+            ObcConstraint(nm, ip, eqs, [_eq_name(m, e) for e in eqs], inert, ref, alt, bindtxt, relaxtxt, s_g, s_y, entry, exit, fit,
+                          approx, g_ss, cls, why)
         if isempty(eqs)
-            push!(out, mk(:inconsistent, "no equation of the model contains $(m.param_names[ip])"))
+            push!(out, mk(:inconsistent, "no equation of the model changes (at order 1) with $(m.param_names[ip])"))
             continue
         elseif length(eqs) > 1
             push!(out, mk(:multi_equation, "the constraint switches $(length(eqs)) equations (" *
@@ -219,10 +230,6 @@ function obc_constraints(m::Model; params=nothing, ys=nothing)
         end
         e = eqs[1]
         others = [names[k] for k in eachindex(names) if k != j && e in eqsets[k]]
-        if !isempty(others)
-            push!(out, mk(:shared_equation, "equation '$(_eq_name(m, e))' is also switched by constraint " * join(others, ", ")))
-            continue
-        end
         # the two conditions, linearised at the steady state, as vectors comparable with the residuals
         why = ""
         local db, dr
@@ -233,13 +240,13 @@ function obc_constraints(m::Model; params=nothing, ys=nothing)
             vb, gb = _linearise_condition(m, nb, ys, base)
             db = vcat(vb, zeros(n), gb, zeros(n), zeros(m.n_exo))
             if isempty(relaxtxt)
-                dr = -db
+                dr = db                 # OccBin leaves when the bind condition fails: d_b >= 0
             else
                 rex = _parse_constraint(relaxtxt)
                 nr = _negative_side(rex)
                 nr === nothing && throw(ModelError("the relax condition '$relaxtxt' is not a single <, <=, > or >= comparison"))
                 vr, gr = _linearise_condition(m, nr, ys, base)
-                dr = vcat(vr, zeros(n), gr, zeros(n), zeros(m.n_exo))
+                dr = -vcat(vr, zeros(n), gr, zeros(n), zeros(m.n_exo))      # relax holds  <=>  d_r > 0
             end
         catch err
             err isa Union{ModelError,ErrorException,MethodError,DomainError,UndefVarError,ArgumentError} || rethrow()
@@ -250,18 +257,25 @@ function obc_constraints(m::Model; params=nothing, ys=nothing)
         a, b, rb = _fit2(db, va, vr_)
         cc, ee, rr = _fit2(dr, vr_, va)
         s_g = abs(a) * norm(va) > OBC_FIT_TOL * norm(db) ? Int(sign(a)) : 0
-        s_y = abs(cc) * norm(vr_) > OBC_FIT_TOL * norm(dr) ? Int(sign(cc)) : 0
+        s_y = abs(cc) * norm(vr_) > OBC_FIT_TOL * norm(dr) ? -Int(sign(cc)) : 0     # leave  <=>  d_r > 0  <=>  y < 0
         g_ss = s_g * alt[1].c
         reasons = String[]
-        if rb > OBC_FIT_TOL || s_g == 0
+        if rb > OBC_APPROX_TOL || s_g == 0
             push!(reasons, "entry test: the linearised bind condition is not a multiple of the alternative residual " *
                            "(plus a multiple of the reference one) [relative residual $(@sprintf("%.1e", rb))" *
                            _offending_terms(m, db - a * va - b * vr_) * "]")
         end
-        if rr > OBC_FIT_TOL || s_y == 0
-            push!(reasons, "exit test: the linearised " * (isempty(relaxtxt) ? "negated bind" : "relax") *
+        if rr > OBC_APPROX_TOL || s_y == 0
+            push!(reasons, "exit test: the linearised " * (isempty(relaxtxt) ? "bind (no relax given)" : "relax") *
                            " condition is not a multiple of the reference residual (plus a multiple of the alternative one) " *
                            "[relative residual $(@sprintf("%.1e", rr))" * _offending_terms(m, dr - cc * vr_ - ee * va) * "]")
+        end
+        if isempty(reasons)
+            tolo = 1e-6 * max(abs(a), abs(cc))
+            (b * s_y > tolo || ee * s_g < -tolo) &&
+                push!(reasons, "orientation: the bind and relax conditions contradict each other (b*s_y = $(@sprintf("%.3g", b * s_y)), " *
+                               "e*s_g = $(@sprintf("%.3g", ee * s_g)); in the alternative regime the bind condition would fail while the " *
+                               "relax condition says stay, or the reverse)")
         end
         if isempty(reasons) && !(g_ss > 1e-12)
             push!(reasons, "the gap is not strictly positive at the steady state (g_ss = $(@sprintf("%.3g", g_ss)))")
@@ -269,8 +283,15 @@ function obc_constraints(m::Model; params=nothing, ys=nothing)
         if abs(ref[1].c) > 1e-8 * max(1.0, norm(ref[1].g, Inf))
             push!(reasons, "the reference residual is not zero at the steady state ($(ref[1].c))")
         end
-        cls = isempty(reasons) ? :complementarity : :inconsistent
-        push!(out, mk(cls, join(reasons, "; "); s_g=s_g, s_y=s_y, entry=(a, b), exit=(cc, ee), fit=(rb, rr), g_ss=g_ss))
+        approx = max(rb, rr) > OBC_FIT_TOL ? max(rb, rr) : 0.0
+        cls = !isempty(others) ? :shared_equation : isempty(reasons) ? :complementarity : :inconsistent
+        why = !isempty(others) ? "equation '$(_eq_name(m, e))' is also switched by constraint " * join(others, ", ") *
+                                 (isempty(reasons) ? " (alone it would pass the entry and exit tests)" : "; also " * join(reasons, "; ")) :
+              join(reasons, "; ")
+        cls == :complementarity && approx > 0 &&
+            (why = "approximate: the linearised conditions match the residuals to a relative $(@sprintf("%.1e", approx))" *
+                   _offending_terms(m, (rb >= rr ? db - a * va - b * vr_ : dr - cc * vr_ - ee * va)))
+        push!(out, mk(cls, why; s_g=s_g, s_y=s_y, entry=(a, b), exit=(cc, ee), fit=(rb, rr), approx=approx, g_ss=g_ss))
     end
     out
 end
@@ -290,11 +311,11 @@ obc_constraints(ob::Occbin) = obc_constraints(ob.model; params=ob.params, ys=ob.
     obc_classification(m::Model) -> rows
 
 The classification table of a model: one named tuple per constraint with `constraint, class, equation, s_g, s_y,
-bind, relax, why`.
+approx, bind, relax, why`.
 """
 function obc_classification(m::Model)
-    [(constraint=c.name, class=c.class, equation=join(c.eq_names, "; "), s_g=c.s_g, s_y=c.s_y, bind=c.bind, relax=c.relax,
-      why=c.why) for c in obc_constraints(m)]
+    [(constraint=c.name, class=c.class, equation=join(c.eq_names, "; "), s_g=c.s_g, s_y=c.s_y, approx=c.approx, bind=c.bind,
+      relax=c.relax, why=c.why) for c in obc_constraints(m)]
 end
 
 "Refuse a model whose constraints are not all `complementarity` for the non-OccBin methods."
@@ -465,12 +486,12 @@ const _OBC_IGNORED_DEFAULTS = (maxit=30, curb_retrench=false, periodic_solution=
 """
 OccBin's simulation loop (`simulate(ob, shocks)`) with the regime iteration replaced by the `obc_method` solver:
 in each period with a shock, the path from the current state is the solution of the complementarity problem over
-`obc_horizon` periods, verified beyond the horizon over `check_ahead_periods` more periods; periods without shocks
+`obc_horizon` periods (first by the shared active-set fast path unless `fast_path=false`, then by the method's solver), verified beyond the horizon over `check_ahead_periods` more periods; periods without shocks
 continue the last path, as OccBin does.
 """
 function _simulate_obc(ob::Occbin, shocks_in::AbstractMatrix; method::Symbol, horizon::Integer, tol::Real, raise::Bool,
                        periods::Integer, check_ahead_periods::Integer, max_check_ahead_periods::Real, init, exo_pos,
-                       ignored::NamedTuple, solver_options=NamedTuple())
+                       ignored::NamedTuple, solver_options=NamedTuple(), fast_path::Bool=true)
     k, n, n_exo, m = ob.k, ob.n, ob.n_exo, ob.model
     changed = [String(key) for (key, v) in pairs(ignored) if !isequal(v, getfield(_OBC_IGNORED_DEFAULTS, key))]
     isempty(changed) || warn_once(m, "obc_method = $method: OccBin options of the regime iteration are not used (ignored): " * join(sort(changed), ", "))
@@ -506,7 +527,11 @@ function _simulate_obc(ob::Occbin, shocks_in::AbstractMatrix; method::Symbol, ho
         u = shocks[sp, :]
         if sp == 1 || any(!iszero, u)
             q = obc_q(sys, y0, u)
-            y, st, info = solve(sys.M, q; tol=tol, solver_options...)
+            st = :not_converged
+            if fast_path                           # contract section 5: the shared active-set fast path first
+                y, st, info = solve_active_set(sys.M, q; tol=tol)
+            end
+            st == :ok || ((y, st, info) = solve(sys.M, q; tol=tol, solver_options...))
             st in OBC_STATUSES || error("OBC solver returned an unknown status $st")
             piv = hasproperty(info, :pivots) ? info.pivots : 0
             Z, g = obc_gaps(sys, y, y0, u, Lg)

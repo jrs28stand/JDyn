@@ -74,7 +74,7 @@ export run_preprocessor, load, Model, ModelError, steady_state, SteadyStateError
        forecast, ForecastResult, conditional_forecast, ConditionalForecastResult, conditional_forecast_table, forecast_struct,
        conditional_forecast_struct, forecast!, conditional_forecast!,
        obc_constraints, obc_classification, obc_system, obc_gaps, obc_q, obc_verify, ObcConstraint, ObcSystem, ObcNews, ObcError,
-       solve_minnorm, solve_news
+       solve_minnorm, solve_news, solve_active_set
 
 include("precompile.jl")
 

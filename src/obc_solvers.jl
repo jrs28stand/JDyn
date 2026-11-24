@@ -196,8 +196,41 @@ function solve_minnorm(M::AbstractMatrix, q::AbstractVector; tol::Real=1e-10, ma
         end
     end
     ok, viol = obc_verify(M, q, y; tol=tol)
-    (y, ok ? :ok : :not_converged, (pivots=piv, descent_steps=steps, alternatives=alts, max_violation=viol,
+    (y, ok ? :ok : :not_converged, (pivots=piv, descent_steps=steps, alternatives=alts, solver=:minnorm, max_violation=viol,
                                     message=ok ? "" : "verification failed after the descent (max violation $viol)"))
+end
+
+# ---------------------------------------------------------------------- shared fast path
+"""
+    solve_active_set(M, q; tol=1e-10, maxit=60) -> (y, status, info)
+
+The fast path shared by all methods (contract section 5, added 2026-11-24): guess-and-verify on the binding set, as
+OccBin does on regimes. Start from the periods with `q < 0`, solve the square system on the set, drop negative
+wedges, add periods whose gap is negative; repeat until nothing changes (verified with `obc_verify`), a set repeats or
+`maxit` is reached (`:not_converged`: the caller then runs the method's own solver). No guarantee of success; when
+the problem has several solutions, the one found need not be the method's (e.g. not the smallest in norm).
+"""
+function solve_active_set(M::AbstractMatrix, q::AbstractVector; tol::Real=1e-10, maxit::Integer=60, kw...)
+    n = length(q)
+    all(>=(0), q) && return (zeros(n), :ok, (pivots=0, iterations=0, solver=:none, max_violation=0.0, message="q >= 0: constraints slack"))
+    S = q .< -tol
+    seen = Set{BitVector}()
+    for it in 1:maxit
+        S in seen && break
+        push!(seen, copy(S))
+        alpha = findall(S)
+        y = _complementary_solution(M, q, alpha)
+        y === nothing && break
+        g = q .+ M * y
+        drop = S .& (y .< -tol)
+        add = .!S .& (g .< -tol)
+        if !any(drop) && !any(add)
+            ok, v = obc_verify(M, q, y; tol=tol)
+            return (y, ok ? :ok : :not_converged, (pivots=it, iterations=it, solver=:active_set, max_violation=v, message=ok ? "" : "active set failed verification"))
+        end
+        S = (S .& .!drop) .| add
+    end
+    (zeros(n), :not_converged, (pivots=0, iterations=0, solver=:active_set, max_violation=Inf, message="active-set iteration did not settle"))
 end
 
 # ---------------------------------------------------------------------- news (not implemented yet)
