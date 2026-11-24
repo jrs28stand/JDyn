@@ -55,8 +55,11 @@ include("forecast.jl")
 include("mcmc_diagnostics.jl")
 include("posterior.jl")
 include("posterior_forecast.jl")
+include("posterior_moments.jl")
+include("posterior_stage.jl")
 
-export mcmc_diagnostics, posterior_irf, posterior_forecast, posterior_subsample,
+export mcmc_diagnostics, posterior_irf, posterior_forecast, posterior_subsample, posterior_theoretical_moments,
+       posterior_smoother_statistics,
        run_preprocessor, load, Model, ModelError, steady_state, SteadyStateError, first_order, FirstOrderSolution,
        BlanchardKahnError, ghx, ghu, irf, simulate, set_param!, set_params!, get_param, set_shock_stderr!,
        stoch_simul_moments, theoretical_moments, k_order, KOrderError, korder_library, plot_irfs, irf_figures, irf_table, write_csv, pltorg, IRFResult, IRFFigure,

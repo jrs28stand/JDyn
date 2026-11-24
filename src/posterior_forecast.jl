@@ -49,8 +49,7 @@ function posterior_forecast(est::Estimation, mc::Union{Nothing,MCMCResult}=nothi
     if params === nothing
         mc === nothing && throw(ArgumentError("posterior_forecast needs parameter draws (params=) or chains (mc)"))
         dr = drop === nothing ? mc.drop : drop
-        size_ = number_of_subdraws(mc, est; sub_draws=sub_draws, drop=dr)
-        P, _ = posterior_subsample(mc, size_; drop=dr, rng=subsample_rng === nothing ? dynare_rng(m) : subsample_rng)
+        P, _ = posterior_draws(est, mc; sub_draws=sub_draws, drop=dr, rng=subsample_rng === nothing ? dynare_rng(m) : subsample_rng)
         params = P
     end
     P = Matrix{Float64}(params isa AbstractVector ? reshape(params, 1, :) : params)

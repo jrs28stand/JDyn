@@ -30,8 +30,6 @@ function dynare_parameter_names(est::Estimation)
 end
 
 "MATLAB's `round`: halves away from zero."
-_mround(x::Real) = x >= 0 ? floor(x + 0.5) : -floor(-x + 0.5)
-_iround(x::Real) = Int(_mround(x))
 
 "Draws kept after the burn-in of every chain: (chains, kept, parameters) (`CutSample.m`: the first floor(mh_drop * replic) are dropped)."
 function kept_array(mc::MCMCResult; drop=mc.drop)
@@ -220,8 +218,6 @@ function raftery_lewis(runs::AbstractMatrix, q=0.025, r=0.005, s=0.95)
     out
 end
 
-"Inverse of the standard normal cdf (via the inverse complementary error function)."
-_norminv(p) = -sqrt(2) * SpecialFunctions.erfcinv(2p)
 
 """
 Six Brooks-Gelman series of one scalar series `tmp` (chains x draws), `mcmc_diagnostics_core.m`: at the draws `origin:step:T`,
