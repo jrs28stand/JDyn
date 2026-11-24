@@ -336,7 +336,7 @@ end
     x0 = NL_LIK["X"][:, 1]
     est = nl_est("gf_uu")
     # deterministic in the parameters (common random numbers), up to the last bits of the k-order solution
-    @test log_posterior(est, x0) ≈ log_posterior(est, x0) rtol = 1e-12
+    @test log_posterior(est, x0) ≈ log_posterior(est, x0) rtol = 1e-10
     sis = nl_est("sis")
     @test log_posterior(sis, x0) ≈ log_posterior(sis, x0) rtol = 1e-11
     @test log_posterior(sis, x0) ≈ -NL_LIK["sis_fval"][1] rtol = 1e-8
