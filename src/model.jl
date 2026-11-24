@@ -42,6 +42,7 @@ function run_preprocessor(modfile::AbstractString; preprocessor=nothing, output=
     end
     jd = joinpath(dirname(modfile), name, "model", "json")
     isfile(joinpath(jd, "modfile.json")) || error("no JSON output in $jd")
+    _semi_prepare(exe, modfile, extra_args, jd)       # src/pac.jl: MATLAB-mode output for var_model / pac_model / ... (a no-op otherwise)
     jd
 end
 
@@ -381,6 +382,7 @@ function Model(json_dir::AbstractString; functions=Dict{String,Any}(), steady_st
               String[], Dict{String,Float64}(), nothing, 0, Set{String}(),
               1 + (fns.dyn_g2 !== nothing) + (fns.dyn_g3 !== nothing),
               nothing, Dict{Symbol,Any}())
+    _semi_init!(m)                                       # src/pac.jl: M_.var, M_.pac, ... of the preprocessor's MATLAB output
     _run_statements!(m; on_command=on_command)
     m
 end

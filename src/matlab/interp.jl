@@ -297,6 +297,17 @@ function pkg_unit(I::Interp, sc, chain)
     end
     I.units[key] = u
 end
+"A package function implemented in Julia (PKG_FUNCS), called with the chain `a.b.c` and its argument nodes; nothing if there is none."
+function _pkg_builtin(I::Interp, sc, base, argnodes, nargout)
+    isempty(PKG_FUNCS) && return nothing
+    chain = _pkg_chain(base)
+    chain === nothing && return nothing
+    f = get(PKG_FUNCS, join(chain, "."), nothing)
+    (f === nothing || getvar(I, sc, chain[1]) !== MISSING_) && return nothing
+    args = Any[a isa ColonAll ? ":" : ev(I, a, sc) for a in argnodes]
+    r = f(I, args, nargout)
+    r isa Vector{Any} ? r : Any[r]
+end
 function pkg_call(I::Interp, u::Unit, argnodes, nargout, sc)
     is_script(u) && merr("$(u.path) is a script, not a package function")
     args = Any[a isa ColonAll ? ":" : ev(I, a, sc) for a in argnodes]
@@ -306,6 +317,11 @@ end
 function ev(I::Interp, n::IndexE, sc)
     base = n.base
     if base isa FieldE && !n.brace
+        r = _pkg_builtin(I, sc, base, n.args, 1)
+        if r !== nothing
+            isempty(r) && merr("'$(base.name)' returns no value")
+            return r[1]
+        end
         u = pkg_unit(I, sc, _pkg_chain(base))
         if u !== nothing
             r = pkg_call(I, u, n.args, 1, sc)
@@ -371,6 +387,8 @@ function ev_multi(I::Interp, n, sc, nargout)
             return call_node(I, base.name, n.args, nargout, sc)
         end
         if base isa FieldE
+            r = _pkg_builtin(I, sc, base, n.args, nargout)
+            r !== nothing && return r
             u = pkg_unit(I, sc, _pkg_chain(base))
             u !== nothing && return pkg_call(I, u, n.args, nargout, sc)
         end

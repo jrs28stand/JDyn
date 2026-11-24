@@ -109,6 +109,7 @@ function build_M(m::Model)
     M.aux_vars = Cell(aux, (1, length(aux)))
     M.endo_histval = zeros(0, 0)
     M.dynare_version = "7.2"
+    _semi_into_M!(M, m)                     # M_.var, M_.pac, ... (src/pac.jl)
     M
 end
 _corr(S) = (d = sqrt.(diag(S)); [d[i] > 0 && d[j] > 0 ? S[i, j] / (d[i] * d[j]) : (i == j ? 1.0 : 0.0) for i in axes(S, 1), j in axes(S, 2)])

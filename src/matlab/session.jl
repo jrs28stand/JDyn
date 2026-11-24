@@ -98,7 +98,7 @@ function restore!(M::HostM, value)
     set_field!(M, "params", value["params"])
     set_field!(M, "Sigma_e", value["Sigma_e"])
 end
-has_field(M::HostM, name) = name in field_names(M) ? true : throw(Unsupported("JDyn does not know whether M_ has a field '$name'", "results"))
+has_field(M::HostM, name) = name in field_names(M) ? true : _semi_has(M.h.model, name) ? true : throw(Unsupported("JDyn does not know whether M_ has a field '$name'", "results"))
 get_field(M::HostM, name) = peek_field(M, name)
 function peek_field(M::HostM, name; raw=false)
     h = M.h; m = h.model
@@ -127,6 +127,7 @@ function peek_field(M::HostM, name; raw=false)
         end
     end
     name in ("fname", "dname") && return m.name
+    _semi_has(m, name) && return semi_M(m)[name]          # M_.var, M_.pac, ... (src/pac.jl)
     throw(Unsupported("M_.$name is not available in JDyn", "results"))
 end
 function set_field!(M::HostM, name, value)
@@ -244,6 +245,7 @@ function get_field(O::HostOO, name)
         return deepcopy(O.results[name])
     end
     (O.session !== nothing && name in ("steady_state", "exo_steady_state")) && return oo_vector(O.session, name)
+    (O.results === nothing && O.session !== nothing && _semi_oo_has(O.session.model, name)) && return O.session.model.cache[:semi_oo][name]
     O.results !== nothing && merr("Reference to non-existent field '$name'.")
     throw(Unsupported("oo_.$name: results are not available while the model is loaded", "results"))
 end
