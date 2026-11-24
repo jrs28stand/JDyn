@@ -780,6 +780,10 @@ function command(I::Interp, s, sc)
         return nothing
     end
     name == "load" && return load_file(I, collect(String, args), sc)
+    if name == "addpath"
+        _addpath(I, Any[Str(String(strip(a, ['\'', '"'])), false) for a in args], sc, 0)
+        return nothing
+    end
     if name == "save"
         push!(I.scope_stack, sc)
         try

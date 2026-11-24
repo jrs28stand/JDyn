@@ -975,11 +975,36 @@ lazy!(_plot, PLOT_FUNCS...)
 
 const FILE_FUNCS = split("fopen fread fwrite fgetl fgets fscanf textscan importdata xlsread xlswrite csvread csvwrite " *
     "dlmread dlmwrite readtable writetable readmatrix writematrix delete copyfile movefile rmdir " *
-    "addpath rmpath cd dir ls system unix dos exist_file " *
+    "rmpath cd dir ls system unix dos exist_file " *
     "datatomfile matfile which websave urlread unzip zip tempdir tempname setenv " *
     "open winopen edit type input keyboard dbstack mfilename genpath path userpath")
 _file(I, argnodes, sc, nout) = throw(Unsupported("file-system, shell or interactive functions are not available", "file"))
 lazy!(_file, FILE_FUNCS...)
+
+# addpath(dir, ...): the .m files of the folders become callable (the model folder keeps priority); relative folders are
+# taken from the model folder. Folders that do not exist are an error as in Octave's warning-turned-refusal.
+function _addpath(I, argnodes, sc, nout)
+    paths = String[]
+    for a in argnodes
+        v = ev_multi(I, a, sc, 1)[1]
+        v isa AbstractString || throw(Unsupported("addpath with a non-string argument", "file"))
+        lowercase(v) in ("-begin", "-end", "-frozen") && continue
+        append!(paths, split(v, ':'; keepempty=false))
+    end
+    files = dir_files(I)
+    for p in paths
+        d = isabspath(p) ? p : joinpath(something(I.dir, pwd()), p)
+        isdir(d) || throw(Unsupported("addpath of a folder that does not exist: $p", "file"))
+        for f in readdir(d)
+            if endswith(f, ".m") && occursin(r"^[A-Za-z_]\w*\.m$", f) && !haskey(files, f[1:end-2])
+                files[f[1:end-2]] = joinpath(d, f)
+            end
+        end
+    end
+    nout > 0 && throw(Unsupported("addpath with an output", "file"))
+    Any[]
+end
+lazy!(_addpath, "addpath")
 
 bi!("clock", "now", "date", "datestr", "etime", "datetime", "version", "ver", "computer",
     "ispc", "isunix", "ismac", "matlab_ver_less_than", "octave_ver_less_than", "user_has_matlab_license",
