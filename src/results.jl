@@ -524,6 +524,8 @@ function occbin_solver!(ws::DynareWorkspace; options...)
         v = flat[key]
         kw[sym] = T === Bool ? _asbool(v) : T === Int ? Int(round(_asnum(v))) : _asnum(v)
     end
+    haskey(flat, "obc_method") && (kw[:obc_method] = _obc_method(flat["obc_method"]))       # src/obc.jl
+    haskey(flat, "obc_horizon") && (kw[:obc_horizon] = _obc_horizon(flat["obc_horizon"]))
     r = simulate(ob; kw...)
     sim = MStruct()
     sim.piecewise = Matrix{Float64}(r.piecewise)
@@ -533,6 +535,7 @@ function occbin_solver!(ws::DynareWorkspace; options...)
     sim.regime_history = _regime_history_cell(r.regime_history)
     occ = get(ws.oo_, "occbin", MStruct())
     occ.simul = sim
+    r.news === nothing || (occ.news = _news_struct(r.news))
     ws.oo_.occbin = occ
     ws
 end

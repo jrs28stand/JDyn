@@ -71,7 +71,9 @@ struct OccbinResult
     endo_names::Vector{String}
     exo_names::Vector{String}
     ss::Vector{Tuple{Matrix{Float64},Matrix{Float64},Vector{Float64}}}   # per shock period: (T, R, C), see below
+    news::Any                    # obc_method minnorm / news: an ObcNews (src/obc.jl); nothing for occbin
 end
+OccbinResult(a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12) = OccbinResult(a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, nothing)
 
 """
     OccbinIRF
@@ -377,7 +379,19 @@ function simulate(ob::Occbin, shocks_in::AbstractMatrix; periods::Integer=100, c
                   periodic_solution_strict::Bool=true, init_regime=nothing, init_binding_indicator=nothing,
                   max_check_ahead_periods::Real=Inf, reset_check_ahead_periods_in_new_period::Bool=false,
                   reset_regime_in_new_period::Bool=false, exo_pos=nothing, algo_truncation::Integer=1,
-                  replicate_dynare_bugs::Bool=false)
+                  replicate_dynare_bugs::Bool=false, obc_method=:occbin, obc_horizon=40, obc_tol::Real=1e-10,
+                  obc_raise::Bool=true, obc_solver_options=NamedTuple())
+    method = _obc_method(obc_method)
+    if method != :occbin                            # src/obc.jl: the same loop with an LCP solver instead of the regime iteration
+        return _simulate_obc(ob, shocks_in; method=method, horizon=_obc_horizon(obc_horizon), tol=obc_tol, raise=obc_raise,
+                             periods=periods, check_ahead_periods=check_ahead_periods, max_check_ahead_periods=max_check_ahead_periods,
+                             init=init, exo_pos=exo_pos, solver_options=obc_solver_options,
+                             ignored=(maxit=maxit, curb_retrench=curb_retrench, periodic_solution=periodic_solution,
+                                      periodic_solution_threshold=periodic_solution_threshold, periodic_solution_strict=periodic_solution_strict,
+                                      init_regime=init_regime, init_binding_indicator=init_binding_indicator,
+                                      reset_check_ahead_periods_in_new_period=reset_check_ahead_periods_in_new_period,
+                                      reset_regime_in_new_period=reset_regime_in_new_period, algo_truncation=algo_truncation))
+    end
     k, n, n_exo, m = ob.k, ob.n, ob.n_exo, ob.model
     exo_idx = exo_pos === nothing ? collect(1:n_exo) : Int[_exo_index(m, p) for p in (exo_pos isa Union{AbstractString,Integer} ? [exo_pos] : exo_pos)]
     size(shocks_in, 2) == length(exo_idx) ||
@@ -615,6 +629,7 @@ function mod_options(ob::Occbin)
             push!(unused, key)
         end
     end
+    merge!(out, _obc_mod_options(m))                 # options_.occbin.obc_method / obc_horizon (native lines, src/obc.jl)
     isempty(unused) || warn_once(m, "occbin_setup/occbin_solver options not implemented in JDyn (ignored): $(join(sort(unused), ", "))")
     isempty(filt) || warn_once(m, "occbin_setup options of the OccBin filters and smoother, not used by the simulation (they apply to " *
                                   "estimation and smoothing): $(join(sort(filt), ", "))")
@@ -714,7 +729,7 @@ function irf_occbin(ob::Occbin; periods::Integer=40, shocksize=nothing, exo_name
         (occursin("pos", s) || occursin("neg", s)) || throw(ArgumentError("unknown shock sign $s"))
     end
     sim = (; periods=periods, check_ahead_periods=check_ahead_periods, maxit=maxit, init_regime=init_regime,
-           replicate_dynare_bugs=replicate_dynare_bugs, kw...)
+           replicate_dynare_bugs=replicate_dynare_bugs, _obc_mod_options(m)..., kw...)
     base_shocks = zeros(periods + 1, ob.n_exo)
     base = simulate(ob, base_shocks; sim...)
     out = Dict{Tuple{String,String},NamedTuple{(:piecewise, :linear),Tuple{Matrix{Float64},Matrix{Float64}}}}()
