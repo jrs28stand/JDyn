@@ -277,7 +277,8 @@ function _apply_theta!(ws, est::Estimation, theta)
     for (_, (k1, k2), _) in est.groups.cx
         C[k1, k2] = C[k2, k1] = Cs[k1, k2]
     end
-    ws.M_.Correlation_matrix = C
+    declared_correlation_matrix(m) .= C                  # M_ keeps them afterwards (the model's synchronisation reads this matrix)
+    ws.M_.Correlation_matrix = copy(C)
     ws
 end
 

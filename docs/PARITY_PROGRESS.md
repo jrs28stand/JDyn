@@ -48,3 +48,8 @@ Branch `parity` (base main ce58c84). References: Dynare 7.2 under Octave 8.4; ge
   .mod runs in the MATLAB interpreter through `matlab_function_caller` (src/matlab/extern.jl, the only addition under src/matlab besides one line in session.jl).
   Order 3 is impossible (the preprocessor cannot differentiate external functions three times), as in Dynare. Not done: external functions in the planner objective
   of ramsey models (still refused), and perfect foresight with external functions is untested.
+
+## Full suite
+First run (all files): everything passed except test_review_findings (R18 expected external functions to be refused; now supported, the test expects a loaded model) and
+test_results_estimation (est_small: estimated correlations must stay in M_.Correlation_matrix after the synchronisation; fixed in `_apply_theta!`). Both re-run green together
+with test_parity_corrmat; all other files passed in the first run.

@@ -245,7 +245,7 @@ end
             catch e
                 e
             end
-            @test r isa ModelError         # JDyn: LoadError: syntax: invalid assignment location "[TEF_0, TEFD_0, TEFDD_0]"
+            @test r === nothing    # external functions are supported now (src/external.jl; was: LoadError invalid assignment location "[TEF_0, TEFD_0, TEFDD_0]")
         end
         dts = joinpath(DYNARE_SRC, "tests", "deterministic_simulations", "ramst_dseries.mod")
         if isfile(dts)
