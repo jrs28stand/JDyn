@@ -5,10 +5,9 @@ Branch `obc-ho` (pushed to `origin wip/obc-ho`), based on `wip/obc` at 5f0d3a0. 
 
 ## State / next step
 
-CUBATURE PORT (current task; spec: pydyn docs/OBC_HO_PERF.md). DONE and pushed: steps 1-5 (full average with cached factorisations; defaults full average + level 11; up-front M diagnostic;
-failure handling: classes a/b/c, raise by default with payload `e.detail::CubatureFailure`, tolerance mode, native HiGHS LP per parameter set; two constraints at higher order). Cross-port checks vs pydyn
-done for steps 1, 4, 5 (see "Steps 4 and cross-port checks", "Step 5"). NEXT: a mod-file route test for the new options (`obc_cubature_regions = 'all'`, `obc_m_diagnostic`,
-`obc_cubature_milp_time_limit`, `obc_cubature_failure_tolerance`), step 6 (regions = k, lowest priority; reference ref_o2cub4.mat in pydyn's reference/dynareobc_octave), final report.
+CUBATURE PORT (current task; spec: pydyn docs/OBC_HO_PERF.md). Steps 1-6 DONE (full average with cached factorisations; defaults full average + level 11; up-front M diagnostic; failure handling; two
+constraints at higher order; regions = k with DynareOBC's splitting, validated against ref_o2cub4.mat). Cross-port checks vs pydyn done for steps 1, 4, 5. NEXT: final report to the coordinator (see the sections
+"Step 1" timing table, "Steps 4 and cross-port checks", "Step 5", "Step 6" below).
 
 State: H1, H2, C1 done. Follow-up (rule 7, regime selection, end-to-end estimation) done, see docs/OBC_ESTIMATION.md. Task 1 (mod-file/workspace/keyword routes and refusals for the higher-order options) and Task 2 (estimation under obc_method, steps a-d, docs/OBC_ESTIMATION.md) done; test_obc_ho.jl (85), test_obc_estimation.jl and the existing OccBin/OBC suites pass.
 Next step: review by the coordinator; the cubature step is untouched (being redesigned elsewhere).
@@ -130,3 +129,10 @@ Tests (test/test_obc_ho.jl, obc_zlb2.mod, horizon 24 + 24, shocks 5 sd): order 1
 definition for both constraints (< 1e-12); the three cubature modes agree (<= 9e-16), the full average equals the loop over the relevant points. Cross-port, pydyn with the same root and points, level 7, 20 gap paths: 1.8e-15.
 Timing, zlb2 (two constraints), per period, 100 periods, minimum of 5: level 9: loop 22.1 ms, + cache 6.0 ms, + grouping 6.7 ms (764 relevant points, 15,579 sets cached); level 11: loop 81.1 ms, + cache 26.0 ms, + grouping 26.0 ms
 (3,053 relevant, 42,657 sets); pydyn's figure for zlb2 at level 11: 99.8 ms. As pydyn found, the sets hardly repeat with two constraints (the cache still gives 3x here: 15,579 sets for 76,400 solves).
+
+## Step 6: regions = k (DynareOBC's splitting)
+`obc_cubature_regions = k > 1` (`_split_regions`, `_cub_regions!`, `_cub_unit` in src/obc_ho.jl): the relevant paths are described by their direction and the direction of their negative part, reduced by Gram-matrix principal components
+(components below pruning_cutoff x the largest variance dropped, at most max_cubature_dimension kept), the region with the largest within-sum-of-squares is split at Otsu's threshold along its first principal axis until there are k regions;
+each region contributes (its size) x (solution at q + R mean(xi of the region)); failures classified as for points, a failed region counts all its points (`unexamined` = regions not yet solved). Fewer relevant points than regions: each is its own region.
+Not default; like one region it does not price tail risk (documented). Validation (test_obc_ho.jl "four regions", nk, horizon 32+32, level 9, regions=4, DynareOBC's root and points injected, ref_o2cub4.mat): periods agreeing to < 1e-12 are counted against
+the reference (JDyn: 294 of 300 agree to < 1e-12, six differ up to 0.0061; pydyn: 294 of 300, six differ by up to 0.006 from near-ties of the Otsu split); the test requires >= 290 and max < 0.01.

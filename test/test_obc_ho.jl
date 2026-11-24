@@ -139,6 +139,21 @@ end
         @test maximum(abs, JDyn.obc_ho_simulate(h, S).with_bound .- E) < 2e-4
     end
 
+    @testset "four regions (DynareOBC's splitting) against ref_o2cub4.mat" begin
+        r, E = ref_endo("ref_o2cub.mat")
+        _, E4 = ref_endo("ref_o2cub4.mat")
+        h = JDyn.obc_ho(ob; order=2, horizon=32, check_ahead=32, cubature=true, qmc_level=9, regions=4)
+        @test h.regions == 4
+        h.R, h.xi = real.(r["Rcc"]), ho_ref("sob_o2cub.mat")["x"]
+        sim = JDyn.obc_ho_simulate(h, S)
+        d = vec(maximum(abs.(sim.with_bound .- E4); dims=2))
+        @test count(<(1e-12), d) >= 290                         # pydyn: 294 of 300, the others near-ties of the Otsu split
+        @test maximum(d) < 0.01
+        @test maximum(abs, sim.with_bound .- E) > 1e-6          # not the one-region answer
+        # regions is also a refusal-free option through the keyword route
+        @test JDyn._obc_regions(4) == 4
+    end
+
     @testset "cubature limits" begin
         tiny = m.Sigma_e .* 1e-12
         c = JDyn.obc_ho(ob; order=2, horizon=32, check_ahead=32, cubature=true, qmc_level=5, regions=1, Sigma_e=tiny)
@@ -178,7 +193,8 @@ end
         @test maximum(abs, ho1.with_bound .- r0.piecewise) < 1e-9
         @test maximum(abs, r1.piecewise .- r0.piecewise) > 0
         @test_throws ArgumentError JDyn.simulate(ob, S; obc_order=3, kw...)
-        @test_throws ArgumentError JDyn.simulate(ob, S; obc_order=2, obc_cubature_regions=2, kw...)
+        rk2 = JDyn.simulate(ob, S; obc_order=2, obc_cubature=true, obc_qmc_level=4, obc_cubature_regions=2, kw...)
+        @test all(isfinite, rk2.piecewise)
         @test_throws ArgumentError JDyn.simulate(ob, S; obc_order=2, obc_method=:minnorm, obc_horizon=32, periods=300)
         @test_throws ArgumentError JDyn.simulate(ob, S; obc_order=2, obc_periods_of_uncertainty=0, kw...)
         # shocks shorter than `periods` are padded with zero draws
@@ -242,8 +258,8 @@ end
     @testset "unsupported combinations are refused, not ignored" begin
         kw = (obc_method=:news, obc_horizon=32, check_ahead_periods=32, periods=50)
         @test_throws ArgumentError JDyn.simulate(ob, S[1:50, :]; obc_order=3, kw...)
-        @test_throws ArgumentError JDyn.simulate(ob, S[1:50, :]; obc_order=2, obc_cubature_regions=4, kw...)
-        @test_throws ArgumentError JDyn.simulate(ob, S[1:50, :]; obc_order=1, obc_cubature_regions=4, kw...)       # also when cubature is off
+        @test_throws ArgumentError JDyn.simulate(ob, S[1:50, :]; obc_order=2, obc_cubature_regions=2.5, kw...)
+        @test_throws ArgumentError JDyn.simulate(ob, S[1:50, :]; obc_order=1, obc_cubature_regions=-1, kw...)
         @test_throws ArgumentError JDyn.simulate(ob, S[1:50, :]; obc_order=2, obc_raise=false, kw...)
         @test_throws ArgumentError JDyn.simulate(ob, S[1:50, :]; obc_order=2, obc_fast_path=false, kw...)
         @test_throws ArgumentError JDyn.simulate(ob, S[1:50, :]; obc_order=2, obc_solver_options=(formulation=:regime,), kw...)
@@ -273,7 +289,7 @@ end
     ob = JDyn.Occbin(m)
     S = reshape(vec(ho_ref("shocks.mat")["ShockSequence"]), :, 1)
     @test JDyn._obc_regions("all") == 0 && JDyn._obc_regions(:all) == 0 && JDyn._obc_regions(0) == 0 && JDyn._obc_regions(1) == 1 && JDyn._obc_regions(["all"]) == 0
-    @test_throws ArgumentError JDyn._obc_regions(2)
+    @test_throws ArgumentError JDyn._obc_regions(2.5)
     @test_throws ArgumentError JDyn._obc_regions("some")
     @test_throws ArgumentError JDyn._obc_regions(-1)
     h = JDyn.obc_ho(ob; order=2, horizon=32, check_ahead=32, cubature=true, qmc_level=9, regions=0)

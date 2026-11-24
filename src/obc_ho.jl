@@ -92,7 +92,7 @@ Base.show(io::IO, h::ObcHO) = print(io, "ObcHO(order = ", h.order, ", T = ", h.T
                                     string(size(h.xi, 2)) * " points" : "", ")")
 
 """
-The `obc_cubature_regions` option: `1` (one region), `k > 1` (DynareOBC's k regions, not implemented yet) or `all` (`:all`, `"all"` or `0`: the average over
+The `obc_cubature_regions` option: `1` (one region), `k > 1` (DynareOBC's k regions) or `all` (`:all`, `"all"` or `0`: the average over
 every relevant point). Returned as an Int, 0 for `all`.
 """
 function _obc_regions(x)
@@ -100,7 +100,6 @@ function _obc_regions(x)
     (v isa Symbol || v isa AbstractString) && lowercase(strip(string(v))) == "all" && return 0
     v isa AbstractString && (v = tryparse(Float64, v); v === nothing && throw(ArgumentError("obc_cubature_regions must be 1, k or all (got $x)")))
     (v isa Real && isfinite(v) && v == round(v) && v >= 0) || throw(ArgumentError("obc_cubature_regions must be 1, k or all (got $x)"))
-    v > 1 && throw(ArgumentError("obc_cubature_regions = $(Int(v)): several regions are not implemented; use 1 or all"))
     Int(v)
 end
 
@@ -408,6 +407,7 @@ function ho_news_shocks(h::ObcHO, q::AbstractVector, period::Int=0)
     h.cub.relevant_last = nrel
     nrel == 0 && return zeros(h.nT)
     h.regions == 0 && return _cub_all!(h, q, P, rel, npts, period)
+    h.regions > 1 && return _cub_regions!(h, q, P, rel, first, npts, period)
     qm = q .+ h.R * (xsum ./ nrel)
     _cub_one!(h, qm, nrel, npts, period)
 end
@@ -559,29 +559,129 @@ function _cub_all!(h::ObcHO, q::AbstractVector, P::AbstractMatrix, rel::Vector{I
 end
 
 """
+    _cub_unit(h, p) -> (y, class | nothing)
+
+One cubature unit (a region's mean point): zeros when nothing binds, else the scalar iteration (and the rows beyond the horizon), else `_cub_classify`.
+"""
+function _cub_unit(h::ObcHO, p::AbstractVector)
+    T, N = h.nT, h.NR
+    h.stats[:lcp] += 1
+    qmax = max(1.0, maximum(abs, p))
+    all(>=(-1e-8 * qmax), p) && return zeros(T), nothing
+    y, s, _ = solve_active_set(view(h.Mf, 1:T, :), view(p, 1:T); tol=h.tol)
+    if s == :ok && N > T && minimum(view(p, T+1:N) .+ h.Mb * y) < -h.tol
+        s = :not_converged
+    end
+    s == :ok && return y, nothing
+    _cub_classify(h, p)
+end
+
+"""
     _cub_one!(h, qm, nrel, npts, period) -> Vector
 
 One region: the solution at the mean point `qm` of the relevant paths, times `nrel / npts`. The unit is the region (all its `nrel` points count as failed if it fails); a failure is
 classified and raised like the points of the full average (the tolerance is below 1, so a failed region always raises).
 """
 function _cub_one!(h::ObcHO, qm::AbstractVector, nrel::Int, npts::Int, period::Int)
-    st, T, N = h.cub, h.nT, h.NR
-    h.stats[:lcp] += 1
-    qmax = max(1.0, maximum(abs, qm))
-    all(>=(-1e-8 * qmax), qm) && return zeros(T)
-    y, s, _ = solve_active_set(view(h.Mf, 1:T, :), view(qm, 1:T); tol=h.tol)
-    if s == :ok && N > T && minimum(view(qm, T+1:N) .+ h.Mb * y) < -h.tol
-        s = :not_converged
-    end
-    if s != :ok
-        y, cls = _cub_classify(h, qm)
-        if cls !== nothing
-            counts = merge((a=0, b=0, c=0), NamedTuple{(cls,)}((1,)))
-            h.stats[:no_solution] = get(h.stats, :no_solution, 0) + 1
-            throw(_cub_failure(period, counts, nrel, 0, nrel, npts, nothing, st.tolerance, st.milp_time_limit))
-        end
+    y, cls = _cub_unit(h, qm)
+    if cls !== nothing
+        counts = merge((a=0, b=0, c=0), NamedTuple{(cls,)}((1,)))
+        h.stats[:no_solution] = get(h.stats, :no_solution, 0) + 1
+        throw(_cub_failure(period, counts, nrel, 0, nrel, npts, nothing, h.cub.tolerance, h.cub.milp_time_limit))
     end
     (nrel / npts) .* y
+end
+
+"""
+    _split_regions(pr, k, cutoff, maxdim) -> Vector{Vector{Int}}
+
+DynareOBC's region rule (PerformCubature.m, CubatureClusteringEffort = 0): each relevant path (a column of `pr`) is described by its direction and the direction of its negative part,
+reduced by principal components (eigendecomposition of the `2N x 2N` Gram matrix; components below `cutoff` times the largest variance dropped, at most `maxdim` kept), and the region
+with the largest within-sum-of-squares is split along its first principal axis at Otsu's threshold, until there are `k` regions. Returns `k` index vectors (increasing) into the columns of `pr`.
+The component signs are arbitrary and the split is symmetric under a sign change; the partition differs only when a point lies within rounding of a threshold.
+"""
+function _split_regions(pr::AbstractMatrix, k::Int, cutoff, maxdim::Int)
+    m = size(pr, 2)
+    X0 = pr ./ sqrt.(sum(abs2, pr; dims=1))
+    X = hcat(X0', min.(0.0, X0'))                               # m x 2NR
+    X .-= sum(X; dims=1) ./ m
+    ev, V = eigen(Symmetric(X' * X))
+    ev, V = reverse(ev), V[:, end:-1:1]
+    lat = max.(ev, 0.0) ./ max(1, m - 1)
+    keep = cutoff === nothing ? trues(length(lat)) : lat .>= cutoff * lat[1]
+    keep[maxdim+1:end] .= false
+    keep .&= lat .> eps()
+    Z = X * V[:, keep]
+    sse(ix) = (Zi = Z[ix, :]; sum(abs2, Zi .- sum(Zi; dims=1) ./ length(ix)))
+    groups = [collect(1:m)]
+    sses = [sse(groups[1])]
+    for n in 2:k
+        r = n == 2 ? 1 : argmax(sses)
+        pi_ = groups[r]
+        if n == 2
+            proj = Z[:, 1]
+        else
+            Zp = Z[pi_, :]
+            Zc = Zp .- sum(Zp; dims=1) ./ length(pi_)
+            C = (Zc' * Zc) ./ max(1, length(pi_) - 1)
+            ev2, V2 = eigen(Symmetric(C))
+            proj = Zp * V2[:, argmax(abs.(ev2))]
+        end
+        proj = proj .- sum(proj) / length(proj)
+        srt = sort(proj)
+        cs = cumsum(srt[1:end-1])
+        j = 1:length(proj)-1
+        cut = srt[argmax(cs .^ 2 ./ (j .* (length(proj) .- j)))]
+        right = proj .> cut
+        groups[r] = pi_[.!right]
+        new = pi_[right]
+        push!(groups, new)
+        sses[r] = sse(groups[r])
+        push!(sses, isempty(new) ? 0.0 : sse(new))
+    end
+    groups
+end
+
+"""
+    _cub_regions!(h, q, P, rel, first, npts, period) -> Vector
+
+`regions = k`: the relevant paths are split into `k` regions (`_split_regions`); each region contributes its size times the solution at its mean point `q + R mean(xi)`; the sum is divided by
+`npts`. Failed regions are classified, counted in points (a failed region counts all its points) and handled like failed points of the full average. Fewer relevant points than regions: every point is its own region.
+"""
+function _cub_regions!(h::ObcHO, q::AbstractVector, P::AbstractMatrix, rel::Vector{Int}, first::Int, npts::Int, period::Int)
+    st, T, N = h.cub, h.nT, h.NR
+    nrel = length(rel)
+    k = h.regions
+    xr = h.xs[:, first-1 .+ rel]
+    groups = nrel <= k ? [[j] for j in 1:nrel] : _split_regions(q .+ view(P, :, rel), k, h.pruning_cutoff, h.max_dim)
+    limit = st.tolerance * nrel
+    acc = zeros(T)
+    nfail = 0
+    counts = (a=0, b=0, c=0)
+    for (i, g) in enumerate(groups)
+        isempty(g) && continue
+        qm = q .+ h.R * vec(sum(view(xr, :, g); dims=2) ./ length(g))
+        y, cls = _cub_unit(h, qm)
+        if cls === nothing
+            acc .+= length(g) .* y
+        else
+            counts = merge(counts, NamedTuple{(cls,)}((getfield(counts, cls) + length(g),)))
+            nfail += length(g)
+            if nfail > limit
+                h.stats[:no_solution] = get(h.stats, :no_solution, 0) + 1
+                throw(_cub_failure(period, counts, nfail, length(groups) - i, nrel, npts, nothing, st.tolerance, st.milp_time_limit))
+            end
+        end
+    end
+    if nfail > 0
+        for c in (:a, :b, :c)
+            h.stats[Symbol("failed_", c)] = get(h.stats, Symbol("failed_", c), 0) + getfield(counts, c)
+        end
+        h.stats[:dropped_points] = get(h.stats, :dropped_points, 0) + nfail
+        h.stats[:dropped_periods] = get(h.stats, :dropped_periods, 0) + 1
+    end
+    st.dropped_last = nfail
+    acc ./ (npts - nfail)
 end
 
 # ----------------------------------------------------------------------------------------------------- simulation
