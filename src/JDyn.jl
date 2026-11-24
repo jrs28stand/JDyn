@@ -51,9 +51,11 @@ include("nonlinear_estimation.jl")
 include("optimizers.jl")
 include("smoother.jl")
 include("shock_decomposition.jl")
+include("plots_decomp.jl")
 include("perfect_foresight.jl")
 include("optimal_policy.jl")
 include("plotting.jl")
+include("figures.jl")
 include("occbin.jl")
 include("occbin_filter.jl")
 include("occbin_estimation.jl")
@@ -71,6 +73,10 @@ include("posterior.jl")
 include("posterior_forecast.jl")
 include("posterior_moments.jl")
 include("posterior_stage.jl")
+include("plots_estimation.jl")
+include("plots_occbin.jl")
+include("plots_forecast.jl")
+include("plots_hooks.jl")
 include("mh_files.jl")
 include("samplers.jl")
 include("mcmc_driver.jl")
@@ -82,7 +88,9 @@ export posterior_irf_dsgevar, dsge_var_posterior, endogenous_log_prior, sample_m
        posterior_smoother_statistics,
        run_preprocessor, load, Model, ModelError, steady_state, SteadyStateError, first_order, FirstOrderSolution,
        BlanchardKahnError, ghx, ghu, irf, simulate, set_param!, set_params!, get_param, set_shock_stderr!,
-       stoch_simul_moments, theoretical_moments, k_order, KOrderError, korder_library, plot_irfs, irf_figures, irf_table, write_csv, pltorg, IRFResult, IRFFigure,
+       stoch_simul_moments, theoretical_moments, k_order, KOrderError, korder_library, plot_irfs, irf_figures, Figure, Panel, Curve, figure_table, save_figures, arrange_figures, graphs_dir, to_figure,
+       occbin_irf_figures, occbin_graph_figures, decomposition_figures, plot_shock_decomposition, prior_density, prior_figures, mode_check_data, mode_check_figures,
+       prior_posterior_figures, trace_figures, brooks_gelman_figures, bayesian_irf_figures, posterior_series_figures, smoother_figures, forecast_figures, conditional_forecast_figures, rplot_figures, dynare_parameter_name, irf_table, write_csv, pltorg, IRFResult, IRFFigure,
        Occbin, OccbinResult, OccbinIRF, OccbinError, OccbinPeriodicError, OccbinMaxitError, OccbinHorizonError, OccbinLoopError,
        OccbinDynareBug, error_flag, irf_occbin, occbin_graph_table, surprise_shocks, mod_options, check_constraints,
        occbin_filter_options, inversion_filter, piecewise_kalman_filter, occbin_smoother, occbin_shock_decomposition,

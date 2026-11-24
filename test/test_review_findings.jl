@@ -217,8 +217,7 @@ end
                 """; quiet=false)           # no order: Dynare 7's default is 2
             JDyn.irf_figures(m)
         end
-        @test res.order == 1                                  # (what is documented in the docstring)
-        @test any(l -> occursin(r"order", string(l.message)), logger.logs)
+        @test res.order == 2                                  # generalised IRFs at order >= 2 (the old order-1 fallback is gone)
     end
 
     # ------------------------------------------------------------------ R17 load() cannot pass macro variables
