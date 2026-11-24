@@ -285,7 +285,7 @@ function obc_constraints(m::Model; params=nothing, ys=nothing)
         if isempty(reasons)
             tolo = 1e-6 * max(abs(a), abs(cc))
             (b * s_y > tolo || ee * s_g < -tolo) &&
-                push!(reasons, "orientation: the bind and relax conditions contradict each other (b*s_y = $(@sprintf("%.3g", b * s_y)), " *
+                push!(reasons, "orientation: the relax condition points the wrong way, it is not the complement of the bind condition (b*s_y = $(@sprintf("%.3g", b * s_y)), " *
                                "e*s_g = $(@sprintf("%.3g", ee * s_g)); in the alternative regime the bind condition would fail while the " *
                                "relax condition says stay, or the reverse)")
         end

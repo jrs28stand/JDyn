@@ -228,22 +228,22 @@ end
 
 The general formulation (`RegimeOBC`) for every model OccBin accepts: constraints that switch several equations, conditions that are not the mirror
 image of the switched equation. For a regime sequence the wedges on the binding positions `S` are `w = -R[S,S]^-1 (a0 + Am [state; shock])[S]`, so the next
-state is `[P Q] x + V0[:, S] w` and the first period's rule is read off and cached per `S`. `obc_selection` other than `occbin` is not implemented here.
+state is `[P Q] x + V0[:, S] w` and the first period's rule is read off and cached per `S`. `obc_selection` (one constraint only) picks among the single-spell solutions.
 """
 mutable struct RegimeFilterSolver <: NewsFilterSolver
     ob::Occbin
     rg::RegimeOBC
     S0::Matrix{Float64}
     milp_time_limit::Float64
+    selection::Symbol
     maps::Dict{Vector{Int},Tuple{Matrix{Float64},Vector{Float64}}}
     stats::_SolverStats
 end
 
 function RegimeFilterSolver(ob::Occbin; horizon::Integer=40, check_ahead::Integer=40, selection::Symbol=:occbin, milp_time_limit::Real=0.0)
-    selection == :occbin || throw(ArgumentError("obc_selection = $selection is not implemented for the regime formulation (constraints that are not " *
-                                                "one complementary pair each); use obc_selection = occbin"))
+    ob.k == 1 || selection == :occbin || throw(ArgumentError("obc_selection = $selection is implemented for models with one constraint only (this model has $(ob.k)); use obc_selection = occbin"))
     T = Int(horizon)
-    RegimeFilterSolver(ob, regime_obc(ob, T, T + Int(check_ahead)), hcat(ob.P, ob.Q), Float64(milp_time_limit),
+    RegimeFilterSolver(ob, regime_obc(ob, T, T + Int(check_ahead)), hcat(ob.P, ob.Q), Float64(milp_time_limit), selection,
                        Dict{Vector{Int},Tuple{Matrix{Float64},Vector{Float64}}}(), _SolverStats())
 end
 
@@ -255,7 +255,7 @@ function filter_solve(sv::RegimeFilterSolver, shocks, init, exo_pos)
         old = REGIME_MILP_TIME_LIMIT[]
         sv.milp_time_limit > 0 && (REGIME_MILP_TIME_LIMIT[] = sv.milp_time_limit)
         try
-            _regime_step(rg, init, u; milp=sv.milp_time_limit > 0)
+            _regime_step(rg, init, u; milp=sv.milp_time_limit > 0, selection=sv.selection)
         finally
             REGIME_MILP_TIME_LIMIT[] = old
         end

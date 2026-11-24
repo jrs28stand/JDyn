@@ -415,7 +415,9 @@ and `info = (used, iterations, message)` for one shock period (no path). `method
 `:guess_verify` (no fallbacks), `:milp` (the integer programme over regime indicators only). `milp = false` skips the integer programmes
 (the inversion filter's fail-fast mode: the cheap checks and the linear-programme proof of non-existence only; src/obc_filter.jl). `status` is one of `OBC_STATUSES`.
 """
-function _regime_step(rg::RegimeOBC, init::AbstractVector, shock::AbstractVector; maxit::Int=60, method::Symbol=:auto, z0=nothing, milp::Bool=true)
+function _regime_step(rg::RegimeOBC, init::AbstractVector, shock::AbstractVector; maxit::Int=60, method::Symbol=:auto, z0=nothing, milp::Bool=true,
+                      selection::Symbol=:occbin)
+    selection == :occbin || return _regime_step_select(rg, init, shock, selection; maxit=maxit, method=method, z0=z0, milp=milp)
     T, N, k, nc = rg.T, rg.N, length(rg.cv), rg.nc
     xs = vcat(init[rg.st], shock)
     Ycv = reshape(rg.Bx * xs, k, N)
@@ -471,6 +473,39 @@ function _regime_step(rg::RegimeOBC, init::AbstractVector, shock::AbstractVector
         err isa ObcError || rethrow()
         return fail(beyond ? :horizon_too_short : err.status, beyond ? horizon_msg : err.msg, :milp)
     end
+end
+
+"""
+`_regime_spells(rg, Ycv, a; l_max=8) -> Vector{(l, k, w)}`: regime sequences with one alternative-regime spell `l+1 .. l+k` (one constraint) that pass
+OccBin's test on the levels conditions, with their wedges (pydyn's `RegimeOBC.spells`). More than one entry: the state has several solutions.
+"""
+function _regime_spells(rg::RegimeOBC, Ycv::AbstractMatrix, a::AbstractVector; l_max::Int=8)
+    rg.nc == 1 || throw(ArgumentError("equilibrium selection needs a model with one constraint"))
+    T, N, k = rg.T, rg.N, length(rg.cv)
+    out = Tuple{Int,Int,Vector{Float64}}[]
+    for l in 0:min(l_max, T - 1), kk in 1:T-l
+        z = falses(N, 1)
+        z[l+1:l+kk, 1] .= true
+        w = _regime_wedges(rg, z, a)
+        w === nothing && continue
+        vb, vr = _regime_violations(rg, z, Ycv .+ reshape(rg.Wcv * w, k, N))
+        (any(vb) || any(vr)) || push!(out, (l, kk, w))
+    end
+    out
+end
+
+"`_regime_step` with `obc_selection`: the plain step, then the chosen single-spell solution replaces a binding one (the plain one stands, flagged, if there is none)."
+function _regime_step_select(rg::RegimeOBC, init, shock, selection::Symbol; kw...)
+    rg.nc == 1 || throw(ArgumentError("obc_selection = $selection is implemented for models with one constraint only (this model has $(rg.nc)); use obc_selection = occbin"))
+    st, z, w, info = _regime_step(rg, init, shock; kw...)
+    (st == :ok && any(!iszero, w)) || return (st, z, w, info)
+    xs = vcat(init[rg.st], shock)
+    Ycv = reshape(rg.Bx * xs, length(rg.cv), rg.N)
+    cands = _regime_spells(rg, Ycv, rg.a0 .+ rg.Ax * xs)
+    isempty(cands) && return (st, z, w, merge(info, (n_single_spell=0, selection_fallback=true)))
+    l, kk, ws = _pick_spell(cands, selection)
+    z2 = falses(rg.N, 1); z2[l+1:l+kk, 1] .= true
+    (:ok, z2, ws, merge(info, (n_single_spell=length(cands), selection_fallback=false)))
 end
 
 # ---------------------------------------------------------------------- reduction to an LCP (tied wedges)

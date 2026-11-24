@@ -179,9 +179,38 @@ end
         end
         @test nb >= 5
     end
-    # equilibrium selection is not implemented for the regime formulation: refused, not ignored
+    # obc_selection in the regime solver (one constraint): values equal pydyn's at six deterministic vectors (pydyn run directly:
+    # 566.5512559450814, 476.0457580673122, 536.164073136107, -Inf, -Inf, 564.0576327606426; every selection gives the same, the solutions are unique)
     m = load_copy(joinpath(EDIR, "bf.mod"))
-    @test_throws ArgumentError JDyn.news_filter_solver(JDyn.Occbin(m); selection=:longest)
+    x0 = mkest(m, data).x0
+    pyv = [566.5512559450814, 476.0457580673122, 536.164073136107, -Inf, -Inf, 564.0576327606426]
+    @test x0 == [0.15, 0.001, 0.2, 0.5, 0.8]
+    ths = [x0 .* exp.(0.05 .* sin.(1.3 * k .* (1:5) .+ k)) for k in 0:5]
+    for sel in ("occbin", "shortest", "longest", "min_wedge")
+        e = mkest(m, data; obc_method="news", obc_selection=sel)
+        for (k, th) in enumerate(ths)
+            lp = JDyn.log_posterior(e, th)
+            @test JDyn.obc_settings(e).last_solver isa JDyn.RegimeFilterSolver
+            isfinite(pyv[k]) ? @test(abs(lp - pyv[k]) < 1e-8) : @test(lp == -Inf)
+        end
+    end
+    # the single-spell candidates of the regime formulation include the default solution
+    ob = JDyn.Occbin(m)
+    rg = JDyn.regime_obc(ob, 40, 80)
+    sd = sqrt.(diag(Matrix(m.Sigma_e)))
+    ncand = 0
+    for u in (3 .* sd, -3 .* sd, 4 .* sd)
+        init = zeros(ob.n)
+        st, z, w, info = JDyn._regime_step(rg, init, u)
+        st == :ok || continue
+        for sel in (:shortest, :longest, :min_wedge)
+            st2, z2, w2, info2 = JDyn._regime_step(rg, init, u; selection=sel)
+            @test st2 == :ok
+            any(!iszero, w) && !info2.selection_fallback && (ncand += 1; @test maximum(abs, w2 .- w) < 1e-9 || info2.n_single_spell > 1)
+        end
+    end
+    # two constraints: refused
+    @test_throws ArgumentError JDyn.RegimeFilterSolver(JDyn.Occbin(load_copy(joinpath(@__DIR__, "obc", "obc_zlb2.mod"))); selection=:longest)
 end
 
 @testset "obc_selection" begin
@@ -227,7 +256,7 @@ end
         m = build(txt; name="orient")
         c = obc_constraints(m)[1]
         @test c.class == cls
-        cls == :inconsistent && @test occursin("orientation", c.why)
+        cls == :inconsistent && @test occursin("wrong way", c.why)
     end
 end
 
