@@ -264,7 +264,7 @@ end
 "Eigenvalues as a column; real when they all are (MATLAB shows those as real too)."
 _eigcol(e) = all(x -> imag(x) == 0, e) ? reshape(Float64.(real.(e)), :, 1) : reshape(ComplexF64.(e), :, 1)
 const _SOLVE_KINDS = ("options_", "check", "stoch_simul", "estimation", "calib_smoother", "steady")   # "options_": the accumulated table stoch_options reads
-const _STEADY_KEYS = Set(["solve_tolf", "steadystate.nocheck", "homotopy_mode", "homotopy_steps"])
+const _STEADY_KEYS = Set(["solve_tolf", "steadystate.nocheck", "homotopy_mode", "homotopy_steps", "solve_algo", "solve_tolx", "steady.maxit"])
 
 "Parameters the steady state (file or steady_state_model block) has set go back to M_.params, as in Dynare."
 function _store_params!(ws, p)

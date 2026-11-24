@@ -151,7 +151,9 @@ function steady_state(m::Model; params=nothing, guess=nothing, tol=nothing, chec
     so = get(m.options, "steady", Dict{String,Any}())
     tol = tol === nothing ? Float64(get(so, "solve_tolf", DYNARE_TOLF)) : tol
     check = check === nothing ? !(get(so, "steadystate.nocheck", false) == true) : check
-    warn_unused(m, "steady", Set(["solve_tolf", "steadystate.nocheck", "homotopy_mode", "homotopy_steps"]), "steady_state")
+    honoured = Set(["solve_tolf", "steadystate.nocheck", "homotopy_mode", "homotopy_steps"])
+    Int(get(so, "solve_algo", 4)) in (4, 9, 13, 14) && union!(honoured, ["solve_algo", "solve_tolx", "steady.maxit"])
+    warn_unused(m, "steady", honoured, "steady_state")
     params = params === nothing ? copy(m.params) : Vector{Float64}(params)
     x = exo === nothing ? exo_steady(m) : Vector{Float64}(exo)
     ys, params = _steady_state(m, params, guess, x; tolf=tol)
@@ -196,7 +198,12 @@ function _steady_state(m::Model, params, guess, x; tolf=DYNARE_TOLF)
     else
         y0 = guess === nothing ? fill_auxiliary(m, _initval_vector(m), x, params) : Vector{Float64}(guess)
         all(isfinite, y0) || throw(SteadyStateError("initial guess for the steady state is not finite"))
-        ys = _solve_static(m, y0, x, params; tolf=tolf)
+        so = get(m.options, "steady", Dict{String,Any}())
+        algo = Int(get(so, "solve_algo", solver_option(m, "solve_algo", 4)))
+        tolx = Float64(get(so, "solve_tolx", solver_option(m, "solve_tolx", eps(Float64)^(2 / 3))))
+        maxit = Int(get(so, "steady.maxit", solver_option(m, "steady.maxit", 50)))
+        factor = Float64(solver_option(m, "trust_region_initial_step_bound_factor", 1.0))
+        ys = _solve_static(m, y0, x, params; tolf=tolf, tolx=tolx, maxit=maxit, algo=algo, factor=factor)
     end
     ys, params
 end
@@ -339,7 +346,7 @@ Dulmage-Mendelsohn decomposition and the blocks are solved from the last to the 
 equations already hold at the initial guess is skipped (so the variables that only appear in identically satisfied
 equations stay at their initial values); `j2(j)` is indexed with the *row* positions of the block, as in Dynare.
 """
-function _dynare_solve(fun, jac, x0::Vector{Float64}; tolf, tolx, maxit, rng=Random.default_rng(), jacflag::Bool=true)
+function _dynare_solve(fun, jac, x0::Vector{Float64}; tolf, tolx, maxit, rng=Random.default_rng(), jacflag::Bool=true, algo::Int=4, factor::Float64=1.0)
     x = copy(x0)
     nn = length(x)
     fvec = fun(x)
@@ -365,6 +372,13 @@ function _dynare_solve(fun, jac, x0::Vector{Float64}; tolf, tolx, maxit, rng=Ran
         good || return x0, false, Int[], Int[], :failed
     end
     jacflag || (fjac = jac(x))
+    if algo == 9
+        x, errorflag = _dynare_trust_region(fun, jac, x, collect(1:nn), collect(1:nn); tolf=tolf, tolx=tolx, maxiter=maxit, factor=factor)
+        return x, !errorflag, collect(1:nn), collect(1:nn), errorflag ? :failed : :none
+    elseif algo == 13 || algo == 14
+        x, errorflag, _ = _block_trust_region(fun, jac, x, fvec, fjac; tolf=tolf, tolx=tolx, maxit=maxit, factor=factor, decompose=algo == 13)
+        return x, !errorflag, collect(1:nn), collect(1:nn), errorflag ? :failed : :none
+    end
     j1, j2, r, s = dmperm(fjac)
     srows = Int[]; moved = Int[]
     for i in length(r)-1:-1:1
@@ -394,13 +408,22 @@ function _dynare_solve(fun, jac, x0::Vector{Float64}; tolf, tolx, maxit, rng=Ran
     x, true, srows, moved, :none
 end
 
-function _solve_static(m::Model, y0, x, params; tolf=DYNARE_TOLF, tolx=eps(Float64)^(2 / 3), maxit=50)
+function _solve_static(m::Model, y0, x, params; tolf=DYNARE_TOLF, tolx=eps(Float64)^(2 / 3), maxit=50, algo::Int=4, factor::Float64=1.0)
     f(y) = static_resid(m, y, x, params)
     jac(y) = static_jac(m, y, x, params)
     y0 = Vector{Float64}(y0)
+    if algo in (9, 13, 14)
+        # Dynare's solvers as they are: no polishing, no fallback (an explicit solve_algo is the user's request)
+        fs(y) = try; f(y); catch e; e isa DomainError ? fill(NaN, length(y)) : rethrow(); end
+        js(y) = try; jac(y); catch e; e isa DomainError ? fill(NaN, length(y), length(y)) : rethrow(); end
+        ys, ok, = _dynare_solve(fs, js, y0; tolf=tolf, tolx=tolx, maxit=maxit, rng=dynare_rng(m), algo=algo, factor=factor)
+        ok || throw(SteadyStateError("steady state not found with solve_algo=$algo (Dynare's dynare_solve reports an error: Impossible to find the steady state; the guess values may be too far from the solution)"))
+        return ys
+    end
+    algo in (4, 9, 13, 14) || (algo = 4)          # other values were warned about by steady_state: the default solver is used
     # Dynare's solve_algo = 4 first; the old robust search below is only used where it fails
     ys, ok, srows, moved, why = try
-        _dynare_solve(f, jac, y0; tolf=tolf, tolx=tolx, maxit=maxit, rng=dynare_rng(m))
+        _dynare_solve(f, jac, y0; tolf=tolf, tolx=tolx, maxit=maxit, rng=dynare_rng(m), factor=factor)
     catch e
         e isa LinearAlgebra.SingularException || e isa LinearAlgebra.LAPACKException || e isa DomainError || rethrow()
         y0, false, Int[], Int[], :failed
