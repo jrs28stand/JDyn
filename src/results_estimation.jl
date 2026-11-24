@@ -324,8 +324,10 @@ go where Dynare 7.2 puts them: `oo_.posterior_mode` / `oo_.mle_mode` and `oo_.po
 after an MCMC run), as in Dynare. Options the code cannot act on raise an `EstimationError`, as `Estimation` does.
 `data` replaces the datafile; `seed` seeds the Metropolis-Hastings chains.
 """
-function estimation!(ws::DynareWorkspace, var_list=String[]; data=nothing, seed=0, options...)
-    _estimation!(ws, nothing, var_list, data, seed, options)
+function estimation!(ws::DynareWorkspace, var_list=String[]; data=nothing, seed=0, plots=nothing, options...)
+    _with_plots(ws, plots) do
+        _estimation!(ws, nothing, var_list, data, seed, options)
+    end
 end
 
 function _estimation!(ws::DynareWorkspace, st, var_list, data, seed, options)
@@ -377,6 +379,7 @@ function _estimation!(ws::DynareWorkspace, st, var_list, data, seed, options)
         O.noconstant = 0.0
         _store_prior!(oo, est)
         _store_dr_estimation!(oo, m)
+        _fig_est!(ws, :prior, est)                  # src/plots_hooks.jl (figures only with plots=true)
         theta = copy(est.x0)
         mode = nothing
         mc = nothing
@@ -400,6 +403,7 @@ function _estimation!(ws::DynareWorkspace, st, var_list, data, seed, options)
             mode = from_file ? mode_from_file(est, mfile) : posterior_mode(est; x0=x0m)
             runtime = time() - t0
             theta = copy(mode.x)
+            _fig_est!(ws, :mode, est; mode=mode)
             P = get(oo, "posterior", nothing)
             P isa MStruct || (P = MStruct(); oo.posterior = P)
             haskey(P, "optimization") && delete!(P, "optimization")
@@ -443,6 +447,8 @@ function _estimation!(ws::DynareWorkspace, st, var_list, data, seed, options)
             sk = _smoother_kwargs(ws; full=false)
             res = smooth(m; estimation=est, theta=smooth_at, sk...)
         end
+        ws.state[:est_last] = (est=est, mode=mode, mc=mc)
+        _fig_est!(ws, :smoother, est; res=res)
         (est, theta, res, est.nobs, o["lik_init"])
     end
     est, theta, res, nobs, lik_init = result
@@ -542,8 +548,10 @@ first four are read back from oo_ as Dynare's get_posterior_parameters.m does). 
 `oo_.UpdatedVariables`, `oo_.FilteredVariables`, `oo_.SmoothedShocks`, `oo_.SmoothedMeasurementErrors`, `oo_.dr` and `oo_.prior`;
 `M_.params` and the other M_ fields stay as they are, as in Dynare.
 """
-function calib_smoother!(ws::DynareWorkspace, var_list=String[]; options...)
-    _calib_smoother!(ws, nothing, var_list, options)
+function calib_smoother!(ws::DynareWorkspace, var_list=String[]; plots=nothing, options...)
+    _with_plots(ws, plots) do
+        _calib_smoother!(ws, nothing, var_list, options)
+    end
 end
 
 function _calib_smoother!(ws::DynareWorkspace, st, var_list, options)
@@ -619,6 +627,7 @@ function _calib_smoother!(ws::DynareWorkspace, st, var_list, options)
     # evaluate_smoother.m does not reset first_obs to NaN as dynare_estimation_1.m does
     _set_estimation_options!(ws, m, nobs, est === nothing ? 0 : est.n, _fsa(ws), isnan(first_obs0) ? 1.0 : first_obs0, res.options["lik_init"])
     _gui!(oo, "ran_calib_smoother")
+    est === nothing || _fig_est!(ws, :smoother, est; res=res)       # src/plots_hooks.jl
     ws
 end
 

@@ -306,10 +306,11 @@ Dynare's `stoch_simul` on a workspace: solves at the current `M_.params` and `M_
 fills `oo_.dr`, `oo_.irfs`, `oo_.endo_simul`/`oo_.exo_simul` (periods > 0) and the moments. No preprocessing:
 change a parameter (`M_.params[i] = x` or `set_param_value!`) and call it again.
 """
-function stoch_simul!(ws::DynareWorkspace, var_list=String[]; shocks=nothing, rng=nothing, options...)
+function stoch_simul!(ws::DynareWorkspace, var_list=String[]; shocks=nothing, rng=nothing, plots=nothing, options...)
     m, oo = _sync_model!(ws), ws.oo_
     _take_options!(ws, options)
     _with_options(() -> _stoch_simul(ws, m, oo, var_list, shocks, rng), ws, _SOLVE_KINDS)
+    plots === true && _statement_figures!(ws, "stoch_simul", Dict{String,Any}("symbol_list" => String.(collect(var_list))))     # src/plots_hooks.jl
     ws
 end
 
@@ -579,6 +580,7 @@ function occbin_solver!(ws::DynareWorkspace; options...)
         kw[sym] = T === Bool ? _asbool(v) : T === Int ? Int(round(_asnum(v))) : _asnum(v)
     end
     r = simulate(ob; kw...)
+    ws.state[:occbin_result] = r
     sim = MStruct()
     sim.piecewise = Matrix{Float64}(r.piecewise)
     sim.linear = Matrix{Float64}(r.linear)
@@ -726,6 +728,10 @@ function _run_in_place!(ws, st, nss, shocks, rng)
     end
     if kind == "optim_weights"                      # in force from here to the next block (read by osr!)
         ws.state[:osr_weights] = st
+        return
+    end
+    if kind in _PLOT_STATEMENT_KINDS && _plots_on(ws)       # decompositions and occbin_graph: only run for their figures (src/plots_hooks.jl)
+        _plot_statement!(ws, kind, st)
         return
     end
     kind in COMPUTE_KINDS || return

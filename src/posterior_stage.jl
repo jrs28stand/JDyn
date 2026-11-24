@@ -34,6 +34,7 @@ function _posterior_stage!(ws, m::Model, est::Estimation, mc::MCMCResult, vl)
     if flag("bayesian_irf")
         ir = posterior_irf(est, mc; var_list=vls)
         store_posterior_irf!(oo, ir)
+        _fig_est!(ws, :birf, est; ir=ir)            # src/plots_hooks.jl
         dsge_var_active(est) && store_posterior_irf!(oo, posterior_irf_dsgevar(est, ir.params; var_list=vls, rng=dynare_rng(m)); field="bvardsge")
     end
     flag("moments_varendo") && store_moments!(oo, posterior_theoretical_moments(est, mc; var_list=vls))
@@ -43,8 +44,11 @@ function _posterior_stage!(ws, m::Model, est::Estimation, mc::MCMCResult, vl)
             delete!(sk, k)
         end
         P, _ = posterior_draws(est, mc; sub_draws=nothing, drop=mc.drop, rng=dynare_rng(m))
-        wants_stats && store_smoother_statistics!(oo, posterior_smoother_statistics(est; params=P, var_list=isempty(vls) ? nothing : vls,
-                                                                                smoother=smo, filtered_vars=fv, filter_step_ahead=fsa, sk...))
+        if wants_stats
+            pss = posterior_smoother_statistics(est; params=P, var_list=isempty(vls) ? nothing : vls, smoother=smo, filtered_vars=fv, filter_step_ahead=fsa, sk...)
+            store_smoother_statistics!(oo, pss)
+            _fig_est!(ws, :series, est; stats=pss)  # src/plots_hooks.jl
+        end
         nf > 0 && store_posterior_forecast!(oo, posterior_forecast(est; params=P, horizon=nf, var_list=isempty(vls) ? nothing : vls, sk...))
     end
     nothing

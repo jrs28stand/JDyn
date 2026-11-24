@@ -14,5 +14,16 @@ the figures with Dynare's drawing calls (panel lists, titles, file stems, arrays
 | Forecasts, rplot | `forecast_figures`, `conditional_forecast_figures`, `rplot_figures` (src/plots_forecast.jl) | done, same level |
 | Statement hooks | `dynare(file; plots=true, plots_backend=:svg)` writes IRF / forecast / rplot / plot_conditional_forecast figures to `<fname>/graphs` (src/plots_hooks.jl, one line in results.jl `_run_in_place!`) | off by default; honours `nograph`, `graph_format` |
 
-Not done / caveats: the Plots.jl extension (PNG/PDF) has not been exercised here (Plots could not be installed offline); estimation/forecast statements do not yet write figures
-through `dynare(...; plots=true)` (call the producers directly); realtime/squeeze variants use the same `decomposition_figures` on their `DecompositionPlotData`.
+## Follow-up (branch `plots-2`)
+
+- **Automatic figures**: `dynare(file; plots=true)` (default false) writes, following Dynare's triggers and options (`nograph`, `graph_format`, `plot_priors` (default on), `mode_check`, `nodiagnostic`,
+  `smoother`, `bayesian_irf`, `mh_replic`), via `_fig_est!` / `_plot_statement!` / `_statement_figures!` in src/plots_hooks.jl: priors, mode check, prior/posterior densities and Brooks-Gelman
+  diagnostics after MH, Bayesian IRFs (`<fname>/Output`), posterior distributions of smoothed variables/shocks (bayesian smoother), classical smoother figures, `stoch_simul` IRFs, `forecast`,
+  `plot_conditional_forecast`, `rplot`, `occbin_graph`, `plot_shock_decomposition` (groups, type, realtime/vintage, init2shocks, ...), `initial_condition_decomposition`.
+  `shock_decomposition`, `realtime_shock_decomposition` and `squeeze_shock_decomposition` statements are only run (smoother re-run) when `plots=true`; they fill `ws.state[:sd]`, `[:rt]`.
+  The re-run commands take `plots=true` too: `stoch_simul!`, `estimation!`, `calib_smoother!`, `forecast!`, `conditional_forecast!`. Paths are listed in `ws.state[:figure_files]`.
+  `graph_format` formats other than SVG use the Plots extension automatically when Plots is loaded (otherwise an ArgumentError names the fix); `plots_backend=:plots` forces it.
+  Not drawn: MCMC trace plots (Dynare draws them only on request through `trace_plot`), `irf_occbin` (a function, not a statement), calib_smoother without an estimation object.
+- **Plots.jl extension**: all kinds (line/dashed/dotted/band/stacked bar/vline/scatter), grids, legends, titles; png, pdf, eps (GR PostScript), svg. Tested in test/test_plots.jl and
+  test/test_plots_auto.jl, which load Plots from a stacked environment: `JDYN_PLOTS_ENV` (default `/tmp/plotsenv`, any environment with Plots installed; the tests skip if absent).
+Not done / caveats: realtime/squeeze variants use the same `decomposition_figures` on their `DecompositionPlotData`.

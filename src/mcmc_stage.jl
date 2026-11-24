@@ -137,6 +137,7 @@ function _mcmc_block!(ws, m::Model, est::Estimation, mode, vl, seed)
         xb === nothing || (_fill_by_name!(oo, "posterior_mode", est, xb); _fill_by_name!(oo, "posterior_std_at_mode", est, fill(NaN, est.n)))
     end
     _posterior_stage!(ws, m, est, mc, vl)
+    _fig_est!(ws, :mcmc, est; mc=mc, mode=mode)       # src/plots_hooks.jl
     theta = Float64[post[nm].mean for nm in est.names]
     mc, post, theta
 end

@@ -205,7 +205,7 @@ end
     x = randn(rng, 40, 12, 3)
     sd = JDyn.series_distribution(["a", "b", "c"], x, 0.9; density=false)
     sf = posterior_series_figures(m, sd, "SmoothedVariables")
-    @test length(sf) == 1 && sf[1].name == "est_small_SmoothedVariables_c" && length(sf[1].panels[1].curves) == 10
+    @test length(sf) == 1 && sf[1].name == "est_small_SmoothedVariables_c" && length(sf[1].panels[1].curves) == 10 && sf[1].panels[1].curves[3].y == sd.deciles[3, :, 1] && all(c -> length(c.y) == 12, sf[1].panels[1].curves)
     # smoother figures
     res = quiet(() -> JDyn.smooth(m; estimation=est, theta=est.x0))
     sm = smoother_figures(m, res, est.rawdata, est.varobs)
@@ -264,4 +264,34 @@ end
     write(joinpath(d3, "example1.mod"), replace(txt, r"stoch_simul\(" => "stoch_simul(nograph, "))
     quiet(() -> dynare(joinpath(d3, "example1.mod"); plots=true))
     @test !isdir(joinpath(d3, "example1", "graphs"))
+end
+
+# ------------------------------------------------------------------ PNG / PDF / EPS through the Plots.jl extension
+# Plots is a weak dependency: it is loaded from a separate environment (JDYN_PLOTS_ENV, default /tmp/plotsenv, any environment with Plots installed) stacked on LOAD_PATH.
+const _PLOTS_ENV = get(ENV, "JDYN_PLOTS_ENV", "/tmp/plotsenv")
+@testset "Plots.jl extension: png, pdf, eps (all curve kinds, grids, legends)" begin
+    if !isfile(joinpath(_PLOTS_ENV, "Project.toml"))
+        @test_skip false
+    else
+        ENV["GKSwstype"] = "100"
+        _PLOTS_ENV in LOAD_PATH || push!(LOAD_PATH, _PLOTS_ENV)
+        @eval Main using Plots
+        f = Figure("kinds", "All kinds", 1, 2,
+                   [Panel("a", [Curve(1:4, [1.0, 2, 3, 2]; label="x"), Curve(1:4, [0.5, 1, 1.5, 1]; kind=:dashed, label="d"), Curve(1:4, [0.2, 0.3, 0.4, 0.5]; kind=:dotted),
+                                Curve(1:4, [0.0, 0, 0, 0]; kind=:band, y2=[1.0, 1, 1, 1], label="band"), Curve([2.0]; label="vl")]),
+                    Panel("b", [Curve(1:4, [-1.0, 1, 2, 0]; kind=:bar, label="u"), Curve(1:4, [1.0, 1, 1, 1]; kind=:bar, label="v"),
+                                Curve(1:4, [0.2, 0.3, 0.4, 0.5]; kind=:scatter, label="sc")]; zeroline=true)])
+        grid = Figure("grid34", "3x4", 3, 4, [Panel("p$i", [Curve(1:5, cumsum(randn(MersenneTwister(i), 5)); label="s")]) for i in 1:12])
+        d = mktempdir()
+        files = save_figures([f, grid], d; format=["png", "pdf", "eps", "svg"], backend=:plots)
+        @test length(files) == 8 && all(isfile, files) && all(x -> filesize(x) > 1000, files)
+        @test read(joinpath(d, "kinds.png"), 4) == UInt8[0x89, 0x50, 0x4e, 0x47]
+        @test String(read(joinpath(d, "kinds.pdf"), 4)) == "%PDF"
+        @test startswith(read(joinpath(d, "kinds.eps"), String), "%!PS")
+        # real figures: IRFs and a shock decomposition
+        m = build(replace(read(EX1, String), "var e, u = 0.009*0.009;" => "var e, u = 0;"); name="example1")
+        r = plot_irfs(m; outdir=joinpath(d, "irf"), format=["png", "pdf"], backend=:plots)
+        @test length(r.files) == 4 && all(isfile, r.files)
+        @test isempty(plot_irfs(m; outdir=joinpath(d, "irf2"), format="png", backend=:plots, nograph=true).files)
+    end
 end
