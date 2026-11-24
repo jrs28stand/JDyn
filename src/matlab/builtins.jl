@@ -5,6 +5,8 @@
 
 const BUILTINS = Dict{String,Function}()
 const LAZY = Dict{String,Function}()
+"Julia implementations of package functions (`pac.update.expectation`, ...): dotted name => f(I, args, nargout) (src/pac.jl)."
+const PKG_FUNCS = Dict{String,Function}()
 
 bi!(f, names...) = (for n in names; BUILTINS[n] = f; end; f)
 lazy!(f, names...) = (for n in names; LAZY[n] = f; end; f)
@@ -1299,9 +1301,8 @@ const MUTATORS = Set(["evalin", "assignin", "run", "source", "dynare", "set_shoc
 const MUTATOR_DOTTED = Set(["backward_model.initialize", "cli.evaluate.smoother", "estimate.nls", "gsa.set_shocks_param",
     "mom.run", "occbin.IVF_posterior", "occbin.kalman_update_algo_1", "occbin.kalman_update_algo_3",
     "occbin.kalman_update_engine", "occbin.match_function", "occbin.setup", "osr.run",
-    "pac.estimate.iterative_ols", "pac.estimate.nls", "pac.mce.parameters", "pac.update.expectation",
-    "pac.update.parameters", "pac.update.equation", "var_expectation.update",
-    "var_expectation.update_parameters", "gsa.run", "gsa.map_calibration", "gsa.stability_mapping"])
+    "pac.estimate.iterative_ols", "pac.estimate.nls",
+    "pac.update.parameters", "var_expectation.update_parameters", "gsa.run", "gsa.map_calibration", "gsa.stability_mapping"])
 const MUTATOR_PACKAGES = Set([split(d, ".")[1] for d in MUTATOR_DOTTED])
 "Dynare functions whose M_/M_.params output only reflects what the steady-state file changed."
 const SOLVE_FUNCS = Set(["resol", "evaluate_steady_state", "dynare_resolve", "stoch_simul", "steady_", "resid", "check",
