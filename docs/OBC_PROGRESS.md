@@ -1,4 +1,49 @@
-# OBC methods (`obc_method`): progress log (branch `obc`)
+# OBC methods (`obc_method`): progress log (branch `obc`, news port on branch `obc-news`)
+
+## State (news port) -- read this first
+
+Branch `obc-news` (from `wip/obc` d7a4214), backed up as `wip/obc-news`. Clone: /home/claude/work/jdyn-news. Task: port pydyn's `news`
+solvers (pydyn/obc.py: `solve_news`, `m_diagnostics`, `_is_p_exact`, `NewsOBC`/`RegimeOBC` pieces) into JDyn. Updated 2026-11-24.
+
+| Step | State | Where |
+|---|---|---|
+| HiGHS dependency | done: `HiGHS_jll` (hard dependency, Project.toml), C API through `ccall` only (no HiGHS.jl/JuMP/MOI) | src/highs.jl: `highs_lp`, `highs_milp` |
+| A. `news`, one complementary pair per constraint | done: homogenised MILP, horizon loop (T/4, T/2, T), polish by the square system on the reported binding set, mandatory `obc_verify`; active set in front; `obc_fast_path=false` forces the integer programme | src/obc_solvers.jl `solve_news`; src/obc.jl `_simulate_obc` |
+| B. diagnostics on M | done: S test (LP), exact P test (Tsatsomeros-Li recursion, `max_exact` = 16), positive-definite symmetric part, `largest_p`; function `m_diagnostics`, `obc_diagnostics(ob)` / `(sys)` / `(rg)`; written to `oo_.occbin.news.diagnostics` | src/obc_solvers.jl, src/obc.jl `_news_struct` |
+| C. general regime formulation | done: one wedge per switched equation, OccBin's test on conditions in levels, guess-and-verify, refusal when an equation's version depends on two constraints jointly. `obc_method = news` picks the LCP when every constraint is `complementarity`, else this; `oo_.occbin.news.formulation` says which (`lcp` / `regime`); `obc_solver_options = (formulation = :regime,)` forces it | src/obc_regime.jl (`RegimeOBC`, `_regime_step`, `_simulate_regime`) |
+| D. tied-wedge reduction | done: `_find_tie`, `obc_lcp`, `single_spell_solutions`, `_solve_lcp` (first fallback when guess-and-verify cycles; proof of `no_solution` by the infeasible linear programme), `_regime_milp` (last resort, 30 s limit, `REGIME_MILP_TIME_LIMIT`) | src/obc_regime.jl |
+| E. housekeeping | done: timing hook moved to src/obc.jl as a documented debug switch (`OBC_TICKS`, needed by bench/obc_bench.jl; the calls in occbin.jl stay: one Ref load and a branch per shock period, cost not measured separately); the orientation test (rule 7) was already in the classifier | src/obc.jl |
+| F. benchmarks | see docs/OBC_PERF.md ("news port") | bench/obc_bench.jl (`--methods`) |
+
+Decisions of this port
+1. `minnorm` keeps refusing `multi_equation`, `shared_equation` and `inconsistent` constraints. Its objective (smallest wedges among the solutions of
+   an LCP) has no counterpart in the regime formulation, whose answer is OccBin's own piecewise-linear solution. `news` uses the regime formulation there.
+2. `solve_news` is the pure integer programme (plus polish and verification). The fast path (active set) is the caller's, as for `minnorm`;
+   `obc_fast_path=false` skips it. A fast-path answer that violates the gaps beyond the horizon is sent to the integer programme, which imposes those rows
+   too (`Mb`, `qb`), so that a different (e.g. shorter-spell) equilibrium that respects them can be found; if none exists the status is `horizon_too_short`.
+3. An MILP point that cannot be polished is accepted only if it passes `obc_verify` at `max(tol, 1e-7)` (pydyn's rule); `info.polished` says which. In all
+   tests every accepted point was polished.
+4. `ObcNews` has two more fields (`formulation`, `diagnostics`); the old 6-argument constructor is kept.
+5. The regime history of the news methods now covers `max(check_ahead + 1, horizon)` rows (it was cut at `check_ahead + 1`, which dropped part of a spell longer
+   than OccBin's path; no result changes when the horizon is at most `check_ahead + 1`).
+6. Only the paths of the variables read by the bind/relax conditions, and the state variables, enter the regime formulation's step (as in pydyn's perf work).
+7. Shocks-free periods continue the last path (OccBin's shift) in both formulations, as `minnorm` does; pydyn re-solves them (same answer when unique).
+
+Rerun the tests (about 12 minutes, 2 shared cores; the first call precompiles JDyn, 3-4 minutes):
+```
+cd /home/claude/work/jdyn-news && source /root/jl/jdyn_env.sh
+nice julia --project=. test/test_obc_news.jl                  # the new file (news, regime formulation, sw benchmark)
+nice julia --project=. test/test_obc.jl                       # minnorm and the shared machinery
+for f in test_occbin test_occbin_options test_occbin_estimation; do nice julia --project=. test/$f.jl; done
+nice julia --project=. test/runtests.jl test_obc.jl test_obc_news.jl      # per-file modules; test_plotting.jl fails on this machine (hard-coded path), not ours
+nice julia --project=. bench/obc_bench.jl --tag news --models zlb,zlb2,nkm,sw --parts p1,p2 --reps 5      # the benchmark
+```
+Next steps (none blocking): `news` for estimation/filters (the OccBin filters consume `ss[t]`, which the news loops already provide); the single-spell cache
+(pydyn's `obc_lk.py`, not ported by instruction); an equilibrium-selection option (pydyn's `obc_selection`, not ported by instruction); time limits for the
+LCP formulation's integer programme in `simulate` are available as `obc_solver_options = (time_limit = 5.0,)`.
+
+---
+
 
 Clone: /home/claude/work/jdyn-obc (base `main` a487e5d). Contract: /home/claude/work/OBC_CONTRACT.md (2026-11-24,
 amended the same day after pydyn's `news`). Backup: `git push origin obc:wip/obc`. Scope: order 1, the shared

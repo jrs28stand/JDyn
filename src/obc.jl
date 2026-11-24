@@ -605,9 +605,10 @@ function _simulate_obc(ob::Occbin, shocks_in::AbstractMatrix; method::Symbol, ho
                        periods::Integer, check_ahead_periods::Integer, max_check_ahead_periods::Real, init, exo_pos,
                        ignored::NamedTuple, solver_options=NamedTuple(), fast_path::Bool=true)
     k, n, n_exo, m = ob.k, ob.n, ob.n_exo, ob.model
-    if method == :news                      # constraints that are not all complementary pairs: the regime formulation (src/obc_regime.jl)
+    if method == :news                      # constraints that are not all complementary pairs: the regime formulation (src/obc_regime.jl);
+                                            # obc_solver_options = (formulation = :regime,) asks for it on a complementarity model too
         cons = get!(() -> obc_constraints(ob), _OBC_CONS_CACHE, ob)
-        all(c -> c.class == :complementarity, cons) ||
+        (all(c -> c.class == :complementarity, cons) && get(solver_options, :formulation, :auto) != :regime) ||
             return _simulate_regime(ob, shocks_in; method=method, horizon=horizon, tol=tol, raise=raise, periods=periods,
                                     check_ahead_periods=check_ahead_periods, max_check_ahead_periods=max_check_ahead_periods,
                                     init=init, exo_pos=exo_pos, ignored=ignored, solver_options=solver_options, fast_path=fast_path)

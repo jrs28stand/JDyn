@@ -170,8 +170,8 @@ end
     # no solution: y >= 0, -1 - y >= 0 is empty
     @test solve_minnorm([-1.0;;], [-1.0])[2] == :no_solution
     @test solve_active_set([-1.0;;], [-1.0])[2] == :not_converged
-    # news: clearly marked as not implemented yet
-    @test_throws ErrorException solve_news(M, q)
+    # news: implemented (src/obc_solvers.jl; tested in test_obc_news.jl); registered as the solver of obc_method = news
+    @test solve_news(M, q)[2] == :ok
     @test JDyn.OBC_SOLVERS[:news] === solve_news
 end
 
@@ -241,11 +241,11 @@ end
     c = obc_constraints(m)
     @test c[1].class == :complementarity && c[2].class == :inconsistent && occursin("orientation", c[2].why)
     @test_throws ModelError simulate(Occbin(m); obc_method=:minnorm)
-    # unknown method, bad horizon, news not implemented
+    # unknown method, bad horizon; news is implemented (formerly a stub that threw)
     ob = Occbin(load_dir(joinpath(OBC_DIR, "obc_zlb.mod")))
     @test_throws ArgumentError simulate(ob; obc_method=:lcp)
     @test_throws ArgumentError simulate(ob; obc_method=:minnorm, obc_horizon=0)
-    @test_throws ErrorException simulate(ob; obc_method=:news)
+    @test simulate(ob; obc_method=:news).news.method == :news
     # horizon too short: the bound binds for 7 periods, the horizon is 3
     err = try simulate(ob; obc_method=:minnorm, obc_horizon=3); nothing catch e; e end
     @test err isa ObcError && err.status == :horizon_too_short && err.period == 1

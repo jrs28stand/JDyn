@@ -8,8 +8,12 @@
 # and after in the same process"); JDynBase is then the BEFORE column and JDyn the AFTER column. Without JDynBase only
 # JDyn is measured.
 #
-# Methods: occbin (the default), minnorm (with the shared active-set fast path) and minnorm_pure (obc_fast_path=false).
-# `news` is a stub in JDyn and `sw` is a multi_equation constraint that the news methods refuse: sw is measured with OccBin only.
+# Methods: occbin (the default), minnorm (with the shared active-set fast path), minnorm_pure (obc_fast_path=false), news (the LCP
+# formulation with the fast path in front of the integer programme), news_pure (obc_fast_path=false: every binding period through the
+# HiGHS integer programme) and regime (obc_method = news with the regime formulation of src/obc_regime.jl, forced on the
+# complementarity models too). `sw` is a multi_equation constraint that minnorm and the LCP formulation refuse: it is measured with
+# OccBin and regime only. `--methods a,b,c` selects methods (occbin is always run: it is the reference of every comparison).
+# Integer programmes of the regime formulation's fallbacks are limited to 0.5 s here (JDyn.REGIME_MILP_TIME_LIMIT), as in pydyn's R1.
 #
 # Conventions (all recorded in the output): horizon H: OccBin check_ahead_periods = H; minnorm obc_horizon = H and
 # check_ahead_periods = H. Shocks: standard normal draws (Random.MersenneTwister(SEED)) times the model's shock standard
@@ -33,7 +37,7 @@ const DYNARE_SRC = get(ENV, "JDYN_DYNARE_SRC", "/home/claude/ref/dynare-7.2")
 # ------------------------------------------------------------------ command line
 function parse_args(args)
     o = Dict{String,String}("tag" => "run", "models" => "zlb,zlb2,nkm,sw", "parts" => "p1,p2,p3,p4,r1", "reps" => "5",
-                            "out" => joinpath(REPO, "bench", "results"))
+                            "out" => joinpath(REPO, "bench", "results"), "methods" => "all")
     i = 1
     while i <= length(args)
         a = args[i]
@@ -64,14 +68,19 @@ const MODELS = Dict(
     "zlb" => ModelSpec("zlb", joinpath(REPO, "test", "obc", "obc_zlb.mod"), ("phi", "rho"), true, nothing),
     "zlb2" => ModelSpec("zlb2", joinpath(REPO, "test", "obc", "obc_zlb2.mod"), ("phi", "rho"), true, nothing),
     "nkm" => ModelSpec("nkm", joinpath(DYNARE_SRC, "tests", "occbin", "filter", "NKM_0_std_shocks.mod"), ("phipi", "phiy"), true, nothing),
-    "sw" => ModelSpec("sw", joinpath(REPO, "test", "obc", "obc_sw_zlb.mod"), ("crpi", "cry"), false, 1.0),
+    "sw" => ModelSpec("sw", joinpath(REPO, "test", "obc", "obc_sw_zlb.mod"), ("crpi", "cry"), false, 0.25),
 )
 const MODEL_ORDER = ["zlb", "zlb2", "nkm", "sw"]
 
 # method name => simulate keywords (H is added by `simkw`)
 const METHOD_KW = Dict(:occbin => NamedTuple(), :minnorm => (obc_method=:minnorm,),
-                       :minnorm_pure => (obc_method=:minnorm, obc_fast_path=false))
-methods_of(spec::ModelSpec) = spec.news ? [:occbin, :minnorm, :minnorm_pure] : [:occbin]
+                       :minnorm_pure => (obc_method=:minnorm, obc_fast_path=false),
+                       :news => (obc_method=:news,), :news_pure => (obc_method=:news, obc_fast_path=false),
+                       :regime => (obc_method=:news, obc_solver_options=(formulation=:regime,)))
+function methods_of(spec::ModelSpec)
+    all = spec.news ? [:occbin, :minnorm, :minnorm_pure, :news, :news_pure, :regime] : [:occbin, :regime]
+    OPTS["methods"] == "all" ? all : [m for m in all if m == :occbin || String(m) in split(OPTS["methods"], ",")]
+end
 simkw(method::Symbol, H::Int) = method == :occbin ? (check_ahead_periods=H,) :
                                 merge(METHOD_KW[method], (obc_horizon=H, check_ahead_periods=H))
 
@@ -310,7 +319,7 @@ function perturbed_params(L::Loaded, n)
     out
 end
 
-const P2_PARTS = [:steady_state, :first_order, :Occbin, :regimes, :obc_constraints, :obc_system]
+const P2_PARTS = [:steady_state, :first_order, :Occbin, :regimes, :obc_constraints, :obc_system, :regime_build, :diagnostics]
 
 function p2(backs, loaded::Dict{Symbol,Loaded}, H; reps=REPS)
     L1 = first(values(loaded))
@@ -344,10 +353,13 @@ function p2(backs, loaded::Dict{Symbol,Loaded}, H; reps=REPS)
                 isdefined(J, :_obc_ext) && J._obc_ext(sys, 2H)      # the gaps beyond the horizon (check_ahead = H): part of the set-up in the new code
             end
             t7 = tick()
+            rg = isdefined(J, :regime_obc) ? J.regime_obc(ob2, H, 2H) : nothing; t8 = tick()          # the regime formulation's set-up (fresh Occbin)
+            L.spec.news && isdefined(J, :obc_diagnostics) && J.obc_diagnostics(J.obc_system(ob2; horizon=H)); t9 = tick()   # diagnostics on M (S test, P test up to 16 rows)
             if wr
                 push!(parts[(b, :steady_state)], (t1 - t0) / 1e6); push!(parts[(b, :first_order)], (t2 - t1) / 1e6)
                 push!(parts[(b, :Occbin)], (t3 - t2) / 1e6); push!(parts[(b, :regimes)], (t4 - t3) / 1e6)
                 push!(parts[(b, :obc_constraints)], (t5 - t4) / 1e6); push!(parts[(b, :obc_system)], (t7 - t6) / 1e6)
+                push!(parts[(b, :regime_build)], (t8 - t7) / 1e6); push!(parts[(b, :diagnostics)], (t9 - t8) / 1e6)
             end
             nothing
         end)
@@ -358,15 +370,16 @@ function p2(backs, loaded::Dict{Symbol,Loaded}, H; reps=REPS)
 end
 
 function report_p2(parts, backs, spec::ModelSpec, H)
-    say("| backend | steady_state | first_order | Occbin() total | regime matrices (all 2^k) | obc_constraints (post-processor) | obc_system (M, q; fresh Occbin, includes its constraints) | ready: occbin | ready: minnorm |")
-    say("|---|---|---|---|---|---|---|---|---|")
+    say("| backend | steady_state | first_order | Occbin() total | regime matrices (all 2^k) | obc_constraints (post-processor) | obc_system (M, q; fresh Occbin, includes its constraints) | RegimeOBC set-up (fresh Occbin, N = 2H) | diagnostics on M (S test, P test up to 16 rows) | ready: occbin | ready: minnorm | ready: news (LCP, with diagnostics) |")
+    say("|---|---|---|---|---|---|---|---|---|---|---|---|")
     for (b, _) in backs
         g(k) = parts[(b, k)]
         rd_o = g(:Occbin) .+ g(:regimes)
         rd_m = g(:Occbin) .+ g(:obc_system)
         say("| ", b, " | ", mm(g(:steady_state); d=2), " | ", mm(g(:first_order); d=2), " | ", mm(g(:Occbin); d=2), " | ", mm(g(:regimes); d=2), " | ",
-            spec.news ? mm(g(:obc_constraints); d=2) : "-", " | ", spec.news ? mm(g(:obc_system); d=2) : "-", " | ", mm(rd_o; d=2), " | ",
-            spec.news ? mm(rd_m; d=2) : "-", " |")
+            spec.news ? mm(g(:obc_constraints); d=2) : "-", " | ", spec.news ? mm(g(:obc_system); d=2) : "-", " | ", mm(g(:regime_build); d=2), " | ",
+            spec.news ? mm(g(:diagnostics); d=2) : "-", " | ", mm(rd_o; d=2), " | ",
+            spec.news ? mm(rd_m; d=2) : "-", " | ", spec.news ? mm(rd_m .+ g(:diagnostics); d=2) : "-", " |")
     end
     say("")
     say("Milliseconds, min / median over $(length(parts[(first(backs)[1], :Occbin)])) interleaved repeats, a different perturbed parameter vector in each (two parameters: ",
@@ -508,12 +521,16 @@ function main()
     say("- date: ", Libc.strftime("%Y-%m-%d %H:%M:%S", time()), "; julia ", VERSION, "; seed ", SEED, "; backends: ", join([string(b) for (b, _) in BACKENDS], ", "),
         " (before = baseline source commit ", isfile("/home/claude/work/jdynbase/BASE_COMMIT") ? strip(read("/home/claude/work/jdynbase/BASE_COMMIT", String)) : "n/a",
         "; after = ", strip(read(`git -C $REPO rev-parse --short HEAD`, String)), " + working tree)")
+    for (_, J) in BACKENDS
+        isdefined(J, :REGIME_MILP_TIME_LIMIT) && (J.REGIME_MILP_TIME_LIMIT[] = 0.5)
+    end
+    say("- regime formulation: integer programmes of the fallbacks limited to 0.5 s; methods: ", OPTS["methods"])
     say("- load average at start: ", strip(read("/proc/loadavg", String)), "; nproc ", Sys.CPU_THREADS, "; BLAS threads 1; repeats ", REPS)
     say("")
     for id in MODEL_ORDER
         id in split(OPTS["models"], ",") || continue
         spec = MODELS[id]
-        say("## Model `", id, "` (", spec.news ? "OccBin, minnorm, minnorm without the fast path" : "OccBin only: multi_equation constraint, the news methods refuse it", ")")
+        say("## Model `", id, "` (methods: ", join(methods_of(spec), ", "), spec.news ? "" : "; multi_equation constraint: minnorm and the LCP formulation refuse it", ")")
         say("")
         loaded = Dict{Symbol,Loaded}(b => load_model(J, spec) for (b, J) in BACKENDS)
         L = loaded[:after]
