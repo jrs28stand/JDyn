@@ -58,7 +58,7 @@ end
             qd = JDyn.ho_gap_path(h, JDyn.ho_expected_path(h, y1, y2, o), prev, u)
             q = h.qc .+ h.Q1 * y1 .+ h.Qo * o
             order == 2 && (q .+= h.Q2 * y2 .+ h.Qw * kron(y1[h.sv], y1[h.sv]))
-            q[1] += h.aC' * prev + h.aJ' * u
+            q[1] += (h.aC * prev + h.aJ * u)[1]
             @test maximum(abs, q .- qd) < 1e-14
         end
         sim = JDyn.obc_ho_simulate(h, S)
@@ -508,4 +508,63 @@ end
     h1 = mk(regions=1)
     e6 = try; JDyn._cub_one!(h1, pbad, 10, 63, 3); nothing; catch e; e; end
     @test e6 isa JDyn.ObcError && e6.detail.n_failed == 10 == e6.detail.n_relevant && !e6.detail.lower_bound && e6.detail.n_active_set_failed === nothing && e6.detail.period == 3
+end
+
+@testset "two constraints at higher order (obc_zlb2.mod: the bound on the rate and a floor on the second variable)" begin
+    m = load_copy(joinpath(@__DIR__, "obc", "obc_zlb2.mod"))
+    ob = JDyn.Occbin(m)
+    S = reshape(randn(MersenneTwister(1), 100) .* 0.05, :, 1)
+    kw = (obc_method=:news, obc_horizon=24, check_ahead_periods=24, periods=100)
+    r0 = JDyn.simulate(ob, S; kw...)                                              # JDyn's own order-1 news simulation (the loop of src/obc.jl)
+    h1 = JDyn.obc_ho(ob; order=1, horizon=24, check_ahead=24)
+    @test h1.nc == 2 && h1.nT == 48 && h1.NR == 96 && size(h1.Mf) == (96, 48) && size(h1.Gq) == (96, 1)
+    o1 = JDyn.obc_ho_simulate(h1, S)
+    @test maximum(abs, o1.with_bound .- r0.piecewise) < 1e-12
+    @test maximum(abs, o1.wedges .- r0.news.wedges) < 1e-12
+    @test count(t -> maximum(o1.wedges[t, 1:24]) > 1e-9 && maximum(o1.wedges[t, 25:48]) > 1e-9, 1:100) > 20      # both bind together in many periods
+    # the same through simulate(): history per constraint, wedges 2 T per period
+    ro = JDyn.simulate(ob, S; obc_order=1, obc_cubature=false, kw...)
+    @test size(ro.news.wedges) == (100, 48) && all(length(rh) == 2 for rh in ro.regime_history) && maximum(abs, ro.piecewise .- r0.piecewise) < 1e-12
+    # the affine map of q equals the recursion followed by the gap definition, for both constraints
+    h2 = JDyn.obc_ho(ob; order=2, horizon=24, check_ahead=24)
+    rng = MersenneTwister(3)
+    for _ in 1:3
+        y1, y2, o, prev, u = 0.01 .* randn(rng, h2.n), 1e-3 .* randn(rng, h2.n), 1e-3 .* randn(rng, h2.n), 1e-2 .* randn(rng, h2.n), randn(rng, 1)
+        qd = JDyn.ho_gap_path(h2, JDyn.ho_expected_path(h2, y1, y2, o), prev, u)
+        q = h2.qc .+ h2.Q1 * y1 .+ h2.Qo * o .+ h2.Q2 * y2 .+ h2.Qw * kron(y1[h2.sv], y1[h2.sv])
+        for c in 1:2
+            q[h2.rows[1, c]] += (h2.aC[c, :]' * prev + h2.aJ[c, :]' * u)
+        end
+        @test maximum(abs, q .- qd) < 1e-12
+    end
+    # cubature, batch against scalar: the three modes give the same simulation, no failed point
+    sims = Dict{Symbol,Any}()
+    for md in (:scalar, :cache, :group)
+        hh = JDyn.obc_ho(ob; order=2, horizon=24, check_ahead=24, cubature=true, qmc_level=6, regions=0, m_diagnostic=false)
+        hh.cub.mode = md
+        sims[md] = JDyn.obc_ho_simulate(hh, S[1:30, :])
+    end
+    @test sum(sims[:scalar].relevant) > 500 && sum(sims[:scalar].dropped) == 0
+    @test maximum(abs, sims[:cache].wedges .- sims[:scalar].wedges) < 1e-12 && maximum(abs, sims[:group].wedges .- sims[:scalar].wedges) < 1e-12
+    # and the full average equals the loop over the relevant points of a gap path with both constraints in play
+    hh = JDyn.obc_ho(ob; order=2, horizon=24, check_ahead=24, cubature=true, qmc_level=6, regions=0, m_diagnostic=false)
+    qs = Vector{Float64}[]; hh.cub.qlog = qs
+    JDyn.obc_ho_simulate(hh, S[1:30, :]); hh.cub.qlog = nothing
+    JDyn._ho_prepare_points!(hh)
+    nchk = 0
+    for q in qs[10:20]
+        y = JDyn.ho_news_shocks(hh, q, 0)
+        acc = zeros(hh.nT); np = size(hh.xi, 2)
+        for j in 1:np
+            p = q .+ hh.R * hh.xi[:, j]
+            minimum(p) < -1e-8 * max(1.0, maximum(abs, p)) || continue
+            acc .+= JDyn._ho_lcp(hh, p, 0)
+        end
+        @test maximum(abs, y .- acc ./ np) < 1e-12
+        nchk += 1
+    end
+    @test nchk == 11
+    # one region with two constraints
+    h1r = JDyn.obc_ho(ob; order=2, horizon=24, check_ahead=24, cubature=true, qmc_level=6, regions=1, m_diagnostic=false)
+    @test size(JDyn.obc_ho_simulate(h1r, S[1:30, :]).wedges) == (30, 48)
 end

@@ -51,14 +51,14 @@ mutable struct ObcHO
     ghxs::Matrix{Float64}        # ns x ns : ghx on the states
     ghus::Matrix{Float64}        # ns x nx
     SigS::Matrix{Float64}        # ghus Sigma ghus'
-    aC::Vector{Float64}
-    aB::Vector{Float64}
-    aA::Vector{Float64}
-    aJ::Vector{Float64}
-    a0::Float64
-    Mf::Matrix{Float64}          # N x T: sys.M over the check-ahead rows
-    Mb::Matrix{Float64}          # (N - T) x T: the rows beyond the horizon
-    Gq::Matrix{Float64}          # N x nx: response of the gap path to a shock in period 0
+    aC::Matrix{Float64}          # nc x n: gap coefficients per constraint (lag, current, lead of the alternative residual's gradient, shocks)
+    aB::Matrix{Float64}
+    aA::Matrix{Float64}
+    aJ::Matrix{Float64}          # nc x nx
+    a0::Vector{Float64}          # nc
+    Mf::Matrix{Float64}          # NR x nT: sys.M over the check-ahead rows (head rows first, then the rows beyond the horizon, constraint-major)
+    Mb::Matrix{Float64}          # (NR - nT) x nT: the rows beyond the horizon
+    Gq::Matrix{Float64}          # NR x nx: response of the gap path to a shock in period 0
     # affine map  q = qc + Q1 y1 + Q2 y2 + Qw kron(y1s, y1s) + Qo o_pre  (+ aC' prev_total + aJ' u in the first row)
     qc::Vector{Float64}
     Q1::Matrix{Float64}
@@ -83,6 +83,10 @@ mutable struct ObcHO
     tol::Float64
     stats::Dict{Symbol,Int}
     cub::CubState                # work space, factorisation cache and mode of the full average (src/obc_cubature.jl)
+    nc::Int                      # constraints (each a complementary pair)
+    nT::Int                      # wedges: nc T, stacked constraint by constraint
+    NR::Int                      # rows of q: nc N, the head rows (nT) first, then the rows beyond the horizon, constraint-major in both blocks
+    rows::Matrix{Int}            # N x nc: row of q of constraint c in gap period t
 end
 Base.show(io::IO, h::ObcHO) = print(io, "ObcHO(order = ", h.order, ", T = ", h.T, ", N = ", h.N, h.cubature ? ", cubature: " * string(size(h.R, 2)) * " dims, " *
                                     string(size(h.xi, 2)) * " points" : "", ")")
@@ -124,8 +128,9 @@ function obc_ho(ob::Occbin; order::Integer=2, horizon::Integer=40, check_ahead::
     T, N = Int(horizon), Int(horizon) + Int(check_ahead)
     check_ahead >= 0 || throw(ArgumentError("check_ahead_periods must be non-negative"))
     sys = obc_system(ob; horizon=T, method=:news)
-    length(sys.cons) == 1 ||
-        throw(ModelError("obc_order = 2 and obc_cubature are implemented for one constraint that is a complementary pair (the model has $(length(sys.cons)))"))
+    nc = length(sys.cons)
+    nT, NR = nc * T, nc * N
+    rows = [t <= T ? (c - 1) * T + t : nT + (c - 1) * (N - T) + (t - T) for t in 1:N, c in 1:nc]
     n, nx = ob.n, ob.n_exo
     Sigma = Matrix{Float64}(Sigma_e === nothing ? m.Sigma_e : Sigma_e)
     dr = k_order(m; order=order, ys=ob.ys, params=ob.params, pruning=true, Sigma_e=Sigma)
@@ -142,19 +147,19 @@ function obc_ho(ob::Occbin; order::Integer=2, horizon::Integer=40, check_ahead::
     end
     ghxs, ghus = ghx[sv, :], ghu[sv, :]
     SigS = ghus * Sigma * ghus'
-    G, a0 = sys.G[1, :], sys.g0[1]
-    aC, aB, aA, aJ = G[1:n], G[n+1:2n], G[2n+1:3n], G[3n+1:3n+nx]
+    G, a0 = sys.G, Vector{Float64}(sys.g0)
+    aC, aB, aA, aJ = Matrix(G[:, 1:n]), Matrix(G[:, n+1:2n]), Matrix(G[:, 2n+1:3n]), Matrix(G[:, 3n+1:3n+nx])
     ext = _obc_ext(sys, N)
     Mf = vcat(sys.M, ext.Mb)
     Qxf = vcat(sys.Qx, ext.Qxb)
     Gq = Qxf[:, n+1:n+nx]
     h = ObcHO(ob, sys, Int(order), T, N, n, nx, ns, sv, Vector{Float64}(ob.ys), Matrix{Float64}(ob.P), Matrix{Float64}(sys.Wn), Sigma,
               ghx, ghu, ghxx, ghxu, ghuu, cst2, c2, ghxs, ghus, SigS, aC, aB, aA, aJ, a0, Mf, ext.Mb, Gq,
-              zeros(N), zeros(N, n), zeros(N, n), zeros(N, ns^2), zeros(N, n),
+              zeros(NR), zeros(NR, n), zeros(NR, n), zeros(NR, ns^2), zeros(NR, n),
               cubature, Int(periods_of_uncertainty), Int(qmc_level), regions, taper,
-              pruning_cutoff === nothing ? nothing : Float64(pruning_cutoff), Int(max_cubature_dimension), zeros(N, 0), zeros(0, 0),
+              pruning_cutoff === nothing ? nothing : Float64(pruning_cutoff), Int(max_cubature_dimension), zeros(NR, 0), zeros(0, 0),
               zeros(0, 0), zeros(0, 0), Float64[], Float64[], zeros(0, 0), Float64(tol),
-              Dict(:lcp => 0, :cubature_points => 0, :relevant_points => 0), CubState(sys.M, N))
+              Dict(:lcp => 0, :cubature_points => 0, :relevant_points => 0), CubState(sys.M, NR), nc, nT, NR, rows)
     _ho_build_q_map!(h)
     h.cub.milp_time_limit = _obc_float_option(cubature_milp_time_limit, "obc_cubature_milp_time_limit"; lo=0.0)
     h.cub.tolerance = _obc_float_option(cubature_failure_tolerance, "obc_cubature_failure_tolerance"; lo=0.0, hi=1.0, open_hi=true)
@@ -186,17 +191,20 @@ end
 # The affine map of q. X_k, the expected total at period k, is  A1_k y1 + A2_k y2 + Aw_k kron(y1s, y1s) + P^k o_pre + d_k  (all in
 # declaration order); q_t = a0 + aC' X_{t-1} + aB' X_t + aA' X_{t+1}. Only the contractions with the gap coefficients are kept.
 function _ho_build_q_map!(h::ObcHO)
-    n, ns, N, sv, order = h.n, h.ns, h.N, h.sv, h.order
-    fill!(h.qc, h.a0)
+    n, ns, N, sv, order, nc = h.n, h.ns, h.N, h.sv, h.order, h.nc
+    for c in 1:nc, t in 1:N
+        h.qc[h.rows[t, c]] = h.a0[c]
+    end
     fill!(h.Q1, 0.0); fill!(h.Q2, 0.0); fill!(h.Qw, 0.0); fill!(h.Qo, 0.0)
     coefs = ((h.aB, 0), (h.aA, -1), (h.aC, 1))              # (gap coefficients, row offset: X_k enters row k + offset)
     # k = 0: X_0 = y1 + y2 + o_pre
-    for (a, off) in coefs
+    for c in 1:nc, (A, off) in coefs
         r = 0 + off + 1
         1 <= r <= N || continue
-        @views h.Q1[r, :] .+= a
-        @views h.Q2[r, :] .+= a
-        @views h.Qo[r, :] .+= a
+        rr = h.rows[r, c]
+        @views h.Q1[rr, :] .+= A[c, :]
+        @views h.Q2[rr, :] .+= A[c, :]
+        @views h.Qo[rr, :] .+= A[c, :]
     end
     Z = copy(h.ghx)                                         # n x ns: y1[sv] -> m1_k
     U = copy(h.ghx)                                         # y2[sv] -> m2_k
@@ -206,16 +214,18 @@ function _ho_build_q_map!(h::ObcHO)
     Wc = copy(h.SigS)
     Pk = copy(h.P)                                          # P^k
     for k in 1:N
-        for (a, off) in coefs
+        for c in 1:nc, (A, off) in coefs
             r = k + off + 1
             1 <= r <= N || continue
-            @views h.Q1[r, sv] .+= Z' * a
-            h.qc[r] += dot(a, e)
+            rr = h.rows[r, c]
+            a = view(A, c, :)
+            @views h.Q1[rr, sv] .+= Z' * a
+            h.qc[rr] += dot(a, e)
             if order == 2
-                @views h.Q2[r, sv] .+= U' * a
-                @views h.Qw[r, :] .+= Vw' * a
+                @views h.Q2[rr, sv] .+= U' * a
+                @views h.Qw[rr, :] .+= Vw' * a
             end
-            @views h.Qo[r, :] .+= Pk' * a
+            @views h.Qo[rr, :] .+= Pk' * a
         end
         k == N && break
         # advance X_k -> X_{k+1}
@@ -256,15 +266,18 @@ function ho_expected_path(h::ObcHO, y1::AbstractVector, y2::AbstractVector, o_pr
     out
 end
 
-"The gap along an expected path (`N + 1` rows) by the definition: the reference for the affine map."
+"The gap along an expected path (`N + 1` rows) by the definition (stacked like `q`): the reference for the affine map."
 function ho_gap_path(h::ObcHO, path::AbstractMatrix, prev_total::AbstractVector, shock::AbstractVector)
     N = h.N
-    q = zeros(N)
-    for t in 1:N
-        q[t] = h.a0 + dot(h.aB, view(path, t, :)) + dot(h.aA, view(path, t + 1, :))
-        t > 1 && (q[t] += dot(h.aC, view(path, t - 1, :)))
+    q = zeros(h.NR)
+    for c in 1:h.nc
+        for t in 1:N
+            r = h.rows[t, c]
+            q[r] = h.a0[c] + dot(view(h.aB, c, :), view(path, t, :)) + dot(view(h.aA, c, :), view(path, t + 1, :))
+            t > 1 && (q[r] += dot(view(h.aC, c, :), view(path, t - 1, :)))
+        end
+        q[h.rows[1, c]] += dot(view(h.aC, c, :), prev_total) + dot(view(h.aJ, c, :), shock)
     end
-    q[1] += dot(h.aC, prev_total) + dot(h.aJ, shock)
     q
 end
 
@@ -280,12 +293,16 @@ function ho_conditional_root(h::ObcHO)
     w, V = eigen(Symmetric(h.Sigma))
     keep = w .> 1e-14 * max(maximum(w), 1e-300)
     L = V[:, keep] .* sqrt.(w[keep])'
-    R = zeros(N, 0)
+    R = zeros(h.NR, 0)
     blocks = Matrix{Float64}[]
     for i in 1:h.pou
         wi = h.taper ? 0.5 * (1 + cos(pi * (i - 1) / h.pou)) : 1.0
-        B = zeros(N, size(L, 2))
-        i < N && (B[i+1:N, :] = sqrt(wi) .* (h.Gq[1:N-i, :] * L))
+        B = zeros(h.NR, size(L, 2))
+        if i < N                                             # per constraint: the gap i periods later responds like the gap now to a shock now
+            for c in 1:h.nc
+                B[h.rows[i+1:N, c], :] = sqrt(wi) .* (h.Gq[h.rows[1:N-i, c], :] * L)
+            end
+        end
         push!(blocks, B)
     end
     R = reduce(hcat, blocks)
@@ -300,7 +317,7 @@ end
 
 # ----------------------------------------------------------------------------------------------- the LCP at one q
 function _ho_lcp(h::ObcHO, q::AbstractVector, period::Int)
-    T, N = h.T, h.N
+    T, N = h.nT, h.NR
     h.stats[:lcp] += 1
     qmax = max(1.0, maximum(abs, q))
     all(>=(-1e-8 * qmax), q) && return zeros(T)
@@ -311,8 +328,8 @@ function _ho_lcp(h::ObcHO, q::AbstractVector, period::Int)
         st = :not_converged
     end
     if st != :ok
-        hz = sort(unique([max(1, T ÷ 4), max(1, T ÷ 2), T]))
-        y, st, info = solve_news(h.sys.M, Vector(qs); tol=tol, Mb=h.Mb, qb=Vector(view(q, T+1:N)), horizons=hz)
+        hz = sort(unique([max(1, h.T ÷ 4), max(1, h.T ÷ 2), h.T]))
+        y, st, info = solve_news(h.sys.M, Vector(qs); tol=tol, Mb=h.Mb, qb=Vector(view(q, T+1:N)), horizons=hz, n_c=h.nc)
     end
     st == :ok || throw(ObcError(st, period, "obc_method = news (order $(h.order)): $st" *
                                 (hasproperty(info, :message) ? ". " * info.message : "")))
@@ -325,7 +342,7 @@ function _ho_prepare_points!(h::ObcHO)
     h.xs = h.xi[:, ord]
     h.xnorm = vec(sqrt.(sum(abs2, h.xs; dims=1)))
     h.Rnorm = vec(sqrt.(sum(abs2, h.R; dims=2)))
-    h.pbuf = zeros(h.N, size(h.xi, 2))
+    h.pbuf = zeros(h.NR, size(h.xi, 2))
     h.xs_src = h.xi
     nothing
 end
@@ -345,7 +362,7 @@ function ho_news_shocks(h::ObcHO, q::AbstractVector, period::Int=0)
     h.cub.qlog === nothing || push!(h.cub.qlog, Vector{Float64}(q))
     (!h.cubature || size(h.R, 2) == 0) && return _ho_lcp(h, q, period)
     _ho_prepare_points!(h)
-    N, npts = h.N, size(h.xs, 2)
+    N, npts = h.NR, size(h.xs, 2)
     first = 1                                               # points before `first` are irrelevant
     if minimum(q) >= 0
         thr = Inf
@@ -356,7 +373,7 @@ function ho_news_shocks(h::ObcHO, q::AbstractVector, period::Int=0)
         first = searchsortedfirst(h.xnorm, thr)             # first point with |xi| >= thr
         if first > npts
             h.stats[:cubature_points] += npts
-            return zeros(h.T)
+            return zeros(h.nT)
         end
     end
     nc = npts - first + 1
@@ -389,7 +406,7 @@ function ho_news_shocks(h::ObcHO, q::AbstractVector, period::Int=0)
     h.stats[:cubature_points] += npts
     h.stats[:relevant_points] += nrel
     h.cub.relevant_last = nrel
-    nrel == 0 && return zeros(h.T)
+    nrel == 0 && return zeros(h.nT)
     h.regions == 0 && return _cub_all!(h, q, P, rel, npts, period)
     qm = q .+ h.R * (xsum ./ nrel)
     _cub_one!(h, qm, nrel, npts, period)
@@ -404,7 +421,7 @@ point): a solution returns `y`; time out: `c` (undecided); no solution at any ho
 than the tolerance goes to the MILP, not to `a`. Both LPs are native HiGHS models built once from `M` (`CubLP`), only the right-hand side changes per point.
 """
 function _cub_classify(h::ObcHO, p::AbstractVector)
-    st, T, N = h.cub, size(h.sys.M, 1), h.N
+    st, T, N = h.cub, h.nT, h.NR
     st.lp_head === nothing && (st.lp_head = CubLP(h.sys.M); st.lp_full = CubLP(h.Mf))
     h.stats[:classified] = get(h.stats, :classified, 0) + 1
     tol = 1e-6 * max(1.0, maximum(abs, p))
@@ -415,17 +432,17 @@ function _cub_classify(h::ObcHO, p::AbstractVector)
     t_end = time() + st.milp_time_limit
     ph = Vector{Float64}(view(p, 1:T)); pb = Vector{Float64}(view(p, T+1:N))
     undecided = false
-    for hz in sort(unique([max(1, T ÷ 4), max(1, T ÷ 2), T]))
+    for hz in sort(unique([max(1, h.T ÷ 4), max(1, h.T ÷ 2), h.T]))
         left = t_end - time()
         left <= 0 && (undecided = true; break)
         h.stats[:milp] = get(h.stats, :milp, 0) + 1
-        y, stt, _ = solve_news(h.sys.M, ph; tol=h.tol, Mb=h.Mb, qb=pb, horizons=[hz], time_limit=left, diagnose=false)
+        y, stt, _ = solve_news(h.sys.M, ph; tol=h.tol, Mb=h.Mb, qb=pb, horizons=[hz], time_limit=left, diagnose=false, n_c=h.nc)
         stt == :ok && return y, nothing
         stt == :not_converged && (undecided = true)
     end
     undecided && return nothing, :c
     left = max(t_end - time(), 1e-3)
-    y2, s2, _ = solve_news(h.sys.M, ph; tol=h.tol, horizons=[T], time_limit=left, diagnose=false)
+    y2, s2, _ = solve_news(h.sys.M, ph; tol=h.tol, horizons=[h.T], time_limit=left, diagnose=false, n_c=h.nc)
     nothing, s2 == :ok ? :b : :a
 end
 
@@ -438,7 +455,7 @@ solution the result is `(sum over the solved relevant points) / (npts - F)`; `F 
 by default (tolerance 0) at the first failed point. Non-relevant points are legitimate zeros; failed points are the only ones about which nothing is known, so they leave the sample.
 """
 function _cub_all!(h::ObcHO, q::AbstractVector, P::AbstractMatrix, rel::Vector{Int}, npts::Int, period::Int)
-    st, T, N = h.cub, size(h.sys.M, 1), h.N
+    st, T, N = h.cub, h.nT, h.NR
     acc = fill!(st.acc, 0.0)
     pt = st.pt
     Mh = h.sys.M
@@ -548,7 +565,7 @@ One region: the solution at the mean point `qm` of the relevant paths, times `nr
 classified and raised like the points of the full average (the tolerance is below 1, so a failed region always raises).
 """
 function _cub_one!(h::ObcHO, qm::AbstractVector, nrel::Int, npts::Int, period::Int)
-    st, T, N = h.cub, size(h.sys.M, 1), h.N
+    st, T, N = h.cub, h.nT, h.NR
     h.stats[:lcp] += 1
     qmax = max(1.0, maximum(abs, qm))
     all(>=(-1e-8 * qmax), qm) && return zeros(T)
@@ -599,12 +616,12 @@ function obc_ho_simulate(h::ObcHO, shocks::AbstractMatrix; init=nothing)
     y1, y2, o = zeros(n), zeros(n), zeros(n)
     init === nothing || (y1 .= init)
     prev = y1 .+ y2 .+ o
-    with_b, without_b, wedges = Matrix{Float64}(undef, S, n), Matrix{Float64}(undef, S, n), zeros(S, T)
+    with_b, without_b, wedges = Matrix{Float64}(undef, S, n), Matrix{Float64}(undef, S, n), zeros(S, h.nT)
     dropped, relevant = zeros(Int, S), zeros(Int, S)
     y1n, y2n, opre = zeros(n), zeros(n), zeros(n)
     x1, x2, x1n = zeros(ns), zeros(ns), zeros(ns)
     kxx, kuu, kxu = zeros(ns^2), zeros(nx^2), zeros(ns * nx)
-    q = zeros(h.N)
+    q = zeros(h.NR)
     u = zeros(nx)
     for t in 1:S
         @inbounds for j in 1:nx
@@ -637,7 +654,9 @@ function obc_ho_simulate(h::ObcHO, shocks::AbstractMatrix; init=nothing)
             mul!(q, h.Q2, y2, 1.0, 1.0)
             mul!(q, h.Qw, kxx, 1.0, 1.0)
         end
-        q[1] += dot(h.aC, prev) + dot(h.aJ, u)
+        for c in 1:h.nc
+            q[h.rows[1, c]] += dot(view(h.aC, c, :), prev) + dot(view(h.aJ, c, :), u)
+        end
         w = ho_news_shocks(h, q, t)
         mul!(o, h.V0, w)
         o .+= opre
@@ -714,11 +733,11 @@ function _simulate_obc_ho(ob::Occbin, shocks_in::AbstractMatrix; horizon::Intege
     history = Vector{Vector{Tuple{Vector{Int},Vector{Int}}}}()
     diag = _Diag[]
     for t in 1:n_periods
-        bi = falses(T, 1)
-        for s in 1:T
-            bi[s, 1] = sim.wedges[t, s] > tol
+        bi = falses(T, h.nc)
+        for c in 1:h.nc, s in 1:T
+            bi[s, c] = sim.wedges[t, (c-1)*T+s] > tol
         end
-        push!(history, [_map_regime(view(bi, :, 1))])
+        push!(history, [_map_regime(view(bi, :, c)) for c in 1:h.nc])
         push!(diag, (max_err=[0.0], violates=[false], n_viol=[0.0], selected=nothing))
     end
     ss = fill((ob.P, ob.Q, zeros(n)), n_periods)
