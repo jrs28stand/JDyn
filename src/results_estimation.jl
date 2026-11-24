@@ -349,9 +349,14 @@ function _estimation!(ws::DynareWorkspace, st, var_list, data, seed, options)
         haskey(o, "nl") && _check_nonlinear_options!(est; smoother=smoother_flag, filtered=wants_filter,
                                                      forecast=_opti(ws, "forecast", 0), mh=o["mh_replic"] > 0)
         bayes = is_bayesian(est.prior)
-        mc0 = o["mode_compute"] == 0
-        mcmc_wanted = !mc0 && o["mh_replic"] > 0 && bayes
-        if mc0 && o["mh_replic"] > 0 && bayes
+        # mode file, samplers without a mode search, load_mh_file (src/mcmc_stage.jl)
+        mfile = String(get(o, "mode_file", ""))
+        load_mh = _est_flag(get(o, "load_mh_file", false))
+        skip_mode = bayes && samples_without_mode(est)
+        mc0 = skip_mode || (o["mode_compute"] == 0 && isempty(mfile))
+        mcmc_wanted = bayes && (skip_mode ? (sampling_method(est) in SMC_METHODS || o["mh_replic"] > 0 || load_mh) :
+                                            (!mc0 && (o["mh_replic"] > 0 || load_mh)))
+        if mc0 && !skip_mode && (o["mh_replic"] > 0 || load_mh) && bayes
             @warn "estimation: mode_compute=0 without a mode_file: Dynare returns before the Metropolis-Hastings run, so mh_replic=$(o["mh_replic"]) is not used"
         end
         initial_estimation_checks(est)
@@ -373,27 +378,39 @@ function _estimation!(ws::DynareWorkspace, st, var_list, data, seed, options)
         mhm = NaN
         smooth_at = nothing                       # parameter vector of the final smoother, if it runs
         if mc0
-            smoother_flag && (smooth_at = theta)
+            if mcmc_wanted       # a sampler that needs no mode (slice from the prior mode, SMC)
+                mc, post, theta = _mcmc_block!(ws, m, est, nothing, vl, seed)
+                smoother_flag && !(o["mh_replic"] > 0 || load_mh) && (smooth_at = theta)
+            else
+                smoother_flag && (smooth_at = theta)
+            end
         else
             t0 = time()
-            mode = posterior_mode(est)
+            from_file = o["mode_compute"] == 0
+            x0m = est.x0
+            if !from_file && !isempty(mfile)       # mode_compute > 0: the mode file only supplies the starting values (check_mode_file.m)
+                x0m = match_mode_file(est, read_mode_file(m, mfile); mode_compute=o["mode_compute"])[1]
+            end
+            mode = from_file ? mode_from_file(est, mfile) : posterior_mode(est; x0=x0m)
             runtime = time() - t0
             theta = copy(mode.x)
             P = get(oo, "posterior", nothing)
             P isa MStruct || (P = MStruct(); oo.posterior = P)
             haskey(P, "optimization") && delete!(P, "optimization")
             opt = MStruct()
-            inf = MStruct()
-            inf.runtime = runtime
-            inf.iterations = Float64(mode.iterations)
-            inf.funcCount = Float64(mode.nfev)
-            inf.exitflag = _csminwel_exitflag(mode.message)
-            inf.message = mode.message
-            opt.optimization_info = inf
+            if !from_file          # no optimisation, no optimization_info with a mode file (mode_compute=0)
+                inf = MStruct()
+                inf.runtime = runtime
+                inf.iterations = Float64(mode.iterations)
+                inf.funcCount = Float64(mode.nfev)
+                inf.exitflag = _csminwel_exitflag(mode.message)
+                inf.message = mode.message
+                opt.optimization_info = inf
+            end
             cova = o["cova_compute"] != 0
             opt.mode = _col(mode.x)
             opt.Variance = (cova && mode.inv_hessian !== nothing) ? Matrix{Float64}(mode.inv_hessian) : zeros(0, 0)
-            opt.log_density = mode.log_posterior
+            opt.log_density = from_file ? zeros(0, 0) : mode.log_posterior     # Dynare has no fval with a mode file
             P.optimization = opt
             cova && mode.inv_hessian === nothing && @warn "estimation: the Hessian at the mode is not positive definite (check_hessian_at_the_mode.m): no standard errors, no Laplace approximation"
             stdh = (cova && mode.inv_hessian !== nothing) ? mode_std(mode) : fill(NaN, est.n)
@@ -406,15 +423,9 @@ function _estimation!(ws::DynareWorkspace, st, var_list, data, seed, options)
                 MD.LaplaceApproximation = mode.inv_hessian === nothing ? NaN : mode.laplace
             end
             if mcmc_wanted
-                (mode.inv_hessian !== nothing) ||
+                (mode.inv_hessian !== nothing || String(get(o, "mcmc_jumping_covariance", "hessian")) != "hessian") ||
                     throw(EstimationError("mh_replic > 0 needs a posterior mode and its Hessian (mode_compute != 0 and cova_compute != 0)"))
-                mc = sample_posterior(est; mode=mode, seed=seed)
-                post = posterior_statistics(est, mc)
-                mhm = marginal_density_mhm(mc)
-                _optb(ws, "nodiagnostic", false) || _posterior_diagnostics!(ws, est, mc)
-                _store_posterior_statistics!(oo, est, mc, post, mhm)
-                _posterior_stage!(ws, m, est, mc, vl)
-                theta = Float64[post[nm].mean for nm in est.names]       # Dynare then sets M_ to the posterior mean
+                mc, post, theta = _mcmc_block!(ws, m, est, mode, vl, seed)      # Dynare then sets M_ to the posterior mean
             end
             # the frequentist smoother runs at the mode / posterior mean unless a Bayesian smoother was asked for
             # (Dynare skips it when the Bayesian smoother ran over the posterior draws)
