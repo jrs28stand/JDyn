@@ -98,7 +98,7 @@ function discretionary_policy!(ws::DynareWorkspace, var_list=String[]; rng=nothi
     is_discretionary(m) || throw(OptimalPolicyError("the .mod file has no discretionary_policy statement"))
     _take_options!(ws, options)
     ws.options_.discretionary_policy = true
-    res = _with_options(() -> discretionary_policy(m; welfare=false), ws, _SOLVE_KINDS)
+    res = _with_options(() -> discretionary_policy(m; welfare=false, warm_start=false), ws, _SOLVE_KINDS)
     dr = res.dr
     _, _, cnt = dr_ordering(m.lead_lag_incidence)
     nsp = cnt.npred + cnt.nboth
@@ -128,7 +128,6 @@ function osr!(ws::DynareWorkspace, var_list=String[]; rng=nothing, options...)
     _take_options!(ws, options)
     flat = _flat_options(ws.options_)
     opts = Dict{String,Any}(k => v for (k, v) in flat if k == "order" || k == "optim_opt" || k == "analytic_derivation" || startswith(k, "osr."))
-    haskey(opts, "order") || (opts["order"] = 1)
     r = osr(m; options=opts, rng=rng, apply=true, replicate_dynare_bugs=_optb(ws, "replicate_dynare_bugs", false))
     _store_params!(ws, m.params)
     names = _osr_param_names(m)

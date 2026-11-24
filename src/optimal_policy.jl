@@ -600,7 +600,7 @@ function evaluate_planner_objective(m::Model, dr=nothing; order=nothing, u=nothi
     end
     order === nothing && (order = dr !== nothing && haskey(dr, "order") ? Int(dr["order"]) : Int(get(so, "order", 2)))
     if dr === nothing
-        dr = discretionary ? discretionary_policy(m).dr :
+        dr = discretionary ? discretionary_policy(m; warm_start=false).dr :
              order == 1 ? as_dr(first_order(m; loglinear=false)) : k_order(m; order=order, loglinear=false)
     end
     params = Vector{Float64}(params === nothing ? (haskey(dr, "params") && dr["params"] !== nothing ? dr["params"] : m.params) : params)

@@ -140,8 +140,9 @@ end
             if haskey(r, "exo_simul1")
                 # Dynare's conditional welfare starts from its own first simulated shock: recompute with it
                 @test isapprox(v.unconditional, r["W_unc"]; rtol=1e-12)
+                delete!(m.cache, :lyap_fp)   # Dynare's persistent fixed-point state: the reference is a single cold call
                 v = with_logger(NullLogger()) do
-                    evaluate_planner_objective(m, discretionary_policy(m; welfare=false).dr; order=1, u=vec(mat(r["exo_simul1"])), ramsey=false, discretionary=true)
+                    evaluate_planner_objective(m, discretionary_policy(m; welfare=false, warm_start=false).dr; order=1, u=vec(mat(r["exo_simul1"])), ramsey=false, discretionary=true)
                 end
             end
             compare_welfare(case, v, r; ramsey=false, rtol=1e-12)
@@ -194,17 +195,21 @@ end
 # several shocks and several predetermined variables. Reference: Dynare 7.2 / Octave 8.4 on pol_nk_ramsey_2shocks.mod (two shocks, order 2;
 # pol_nk_ramsey_2shocks_extra.m prints the values): unconditional, conditional with multipliers 0, with multipliers at steady state.
 @testset "order-2 welfare: Dynare's Wyu ordering defect" begin
-    DYN = (-25.21481898801387, -25.21462904698012, -25.21479747970518)
+    # u = 0 (the .mod file's own run): both layouts agree, the cross term Wyu*kron(yhat,u) vanishes
+    DYN0 = (-25.21481898801387, -25.21462904698012, -25.21479747970518)
+    # u = oo_.exo_simul(1,:) = [0.01 -0.02] (Octave: oo_.exo_simul = [0.01 -0.02]; evaluate_planner_objective(M_,options_,oo_))
+    DYN = (-25.21481898801387, -25.04782546549452, -25.04797705457291)
     ws = run_op("pol_nk_ramsey_2shocks")
-    evaluate_planner_objective!(ws; replicate_dynare_bugs=true)
-    p = ws.oo_.planner_objective_value
-    got = (p.unconditional, p.conditional.zero_initial_multiplier, p.conditional.steady_initial_multiplier)
+    welf(bugs) = (evaluate_planner_objective!(ws; replicate_dynare_bugs=bugs); p = ws.oo_.planner_objective_value;
+                  (p.unconditional, p.conditional.zero_initial_multiplier, p.conditional.steady_initial_multiplier))
+    @test all(isapprox.(welf(true), DYN0; rtol=1e-11))
+    ws.oo_.exo_simul = [0.01 -0.02]
+    got = with_logger(NullLogger()) do; welf(true) end
     note!("2shocks replicate", maximum(abs.(collect(got) .- collect(DYN))))
     @test all(isapprox.(got, DYN; rtol=1e-11))
-    evaluate_planner_objective!(ws; replicate_dynare_bugs=false)
-    p = ws.oo_.planner_objective_value
-    @test p.unconditional == got[1]
-    @test abs(p.conditional.zero_initial_multiplier - DYN[2]) > 1e-9          # corrected: differs from Dynare's
+    fixed = with_logger(NullLogger()) do; welf(false) end
+    @test fixed[1] == got[1]
+    @test abs(fixed[2] - DYN[2]) > 1e-9          # corrected: differs from Dynare's
     # the consistent layout: Uyy*kron(gy,gu)*kron(yhat,u) is the cross term of 0.5*(gy yhat + gu u)' Uyy (gy yhat + gu u)
     n, ny, nu = 5, 3, 2
     A = randn(n, n); Uyy = A + A'; gy = randn(n, ny); gu = randn(n, nu); yh = randn(ny); u = randn(nu)
