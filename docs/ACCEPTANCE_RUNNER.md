@@ -48,7 +48,7 @@ again. A second start while a sweep runs is refused (a lock on `<out>/.lock`, an
 * The file is run with `JDyn.dynare(path; extra_args = <the entry's -D arguments>)` from the file's folder (no figures).
 * Skipped: tests whose Octave reference status is not `ok` (dynare-error, timeout, xfail, m-runner, no-result; as `accept_pydyn.py`),
   the `.m` runners, and the whole `heterogeneity/` folder (heterogeneous-agent models are outside both correctness and timing until a
-  port supports them). That leaves 735 .mod tests (723 + those of the Octave `ok` set that share an entry; see the log's first line).
+  port supports them). That left 735 .mod tests on the first full run (the log's first line gives the count).
 
 ## Output formats
 
