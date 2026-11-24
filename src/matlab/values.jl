@@ -444,6 +444,8 @@ function _cat_parts(parts, dim, what)
         if cur[other] == d[other]
             cur = dim == 1 ? (cur[1] + d[1], cur[2]) : (cur[1], cur[2] + d[2])
             push!(keep, p)
+        elseif d[1] + d[2] == 1 && cur[1] + cur[2] == 1   # both 1x0 or 0x1: the result is 0x0
+            cur = (0, 0); empty!(keep)
         elseif d[1] + d[2] == 1                     # 1x0 or 0x1: skipped
             continue
         elseif cur[1] + cur[2] == 1                 # the result so far is 1x0 or 0x1: replaced
@@ -460,7 +462,11 @@ function mhcat(vals)
     any(is_nd, vals) && return _nd_hvcat(vals, 2)
     nz = [v for v in vals if !_is00(v)]
     isempty(nz) && return zeros(0, 0)
-    length(nz) == 1 && return nz[1]
+    if length(nz) == 1
+        v1 = nz[1]
+        (v1 isa Bool || (v1 isa AbstractArray{Bool})) && any(v -> v isa AbstractMatrix{Float64}, vals) && return ret(Matrix{Float64}(arr(v1)))
+        return v1
+    end
     textual = any(v -> v isa AbstractString || v isa Cell, nz)
     if !textual
         parts = [arr(v) for v in nz]
@@ -494,7 +500,11 @@ function mvcat(vals)
     any(is_nd, vals) && return _nd_hvcat(vals, 1)
     nz = [v for v in vals if !_is00(v)]
     isempty(nz) && return zeros(0, 0)
-    length(nz) == 1 && return nz[1]
+    if length(nz) == 1
+        v1 = nz[1]
+        (v1 isa Bool || (v1 isa AbstractArray{Bool})) && any(v -> v isa AbstractMatrix{Float64}, vals) && return ret(Matrix{Float64}(arr(v1)))
+        return v1
+    end
     textual = any(v -> v isa AbstractString || v isa Cell, nz)
     if !textual
         parts = [arr(v) for v in nz]
@@ -595,7 +605,7 @@ function _index_arr(a::AbstractMatrix, args; keep::Bool=false)
             end
             return (size(ia, 1) == 1 && size(ia, 2) != 1) ? reshape(out, 1, :) : reshape(out, :, 1)
         end
-        if minimum(size(ia)) != 1 || (size(a, 1) != 1 && size(a, 2) != 1)
+        if !(size(ia, 1) == 1 || size(ia, 2) == 1) || length(ia) == 1 || (size(a, 1) != 1 && size(a, 2) != 1) || length(a) == 1
             return reshape(out, size(ia))
         end
         return size(a, 1) == 1 ? reshape(out, 1, :) : reshape(out, :, 1)

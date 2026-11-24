@@ -198,6 +198,7 @@ function ev(I::Interp, n::Unop, sc)
     op == "()" && return v
     v isa MObject && return obj_unop(I, op, v)
     op == "-" && return uminus(v)
+    op == "+" && is_nd(v) && return ndret(Array{Float64}(v))
     op == "+" && return v isa Float64 ? v : ret(farr(v))
     op == "~" && return lnot(v)
     mtranspose(v)
@@ -474,11 +475,14 @@ function mcall(I::Interp, name, args, nargout, sc)
         r === nothing || return r
     end
     f = get(BUILTINS, name, nothing)
-    if f !== nothing
+    if f !== nothing || haskey(_ND_NAMES, name)
         push!(I.scope_stack, sc)
         r = try
             ndr = nd_hook(I, name, args, nargout)
             ndr === nothing && (ndr = rng_hook(I, name, args, nargout))
+            if ndr === nothing && f === nothing
+                throw(Unsupported("unknown function or variable '$name'", "function"))
+            end
             ndr === nothing ? f(I, args, nargout) : ndr
         catch e
             e isa _JULIA_ERRORS ? throw(matlab_error(e)) : rethrow()

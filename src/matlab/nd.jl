@@ -129,7 +129,7 @@ function _to_class_of(a, r, defined::Bool)
     defined || return zeros(eltype(r), 0, 0), r
     if eltype(a) == Bool && eltype(r) != Bool
         any(isnan, r) && merr("invalid conversion from NaN to logical")
-        return a, r .!= 0
+        return a, Array{Bool}(r .!= 0)
     elseif eltype(a) != Bool && eltype(r) == Bool
         return a, Array{Float64}(r)
     end
@@ -294,7 +294,7 @@ end
 function _nd_logical(a)
     x = ndarr(a)
     (eltype(x) != Bool && any(isnan, x)) && merr("NaN cannot be converted to a logical value")
-    x .!= 0
+    Array{Bool}(x .!= 0)
 end
 function nd_and_or(fn, a, b)
     x, y = _nd_logical(a), _nd_logical(b)
@@ -381,8 +381,6 @@ function nd_concat(vals, d::Int, hv::Bool)
         end
         dv = new
     end
-    (!hv && d > 2 && all(a -> size(a) == (0, 0), arrays)) &&
-        _unsup("cat along a dimension above 2 of empty 0x0 arrays only (the result's shape is Octave's)")
     logical = all(a -> eltype(a) == Bool, arrays)
     shape = Tuple(dv)
     _check_elements(shape)
@@ -488,7 +486,13 @@ function _nd_minmax(name, a, nout)
     end
     x = ndfarr(a[1])
     if isempty(x)
-        ndims(x) > 2 && _unsup("$name of an empty N-d array")
+        if ndims(x) > 2
+            dd = length(a) > 2 && a[3] isa Real ? Int(a[3]) : 0
+            (dd >= 1 && dd <= ndims(x) && size(x, dd) > 0) || _unsup("$name of an empty N-d array")
+            sz = collect(size(x)); sz[dd] = 1
+            r = zeros(sz...)
+            return Any[ndret(r), ndret(r)][1:max(nout, 1)]
+        end
         return Any[zeros(0, 0), zeros(0, 0)][1:max(nout, 1)]
     end
     d = _nd_dim_arg(x, length(a) > 2 ? a[3] : nothing)
@@ -813,7 +817,7 @@ function nd_hook(I, name::String, a::Vector{Any}, nout::Int)
         return _nd_stdvar(name, a)
     end
     if name in ("cumsum", "cumprod")
-        (anynd || (length(a) >= 2 && a[2] isa Real && a[2] >= 3)) || return nothing
+        (anynd || length(a) >= 2 || isempty(a[1])) || return nothing
         return _nd_cum(name, a)
     end
     if name in ("max", "min")
@@ -834,7 +838,7 @@ function nd_hook(I, name::String, a::Vector{Any}, nout::Int)
         return Float64(count(t -> isnan(t) || t != 0, x))
     end
     if name in ("flip", "fliplr", "flipud")
-        (anynd || (name == "flip" && length(a) == 2 && a[2] isa Real && a[2] >= 3)) || return nothing
+        (anynd || (name == "flip" && length(a) >= 1 && is_num(a[1]))) || return nothing
         return _nd_flip(name, a)
     end
     if name == "sub2ind"
@@ -855,6 +859,10 @@ function nd_hook(I, name::String, a::Vector{Any}, nout::Int)
         length(a) == 3 && a[1] isa Handle && a[1].name !== nothing && a[1].name in _ND_BINARY &&
             return _nd_binary(I, a[1].name, a[2], a[3])
         _unsup("bsxfun with an N-d array and a function other than an element-wise built-in")
+    end
+    if name == "xor"
+        (anynd && length(a) == 2) || return nothing
+        return nd_and_or((x, y) -> x != y, a[1], a[2])
     end
     if name in _ND_UNARY
         (anynd && length(a) == 1) || return nothing

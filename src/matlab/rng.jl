@@ -237,9 +237,3 @@ function rng_hook(I, name::String, a::Vector{Any}, nout::Int)
     nothing
 end
 
-# Random.seed! of an Octave pair: both states from `seed` (rand('state', seed); randn('state', seed))
-function Random.seed!(r::OctaveRNG, seed::Integer)
-    r.u = _oct_mt(Float64(seed)); r.n = _oct_mt(Float64(seed))
-    r
-end
-Random.seed!(r::OctaveRNG) = Random.seed!(r, 0)
