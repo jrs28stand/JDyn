@@ -126,6 +126,7 @@ end
 function osr!(ws::DynareWorkspace, var_list=String[]; rng=nothing, options...)
     m = _sync_model!(ws)
     _take_options!(ws, options)
+    haskey(ws.state, :osr_weights) && (m.cache[:osr_weights_stmt] = ws.state[:osr_weights])
     flat = _flat_options(ws.options_)
     opts = Dict{String,Any}(k => v for (k, v) in flat if k == "order" || k == "optim_opt" || k == "analytic_derivation" || startswith(k, "osr."))
     r = osr(m; options=opts, rng=rng, apply=true, replicate_dynare_bugs=_optb(ws, "replicate_dynare_bugs", false))

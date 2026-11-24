@@ -941,7 +941,9 @@ const _OSR_INFO2 = Set([3, 4, 5, 6, 19, 20, 21, 23, 26, 81, 84, 85])
 function _osr_weights(m::Model)
     W = zeros(m.n_endo, m.n_endo)
     idx = Int[]
-    for st in _statements(m, "optim_weights")
+    # each optim_weights block starts afresh (M_.osr.variable_weights is reset): the one in force at the osr statement, else the last
+    sts = haskey(m.cache, :osr_weights_stmt) ? [m.cache[:osr_weights_stmt]] : last(_statements(m, "optim_weights"), 1)
+    for st in sts
         for d in st["weights"]
             v = Float64(_value(m, d["value"]))
             if haskey(d, "name2")

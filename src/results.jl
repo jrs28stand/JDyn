@@ -286,6 +286,10 @@ function _store_dr!(oo::MStruct, dr::AbstractDict, n::Int)
         haskey(dr, k) && (D[k] = Matrix{Float64}(dr[k]))
     end
     haskey(dr, "ghs2") && (D.ghs2 = _col(dr["ghs2"]))
+    if haskey(dr, "ghx") && haskey(dr, "state_var")      # dr.Gy (dyn_first_order_solver): the transition matrix of the predetermined variables
+        rows = findall(v -> Int(v) in Int.(dr["state_var"]), Int.(dr["order_var"]))
+        length(rows) == size(dr["ghx"], 2) && (D.Gy = Matrix{Float64}(dr["ghx"])[rows, :])
+    end
     oo.dr = D
 end
 
@@ -645,6 +649,10 @@ function _run_in_place!(ws, st, nss, shocks, rng)
     kind == "conditional_forecast_paths" && return _cf_paths_statement!(ws, st)
     if kind == "ramsey_model"
         _ramsey_model_statement!(ws, st)           # src/results_policy.jl
+        return
+    end
+    if kind == "optim_weights"                      # in force from here to the next block (read by osr!)
+        ws.state[:osr_weights] = st
         return
     end
     kind in COMPUTE_KINDS || return
