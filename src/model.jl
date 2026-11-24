@@ -400,6 +400,7 @@ function _read_modfile_json(path)
         return JSON.parse(text; dicttype=Dict{String,Any})
     catch
     end
+    text = replace(text, r"(\"dsge_var\":\s*)(-?Inf)\b" => s"\1\"\2\"")     # dsge_var=Inf
     text = replace(text, r"(\"period2\":\s*)\}(\d+)" => s"\1\2")
     text = replace(text, r"\"(lower_bound|upper_bound)\":\s*\((-[^)\"]*)\)" => s"\"\1\": \"\2\"")
     text = replace(text, r"\\(.)" => m -> (m[2] in "\"\\/bfnrtu") ? m : "\\\\" * m[2:2])

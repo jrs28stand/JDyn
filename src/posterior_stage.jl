@@ -31,7 +31,11 @@ function _posterior_stage!(ws, m::Model, est::Estimation, mc::MCMCResult, vl)
     isempty(m.occbin_constraints) || ((flag("bayesian_irf") || flag("moments_varendo") || wants_stats || nf > 0) &&
         throw(EstimationError("posterior IRFs, moments, smoothers and forecasts with OccBin are not supported")))
     vls = String.(collect(vl))
-    flag("bayesian_irf") && store_posterior_irf!(oo, posterior_irf(est, mc; var_list=vls))
+    if flag("bayesian_irf")
+        ir = posterior_irf(est, mc; var_list=vls)
+        store_posterior_irf!(oo, ir)
+        dsge_var_active(est) && store_posterior_irf!(oo, posterior_irf_dsgevar(est, ir.params; var_list=vls, rng=dynare_rng(m)); field="bvardsge")
+    end
     flag("moments_varendo") && store_moments!(oo, posterior_theoretical_moments(est, mc; var_list=vls))
     if wants_stats || nf > 0
         sk = _smoother_kwargs(ws; full=false)

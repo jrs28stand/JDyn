@@ -428,6 +428,7 @@ function _estimation!(ws::DynareWorkspace, st, var_list, data, seed, options)
                 MD isa MStruct || (MD = MStruct(); oo.MarginalDensity = MD)
                 MD.LaplaceApproximation = mode.inv_hessian === nothing ? NaN : mode.laplace
             end
+            bayes && dsge_var_active(est) && _store_dsge_var!(oo, est, mode.x)        # oo_.dsge_var.posterior_mode (dynare_estimation_1.m)
             if mcmc_wanted
                 (mode.inv_hessian !== nothing || String(get(o, "mcmc_jumping_covariance", "hessian")) != "hessian") ||
                     throw(EstimationError("mh_replic > 0 needs a posterior mode and its Hessian (mode_compute != 0 and cova_compute != 0)"))

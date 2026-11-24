@@ -22,8 +22,19 @@ The default RWMH with Julia's generators still goes through the original `sample
 ## Refused (EstimationError), not ignored
 `mh_recover`; the DIME sampler; slice `maximize*`, `draw_init_state_*`, `fast_likelihood_evaluation_for_rejection`, `dime`/online options.
 
+## Branch samplers-2: DSGE-VAR and endogenous_prior (src/dsge_var.jl, test/test_dsge_var.jl, refs in test/ref_dsge_var)
+| Item | Validation |
+| --- | --- |
+| `dsge_var=VALUE` / estimated weight / `dsge_var=Inf`, `dsge_varlag`, sample moments with initial conditions, info 51/52/53, `check_dsge_var_model` refusals | kernels equal Dynare's `dsge_var_likelihood` to 1e-12 (pydyn's est_dvar_v0..2) |
+| `oo_.dsge_var.posterior_mode.{PHI_tilde, SIGMA_u_tilde, iXX, prior}` | Octave run at its own mode, 1e-10; Laplace approximation |
+| `bayesian_irf` under dsge_var: `oo_.PosteriorIRF.bvardsge.*` (`posterior_irf_dsgevar`, `dsge_var_irf_draw`, rand_inverse_wishart, rand_matrix_normal, qr2) | one draw replays PosteriorIRF_core1.m with randn('state',5) to 1e-13; complete run (CASE 11) chains within 5e-5 of Octave's, DSGE IRFs exact on Dynare's sub-draws |
+| `endogenous_prior` (stationary models; missing data, first_obs/nobs, correlated measurement errors) | kernel 1e-15, posterior mode |
+| `dsge_var=Inf` in the preprocessor JSON (unquoted `Inf`) | repaired in `_read_modfile_json` |
+
+Limits: the sub-draws and the randn stream of `dynare()`'s posterior IRFs are JDyn's own replay (the chains are Dynare's with `mcmc_rng=:octave`, the sub-draw selection is not), so `bvardsge` agrees with Dynare statistically, not draw for draw; smoother/forecast statistics with dsge_var are not provided.
+
 ## Not done
-`endogenous_prior`, `dsge_var`; `mh_recover`; Octave's `gamrnd`/`betarnd` cannot be replayed (prior-draw starting points of slice/SMC with several chains use inverse-CDF draws; Dynare's particles are passed in the tests).
+`mh_recover`; Octave's `gamrnd`/`betarnd` cannot be replayed (prior-draw starting points of slice/SMC with several chains use inverse-CDF draws; Dynare's particles are passed in the tests).
 
 ## Changes to existing tests (both deliberate, both documented in the test file)
 - `test_estimation.jl`, "sampler uses the prior support...": asserted that a proposal outside the estimated_params bounds is accepted. Dynare rejects it (proved by the Octave run smp_case8: draws never exceed rhoa's bound, replayed to 1e-15). The test now asserts the rejection; the kernel part (evaluated with the prior's support) is unchanged.

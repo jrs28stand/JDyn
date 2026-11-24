@@ -43,7 +43,8 @@ const _ESTIMATION_ONLY = Set(["mode_compute", "mode_file", "mode_check", "mode_c
     "bayesian_irf", "moments_varendo", "irf", "forecast", "conf_sig", "mh_conf_sig", "load_mh_file", "prior_trunc", "smoother", "order",
     "posterior_sampler_options", "additional_optimizer_steps", "nobs_vec", "lyapunov", "sub_draws", "mh_recover", "mcmc_jumping_covariance",
     "use_univariate_filters_if_singularity_is_detected", "rescale_prediction_error_covariance", "riccati_tol", "gstep",
-    "lyapunov_complex_threshold", "use_univariate_smoother_if_singularity_is_detected"])
+    "lyapunov_complex_threshold", "use_univariate_smoother_if_singularity_is_detected", "dsge_var", "dsge_varlag", "endogenous_prior",
+    "mh_tune_guess", "load_results_after_load_mh"])
 const _SM_COSMETIC = union(COSMETIC, Set(["xls_sheet", "xls_range", "use_univariate_smoother_if_singularity_is_detected",
     "consider_all_endogenous", "consider_only_observed", "selected_variables_only", "plot_priors"]))
 # options of the decomposition statements that only concern Dynare's figure files and menus
