@@ -71,7 +71,10 @@ struct ForecastResult
     periods::Int
     conf_sig::Float64
     order::Int
+    Exogenous::Dict{String,Vector{Float64}}      # paths of the varexo_det variables over the periods (`oo_.forecast.Exogenous`)
 end
+ForecastResult(vl, M, L, U, LM, UM, periods, conf_sig, order) =
+    ForecastResult(vl, M, L, U, LM, UM, periods, conf_sig, order, Dict{String,Vector{Float64}}())
 Base.show(io::IO, r::ForecastResult) = print(io, "ForecastResult(", r.periods, " periods, ", length(r.var_list), " variables, conf_sig ", r.conf_sig, ")")
 
 "`oo_.forecast` as Dynare stores it (fields in var_list order, column vectors)."
@@ -84,6 +87,13 @@ function forecast_struct(r::ForecastResult)
             haskey(d, v) && (sub[v] = reshape(copy(d[v]), :, 1))
         end
         S[f] = sub
+    end
+    if !isempty(r.Exogenous)
+        sub = MStruct()
+        for (v, p) in sort(collect(r.Exogenous); by=first)
+            sub[v] = reshape(copy(p), :, 1)
+        end
+        S["Exogenous"] = sub
     end
     S
 end
@@ -100,11 +110,16 @@ per replication) and quantiles. `me` lists (position in ivar, measurement-error 
 """
 function _forecast_paths(dr::AbstractDict, y0::AbstractVector, horizon::Int, ivar::Vector{Int}; order::Int=1, pruning::Bool=false,
                          Sigma_e::AbstractMatrix, me=nothing, me_obs=nothing, H=nothing, conf_sig::Real=0.9, replic::Int=1000,
-                         draws=nothing, me_draws=nothing, rng=nothing, max_lag::Int=1)
+                         draws=nothing, me_draws=nothing, rng=nothing, max_lag::Int=1, xd=nothing)
     nx = size(Sigma_e, 1)
     n = length(dr["ys"])
     iter = horizon + max_lag - 1                 # columns simulated after the initial one (simult_)
-    sim(ex) = (y = simulate(dr, ex; order=order, pruning=pruning, y0=y0); hcat(reshape(Float64.(y0), :, 1), permutedims(y)))
+    sim0(ex) = (y = simulate(dr, ex; order=order, pruning=pruning, y0=y0); hcat(reshape(Float64.(y0), :, 1), permutedims(y)))
+    sim = xd === nothing ? sim0 : xd.sim          # varexo_det: simult_varexo_det.m over the paths (src/varexo_det.jl), possibly longer than the horizon
+    if xd !== nothing
+        iter = xd.iter
+        horizon = iter - max_lag + 1
+    end
     yfull = sim(zeros(max(iter, 0), nx))
     yf = yfull[ivar, :]
     fact = _norminv((1 - conf_sig) / 2)
@@ -240,18 +255,31 @@ function forecast(m::Model; periods::Integer=5, conf_sig::Real=0.9, var_list=Str
     end
     vl = _check_var_list(m, var_list)
     H = Matrix(Diagonal(Float64[get(m.measurement_errors, v, 0.0) for v in m.varobs]))
-    _forecast_simul(dr, y0, vl, m; periods=periods, conf_sig=conf_sig, order=order, pruning=pruning, Sigma_e=m.Sigma_e, H=H,
-                    varobs=m.varobs, replic=replic, draws=draws, me_draws=me_draws, rng=rng)
+    xd = nothing
+    if n_exo_det(m) > 0
+        # varexo_det (forecasts.run): orders 1 and 2 without pruning, along the paths of the `shocks` blocks (src/varexo_det.jl)
+        order > 2 && throw(ModelError("forecasts.run: forecasting with varexo_det does not support order>2."))
+        order == 2 && pruning && throw(ModelError("forecasts.run: forecasting with varexo_det does not support pruning."))
+        X, _ = exo_det_paths(m, Int(periods), periods == 0 ? 5 : Int(periods))
+        xdr = exo_det_decision_rules(m, dr)
+        xd = (X=X, rules=xdr, sim=ex -> permutedims(simult_varexo_det(m, xdr, ex, X; y0=y0, order=order)), iter=size(X, 1) - 1)
+    end
+    res = _forecast_simul(dr, y0, vl, m; periods=periods, conf_sig=conf_sig, order=order, pruning=pruning, Sigma_e=m.Sigma_e, H=H,
+                          varobs=m.varobs, replic=replic, draws=draws, me_draws=me_draws, rng=rng, xd=xd)
+    xd === nothing && return res
+    hz = periods == 0 ? 5 : Int(periods)
+    exo = Dict{String,Vector{Float64}}(v => Float64.(xd.X[2:1+hz, i]) for (i, v) in enumerate(exo_det_names(m)))
+    ForecastResult(res.var_list, res.Mean, res.HPDinf, res.HPDsup, res.HPDinf_ME, res.HPDsup_ME, res.periods, res.conf_sig, res.order, exo)
 end
 
-function _forecast_simul(dr, y0, vl, m; periods, conf_sig, order, pruning, Sigma_e, H, varobs, replic, draws, me_draws, rng, max_lag=1)
+function _forecast_simul(dr, y0, vl, m; periods, conf_sig, order, pruning, Sigma_e, H, varobs, replic, draws, me_draws, rng, max_lag=1, xd=nothing)
     horizon = periods == 0 ? 5 : Int(periods)
     ivar = [m.ie[v] for v in vl]
     me, me_vars = _me_positions(vl, varobs, H)
     me_obs = [m.ie[v] for v in varobs]
     yf, lo, hi, lo_me, hi_me = _forecast_paths(dr, Float64.(vec(y0)), horizon, ivar; order=order, pruning=pruning, Sigma_e=Sigma_e,
                                                me=me, me_obs=me_obs, H=H, conf_sig=conf_sig, replic=replic, draws=draws,
-                                               me_draws=me_draws, rng=rng, max_lag=max_lag)
+                                               me_draws=me_draws, rng=rng, max_lag=max_lag, xd=xd)
     _forecast_result(vl, yf, lo, hi, lo_me, hi_me, me_vars, horizon, max_lag, conf_sig, order)
 end
 

@@ -487,7 +487,7 @@ const _HONOURED_EST = Set(["datafile", "first_obs", "nobs", "loglinear", "logdat
     "smoother", "filtered_vars", "filter_step_ahead", "filter_covariance", "smoothed_state_uncertainty", "forecast", "forecasts.conf_sig",
     "sub_draws", "nodecomposition", "ar", "conditional_variance_decomposition", "contemporaneous_correlation", "moments_varendo",
     "bayesian_irf", "irf", "irf_shocks", "relative_irf", "consider_all_endogenous", "consider_all_endogenous_and_auxiliary",
-    "consider_only_observed", "posterior_max_subsample_draws",
+    "consider_only_observed", "posterior_max_subsample_draws", "heteroskedastic_filter",
     "mode_file", "load_mh_file", "mh_recover", "posterior_sampling_method", "posterior_sampler_options", "mcmc_jumping_covariance",
     "mh_tune_jscale", "mh_tune_guess", "load_results_after_load_mh"])
 # preprocessor option names -> the names used here
@@ -500,7 +500,7 @@ const _EST_DEFAULTS = Dict{String,Any}("datafile" => nothing, "first_obs" => 1, 
     "mh_replic" => 20000, "mh_nblck" => 2, "mh_jscale" => nothing, "mh_drop" => 0.5, "mh_init_scale_factor" => 2.0, "order" => 1,
     "use_univariate_filters_if_singularity_is_detected" => true, "rescale_prediction_error_covariance" => false,
     "cova_compute" => 1, "mh_conf_sig" => 0.9, "optim_opt" => "", "gstep" => (1e-2, 1.0), "Harvey_scale_factor" => 10.0,
-    "lyapunov_complex_threshold" => 1e-15, "qz_criterium" => nothing)
+    "lyapunov_complex_threshold" => 1e-15, "qz_criterium" => nothing, "heteroskedastic_filter" => false)
 
 _est_flag(v) = !(v === false || v === 0 || v === 0.0 || v === nothing || v == "")
 
@@ -1077,6 +1077,9 @@ function _dsge_likelihood(est::Estimation, theta::AbstractVector; bounds=(est.lb
     trend = _trend(est, params, est.nobs)
     trend === nothing || (Y = Y .- trend)
     QQ = R * Q * R'
+    # heteroskedastic_filter (src/heteroskedastic.jl): the path of R Q_t R'; the initial covariance and the diffuse setup use the constant QQ
+    het = _est_flag(o["heteroskedastic_filter"])
+    QQf = het ? heteroskedastic_rqr(R, heteroskedastic_qvec(Q, heteroskedastic_arrays(est.model, est.nobs, Int(o["first_obs"]))...)) : QQ
     a = zeros(mm)
     pre = o["presample"]
     kt, rt = o["kalman_tol"], o["riccati_tol"]
@@ -1088,13 +1091,14 @@ function _dsge_likelihood(est::Estimation, theta::AbstractVector; bounds=(est.lb
     P = zeros(mm, mm)
     Pinf = nothing
     expanded = false
-    Zu, Tu, Qu, Ru, QQu, Hdiag = nothing, T, Q, R, QQ, nothing
+    Zu, Tu, Qu, Ru, QQu, Hdiag = nothing, T, Q, R, QQf, nothing
     function prepare_univariate!(P_, Pinf_)
         # diagonal measurement-error covariance: Z is a selector; otherwise the errors are added to the state vector
         if all(abs.(Hm - Diagonal(diag(Hm))) .< 1e-14)
-            Zu, Tu, Qu, Ru, QQu, Hdiag = _measurement_matrix(est, mm), T, Q, R, QQ, diag(Hm)
+            Zu, Tu, Qu, Ru, QQu, Hdiag = _measurement_matrix(est, mm), T, Q, R, QQf, diag(Hm)
             return P_, Pinf_
         end
+        het && throw(EstimationError("heteroskedastic_filter with correlated measurement errors is not supported"))
         Z, Te, Qe, Re, Pe, Pie = _expand_for_univariate(T, R, Q, P_, Pinf_, _measurement_matrix(est, mm), Hm)
         expanded = true
         Zu, Tu, Qu, Ru, QQu, Hdiag = Z, Te, Qe, Re, Re * Qe * Re', zeros(pp)
@@ -1113,7 +1117,7 @@ function _dsge_likelihood(est::Estimation, theta::AbstractVector; bounds=(est.lb
         singular = false
         P = Pstar
         if algo == 3
-            dLIK, dlik, a1, P1 = kalman_filter_d(Y, a, Pinf, Pstar, T, QQ, Hm, z; kalman_tol=kt,
+            dLIK, dlik, a1, P1 = kalman_filter_d(Y, a, Pinf, Pstar, T, QQf, Hm, z; kalman_tol=kt,
                                                  diffuse_kalman_tol=o["diffuse_kalman_tol"], presample=pre, data_index=di_all)
             if isinf(dLIK)
                 singular = true               # as Dynare: redo the diffuse stage observation by observation
@@ -1137,7 +1141,7 @@ function _dsge_likelihood(est::Estimation, theta::AbstractVector; bounds=(est.lb
     LIK = 0.0
     lik = Float64[]
     if algo == 1 || algo == 3
-        LIK, lik = kalman_filter(Ys, a, P, T, QQ, Hm, z; kalman_tol=kt, riccati_tol=rt, presample=pre, diffuse_periods=dp,
+        LIK, lik = kalman_filter(Ys, a, P, T, het ? QQf[:, :, dp+1:end] : QQ, Hm, z; kalman_tol=kt, riccati_tol=rt, presample=pre, diffuse_periods=dp,
                                  data_index=di, no_more_missing=nmm, rescale=o["rescale_prediction_error_covariance"])
         if isinf(LIK)
             o["use_univariate_filters_if_singularity_is_detected"] || return reject(50, 0.1, "the forecast-error covariance is singular (info 50)")
@@ -1149,7 +1153,7 @@ function _dsge_likelihood(est::Estimation, theta::AbstractVector; bounds=(est.lb
             P, _ = prepare_univariate!(P, nothing)
             expanded && length(a) == mm && (a = vcat(a, zeros(pp)))
         end
-        LIK, lik = univariate_kalman_filter(Ys, a, P, Tu, QQu, Hdiag, Zu; kalman_tol=kt, riccati_tol=rt, presample=pre,
+        LIK, lik = univariate_kalman_filter(Ys, a, P, Tu, het ? QQu[:, :, dp+1:end] : QQu, Hdiag, Zu; kalman_tol=kt, riccati_tol=rt, presample=pre,
                                             diffuse_periods=dp, data_index=di, no_more_missing=nmm)
     end
     est.last_filter = Dict(1 => "multivariate", 2 => "univariate", 3 => "multivariate (diffuse)", 4 => "univariate (diffuse)")[algo]

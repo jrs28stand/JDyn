@@ -77,7 +77,8 @@ function build_M(m::Model)
     M.param_names_tex = _cellcol([get(d, "texName", d["name"]) for d in m.raw["parameters"]])
     M.endo_nbr = Float64(m.n_endo)
     M.exo_nbr = Float64(m.n_exo)
-    M.exo_det_nbr = 0.0
+    M.exo_det_nbr = Float64(n_exo_det(m))
+    n_exo_det(m) > 0 && (M.exo_det_names = _cellcol(exo_det_names(m)))
     M.param_nbr = Float64(length(m.param_names))
     M.orig_endo_nbr = Float64(orig_endo_nbr(m))
     M.eq_nbr = Float64(length(get_or(m.raw, "model", Any[])) == 0 ? m.n_endo : length(m.raw["model"]))
@@ -98,7 +99,7 @@ function build_M(m::Model)
     M.ndynamic = Float64(cnt.npred + cnt.nboth + cnt.nfwrd)
     M.params = _col(m.params)
     M.Sigma_e = copy(m.Sigma_e)
-    M.Correlation_matrix = _corr(m.Sigma_e)
+    M.Correlation_matrix = copy(declared_correlation_matrix(m))
     M.sigma_e_is_diagonal = isdiag(m.Sigma_e)
     M.H = Matrix{Float64}(LinearAlgebra.Diagonal([get(m.measurement_errors, v, 0.0) for v in m.varobs]))
     aux = Any[]
@@ -197,7 +198,7 @@ function _sync_model!(ws)
     elseif !isequal(m.Sigma_e, lastS)
         ws.M_.Sigma_e = copy(m.Sigma_e)
     end
-    ws.M_.Correlation_matrix = _corr(m.Sigma_e)
+    ws.M_.Correlation_matrix = copy(declared_correlation_matrix(m))
     _mark_synced!(ws)
     m
 end
@@ -264,7 +265,7 @@ end
 "Eigenvalues as a column; real when they all are (MATLAB shows those as real too)."
 _eigcol(e) = all(x -> imag(x) == 0, e) ? reshape(Float64.(real.(e)), :, 1) : reshape(ComplexF64.(e), :, 1)
 const _SOLVE_KINDS = ("options_", "check", "stoch_simul", "estimation", "calib_smoother", "steady")   # "options_": the accumulated table stoch_options reads
-const _STEADY_KEYS = Set(["solve_tolf", "steadystate.nocheck", "homotopy_mode", "homotopy_steps"])
+const _STEADY_KEYS = Set(["solve_tolf", "steadystate.nocheck", "homotopy_mode", "homotopy_steps", "solve_algo", "solve_tolx", "steady.maxit"])
 
 "Parameters the steady state (file or steady_state_model block) has set go back to M_.params, as in Dynare."
 function _store_params!(ws, p)
@@ -371,7 +372,7 @@ function _stoch_simul(ws, m, oo, var_list, shocks, rng)
         oo.endo_simul = Matrix{Float64}(permutedims(y))        # n_endo x periods, as Dynare's simult
         oo.exo_simul = ex
     end
-    if !_optb(ws, "nomoments", false) && order <= 2
+    if !_optb(ws, "nomoments", false) && (order <= 2 || (order == 3 && pruning && periods == 0))
         mom = try
             periods > 0 ? simulated_moments(permutedims(oo.endo_simul); ivar=ivar, shocks=oo.exo_simul, dr=dr, model=m) :
                           theoretical_moments(m, dr; var_list=var_list)
@@ -632,7 +633,7 @@ function dynare(modfile::AbstractString; output=nothing, shocks=Dict{Int,Any}(),
         particle_rng === nothing || set_rng_kind!(m, particle_rng)   # :octave = Octave's numbers in the particle filters (src/octave_rng.jl)
         mcmc_rng === nothing || set_mcmc_rng!(m, mcmc_rng)           # :octave = Dynare's random numbers in the MCMC samplers (src/mcmc_driver.jl)
         ws = DynareWorkspace(m, build_M(m), build_options(m), MStruct(), Dict{String,Any}())
-        ws.oo_.exo_det_steady_state = zeros(0, 0)
+        ws.oo_.exo_det_steady_state = n_exo_det(m) > 0 ? _col(exo_det_steady(m)) : zeros(0, 0)
         ws.oo_.dynare_version = "7.2"
         ws.state[:matlab_options] = Dict{String,Any}()
         m.session.host.oo.results = ws.oo_          # MATLAB lines of the file see (and write) this oo_
@@ -711,6 +712,7 @@ function _run_in_place!(ws, st, nss, shocks, rng)
     if kind in ("initval", "endval")                   # these blocks also write oo_.steady_state
         ws.oo_.steady_state = _col(Float64[get(m.oo, v, 0.0) for v in m.endo_names])
         ws.oo_.exo_steady_state = _col(exo_steady(m))
+        n_exo_det(m) > 0 && (ws.oo_.exo_det_steady_state = _col(exo_det_steady(m)))
         return
     elseif kind == "histval"
         _histval!(ws)

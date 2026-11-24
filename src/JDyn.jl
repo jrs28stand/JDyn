@@ -24,6 +24,7 @@ include("matlab/parser.jl")
 include("matlab/builtins.jl")
 include("matlab/builtins_extra.jl")
 include("matlab/interp.jl")
+include("matlab/extern.jl")
 include("matlab/dates.jl")
 include("matlab/dseries.jl")
 include("matlab/objects.jl")
@@ -33,13 +34,17 @@ include("matlab/session.jl")
 include("pac.jl")
 include("dmperm.jl")
 include("steady.jl")
+include("steady_algos.jl")
+include("homotopy.jl")
 include("perturbation.jl")
 include("simulate.jl")
 include("korder.jl")
 include("fft.jl")
 include("moments.jl")
+include("moments_order3.jl")
 include("priors.jl")
 include("kalman.jl")
+include("heteroskedastic.jl")
 include("nonlinear_filters.jl")
 include("estimation.jl")
 include("nonlinear_estimation.jl")
@@ -57,6 +62,9 @@ include("results_policy.jl")
 include("pf_functions.jl")
 include("results_estimation.jl")
 include("seeds.jl")
+include("varexo_det.jl")
+include("epilogue.jl")
+include("external.jl")
 include("forecast.jl")
 include("mcmc_diagnostics.jl")
 include("posterior.jl")
@@ -92,7 +100,9 @@ export sample_mcmc, sample_smc, set_mcmc_rng!, mode_from_file, mcmc_diagnostics,
        PlannerObjectiveValue, discretionary_policy, DiscretionaryResult, osr, osr_objective, OSRResult, OptimalPolicyError, OSRError,
        DiscretionaryPolicyError, variance_of_endogenous_variables,
        forecast, ForecastResult, conditional_forecast, ConditionalForecastResult, conditional_forecast_table, forecast_struct,
-       conditional_forecast_struct, forecast!, conditional_forecast!
+       conditional_forecast_struct, forecast!, conditional_forecast!,
+       exo_det_names, n_exo_det, exo_det_steady, exo_det_decision_rules, simult_varexo_det, exo_det_paths,
+       epilogue, Epilogue, epilogue_dynamic, epilogue_static, epilogue_from_paths, epilogue_names
 
 include("precompile.jl")
 
