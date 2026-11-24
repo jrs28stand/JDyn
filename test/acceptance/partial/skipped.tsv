@@ -1,0 +1,176 @@
+pac/var-1/example1.mod	syntax	cannot parse: bad number or date literal "2000Q1,"	initialconditions = dseries(zeros(10, M_.endo_nbr+M_.exo_nbr), 2000Q1, vertcat(M_.endo_names,M_.exo_names))
+pac/var-1/example1.mod	tainted	'initialconditions' is unknown: "initialconditions = dseries(zeros(10, M_.endo_nbr+M_.exo_nbr" was not executed	TrueData = simul_backward_model(initialconditions, 500);
+pac/var-2/example1.mod	syntax	cannot parse: bad number or date literal "2000Q1,"	initialconditions = dseries(zeros(10, M_.endo_nbr+M_.exo_nbr), 2000Q1, vertcat(M_.endo_names,M_.exo_names))
+pac/var-2/example1.mod	tainted	'initialconditions' is unknown: "initialconditions = dseries(zeros(10, M_.endo_nbr+M_.exo_nbr" was not executed	TrueData = simul_backward_model(initialconditions, 500);
+pac/var-3/example1.mod	syntax	cannot parse: bad number or date literal "2000Q1,"	initialconditions = dseries(zeros(10, M_.endo_nbr+M_.exo_nbr), 2000Q1, vertcat(M_.endo_names,M_.exo_names))
+pac/var-3/example1.mod	tainted	'initialconditions' is unknown: "initialconditions = dseries(zeros(10, M_.endo_nbr+M_.exo_nbr" was not executed	TrueData = simul_backward_model(initialconditions, 500);
+pac/var-4/example1.mod	syntax	cannot parse: bad number or date literal "2000Q1,"	initialconditions = dseries(zeros(10, M_.endo_nbr+M_.exo_nbr), 2000Q1, vertcat(M_.endo_names,M_.exo_names))
+pac/var-4/example1.mod	tainted	'initialconditions' is unknown: "initialconditions = dseries(zeros(10, M_.endo_nbr+M_.exo_nbr" was not executed	TrueData = simul_backward_model(initialconditions, 500);
+pac/var-5/example1.mod	syntax	cannot parse: bad number or date literal "2000Q1,"	initialconditions = dseries(zeros(10, M_.endo_nbr+M_.exo_nbr), 2000Q1, vertcat(M_.endo_names,M_.exo_names))
+pac/var-5/example1.mod	tainted	'initialconditions' is unknown: "initialconditions = dseries(zeros(10, M_.endo_nbr+M_.exo_nbr" was not executed	TrueData = simul_backward_model(initialconditions, 20);
+pac/var-5/example1.mod	function	unknown variable, package or object 'example1'	y = example1.set_auxiliary_variables(y, x, M_.params);
+pac/var-5/example1.mod	tainted	'y' is unknown: "y = example1.set_auxiliary_variables(y, x, M_.params);" was not executed	y3n = repmat(y, 3, 1);
+pac/var-5/example1.mod	function	unknown variable, package or object 'example1'	[residual, T_order, T] = example1.dynamic_resid(y3n, x', M_.params, oo_.steady_state);
+pac/var-5/example1.mod	function	unknown variable, package or object 'example1'	g1 = example1.dynamic_g1(y3n, x', M_.params, oo_.steady_state, M_.dynamic_g1_sparse_rowval, M_.dynamic_g1_sparse_colval,
+pac/var-5/example1.mod	file	save of a double value	save('example1.mat', 'residual', 'g1', 'TrueData');
+pac/var-6/example1.mod	syntax	cannot parse: bad number or date literal "2000Q1,"	initialconditions = dseries(zeros(10, M_.endo_nbr+M_.exo_nbr), 2000Q1, vertcat(M_.endo_names,M_.exo_names))
+pac/var-6/example1.mod	tainted	'initialconditions' is unknown: "initialconditions = dseries(zeros(10, M_.endo_nbr+M_.exo_nbr" was not executed	TrueData = simul_backward_model(initialconditions, 20);
+pac/var-6/example1.mod	function	unknown variable, package or object 'example1'	y = example1.set_auxiliary_variables(y, x, M_.params);
+pac/var-6/example1.mod	tainted	'y' is unknown: "y = example1.set_auxiliary_variables(y, x, M_.params);" was not executed	y3n = repmat(y, 3, 1);
+pac/var-6/example1.mod	function	unknown variable, package or object 'example1'	[residual, T_order, T] = example1.dynamic_resid(y3n, x', M_.params, oo_.steady_state);
+pac/var-6/example1.mod	function	unknown variable, package or object 'example1'	g1 = example1.dynamic_g1(y3n, x', M_.params, oo_.steady_state, M_.dynamic_g1_sparse_rowval, M_.dynamic_g1_sparse_colval,
+pac/var-6/example1.mod	file	save of a double value	save('example1.mat', 'residual', 'g1', 'TrueData');
+pac/var-7/example1.mod	syntax	cannot parse: bad number or date literal "2000Q1,"	initialconditions = dseries(zeros(10, M_.endo_nbr+M_.exo_nbr), 2000Q1, vertcat(M_.endo_names,M_.exo_names))
+pac/var-7/example1.mod	tainted	'initialconditions' is unknown: "initialconditions = dseries(zeros(10, M_.endo_nbr+M_.exo_nbr" was not executed	TrueData = simul_backward_model(initialconditions, 20);
+pac/var-7/example1.mod	function	unknown variable, package or object 'example1'	y = example1.set_auxiliary_variables(y, x, M_.params);
+pac/var-7/example1.mod	tainted	'y' is unknown: "y = example1.set_auxiliary_variables(y, x, M_.params);" was not executed	y3n = repmat(y, 3, 1);
+pac/var-7/example1.mod	function	unknown variable, package or object 'example1'	[residual, T_order, T] = example1.dynamic_resid(y3n, x', M_.params, oo_.steady_state);
+pac/var-7/example1.mod	function	unknown variable, package or object 'example1'	g1 = example1.dynamic_g1(y3n, x', M_.params, oo_.steady_state, M_.dynamic_g1_sparse_rowval, M_.dynamic_g1_sparse_colval,
+pac/var-7/example1.mod	file	save of a double value	save('example1.mat', 'residual', 'g1', 'TrueData');
+pac/var-8/example1.mod	syntax	cannot parse: bad number or date literal "2000Q1,"	initialconditions = dseries(zeros(10, M_.endo_nbr+M_.exo_nbr), 2000Q1, vertcat(M_.endo_names,M_.exo_names))
+pac/var-8/example1.mod	tainted	'initialconditions' is unknown: "initialconditions = dseries(zeros(10, M_.endo_nbr+M_.exo_nbr" was not executed	TrueData = simul_backward_model(initialconditions, 20);
+pac/var-8/example1.mod	function	unknown variable, package or object 'example1'	y = example1.set_auxiliary_variables(y, x, M_.params);
+pac/var-8/example1.mod	tainted	'y' is unknown: "y = example1.set_auxiliary_variables(y, x, M_.params);" was not executed	y3n = repmat(y, 3, 1);
+pac/var-8/example1.mod	function	unknown variable, package or object 'example1'	[residual, T_order, T] = example1.dynamic_resid(y3n, x', M_.params, oo_.steady_state);
+pac/var-8/example1.mod	function	unknown variable, package or object 'example1'	g1 = example1.dynamic_g1(y3n, x', M_.params, oo_.steady_state, M_.dynamic_g1_sparse_rowval, M_.dynamic_g1_sparse_colval,
+pac/var-8/example1.mod	file	save of a double value	save('example1.mat', 'residual', 'g1', 'TrueData');
+pac/var-9/example1.mod	syntax	cannot parse: bad number or date literal "2000Q1,"	initialconditions = dseries(zeros(10, M_.endo_nbr+M_.exo_nbr), 2000Q1, vertcat(M_.endo_names,M_.exo_names))
+pac/var-9/example1.mod	tainted	'initialconditions' is unknown: "initialconditions = dseries(zeros(10, M_.endo_nbr+M_.exo_nbr" was not executed	TrueData = simul_backward_model(initialconditions, 20);
+pac/var-9/example1.mod	function	unknown variable, package or object 'example1'	y = example1.set_auxiliary_variables(y, x, M_.params);
+pac/var-9/example1.mod	tainted	'y' is unknown: "y = example1.set_auxiliary_variables(y, x, M_.params);" was not executed	y3n = repmat(y, 3, 1);
+pac/var-9/example1.mod	function	unknown variable, package or object 'example1'	[residual, T_order, T] = example1.dynamic_resid(y3n, x', M_.params, oo_.steady_state);
+pac/var-9/example1.mod	function	unknown variable, package or object 'example1'	g1 = example1.dynamic_g1(y3n, x', M_.params, oo_.steady_state, M_.dynamic_g1_sparse_rowval, M_.dynamic_g1_sparse_colval,
+pac/var-9/example1.mod	file	save of a double value	save('example1.mat', 'residual', 'g1', 'TrueData');
+pac/var-12/example5.mod	function	unknown function or variable 'cherrypick'	cherrypick('example5', 'toto', {'eq:pac'});
+pac/trend-component-1/example1.mod	syntax	cannot parse: bad number or date literal "2000Q1,"	initialconditions = dseries(zeros(10, M_.endo_nbr+M_.exo_nbr), 2000Q1, vertcat(M_.endo_names,M_.exo_names))
+pac/trend-component-1/example1.mod	tainted	'initialconditions' is unknown: "initialconditions = dseries(zeros(10, M_.endo_nbr+M_.exo_nbr" was not executed	TrueData = simul_backward_model(initialconditions, 500);
+pac/trend-component-2/example1.mod	syntax	cannot parse: bad number or date literal "2000Q1,"	initialconditions = dseries(zeros(10, M_.endo_nbr+M_.exo_nbr), 2000Q1, vertcat(M_.endo_names,M_.exo_names))
+pac/trend-component-2/example1.mod	tainted	'initialconditions' is unknown: "initialconditions = dseries(zeros(10, M_.endo_nbr+M_.exo_nbr" was not executed	TrueData = simul_backward_model(initialconditions, 500);
+pac/trend-component-3/example1.mod	syntax	cannot parse: bad number or date literal "2000Q1,"	initialconditions = dseries(init, 2000Q1, vertcat(M_.endo_names,M_.exo_names))
+pac/trend-component-3/example1.mod	tainted	'initialconditions' is unknown: "initialconditions = dseries(init, 2000Q1, vertcat(M_.endo_na" was not executed	TrueData = simul_backward_model(initialconditions, 500);
+pac/trend-component-4/example1.mod	syntax	cannot parse: bad number or date literal "2000Q1,"	initialconditions = dseries(zeros(10, M_.endo_nbr+M_.exo_nbr), 2000Q1, vertcat(M_.endo_names,M_.exo_names))
+pac/trend-component-4/example1.mod	tainted	'initialconditions' is unknown: "initialconditions = dseries(zeros(10, M_.endo_nbr+M_.exo_nbr" was not executed	TrueData = simul_backward_model(initialconditions, 5000);
+pac/trend-component-5/example1.mod	syntax	cannot parse: bad number or date literal "2000Q1,"	initialconditions = dseries(zeros(10, M_.endo_nbr+M_.exo_nbr), 2000Q1, vertcat(M_.endo_names,M_.exo_names))
+pac/trend-component-5/example1.mod	tainted	'initialconditions' is unknown: "initialconditions = dseries(zeros(10, M_.endo_nbr+M_.exo_nbr" was not executed	TrueData = simul_backward_model(initialconditions, 500);
+pac/trend-component-11/example1.mod	syntax	cannot parse: bad number or date literal "2000Q1,"	initialconditions = dseries(init, 2000Q1, vertcat(M_.endo_names,M_.exo_names))
+pac/trend-component-11/example1.mod	tainted	'initialconditions' is unknown: "initialconditions = dseries(init, 2000Q1, vertcat(M_.endo_na" was not executed	TrueData = simul_backward_model(initialconditions, 10);
+pac/trend-component-14/example1.mod	syntax	cannot parse: bad number or date literal "2000Q1,"	initialconditions = dseries(zeros(10, M_.endo_nbr+M_.exo_nbr), 2000Q1, vertcat(M_.endo_names,M_.exo_names))
+pac/trend-component-14/example1.mod	tainted	'initialconditions' is unknown: "initialconditions = dseries(zeros(10, M_.endo_nbr+M_.exo_nbr" was not executed	TrueData = simul_backward_model(initialconditions, 300);
+pac/trend-component-14/example1.mod	function	unknown variable, package or object 'example1'	y = example1.set_auxiliary_variables(y, x, M_.params);
+pac/trend-component-14/example1.mod	tainted	'y' is unknown: "y = example1.set_auxiliary_variables(y, x, M_.params);" was not executed	y3n = repmat(y, 3, 1);
+pac/trend-component-14/example1.mod	function	unknown variable, package or object 'example1'	[residual, T_order, T] = example1.dynamic_resid(y3n, x', M_.params, oo_.steady_state);
+pac/trend-component-14/example1.mod	function	unknown variable, package or object 'example1'	g1 = example1.dynamic_g1(y3n, x', M_.params, oo_.steady_state, M_.dynamic_g1_sparse_rowval, M_.dynamic_g1_sparse_colval,
+pac/trend-component-14/example1.mod	file	save of a double value	save('example1.mat', 'residual', 'g1', 'TrueData');
+pac/trend-component-27/example1.mod	function	unknown function or variable 'cherrypick'	cherrypick('example1', 'simulation-files', {'zpac', 'eq:x1', 'eq:x2', 'eq:x1bar', 'eq:x2bar'}, true);
+pac/trend-component-28/example1.mod	syntax	cannot parse: bad number or date literal "2000Q1,"	initialconditions = dseries(init, 2000Q1, vertcat(M_.endo_names,M_.exo_names))
+pac/trend-component-28/example1.mod	tainted	'initialconditions' is unknown: "initialconditions = dseries(init, 2000Q1, vertcat(M_.endo_na" was not executed	TrueData = simul_backward_model(initialconditions, 500);
+pac/trend-component-28/example1.mod	tainted	'TrueData' is unknown: "TrueData = simul_backward_model(initialconditions, 500);" was not executed	TrueData_ = copy(TrueData);
+pac/trend-component-28/example1.mod	syntax	cannot parse: bad number or date literal "2004Q1)"	TrueData = equation.evaluate(TrueData, 'eq:x3', 2004Q1)
+pac/trend-component-28/example1.mod	tainted	'TrueData_' is unknown: "TrueData_ = copy(TrueData);" was not executed	plot(TrueData_.x.data(12:end), TrueData_.x3.data(12:end)-TrueData.x3.data(12:end), '.k', 'linewidth', 2);
+pac/trend-component-28/example1.mod	tainted	'TrueData_' is unknown: "TrueData_ = copy(TrueData);" was not executed	plot(TrueData_.x.data(12:end), '-k', 'linewidth', 2);
+pac/trend-component-28/example1.mod	tainted	'TrueData_' is unknown: "TrueData_ = copy(TrueData);" was not executed	plot([TrueData_.x3.data(12:end)-TrueData.x3.data(12:end)], '-k', 'linewidth', 2);
+pac/trend-component-28/example1.mod	tainted	'TrueData' is unknown: "TrueData = equation.evaluate(TrueData, 'eq:x3', 2004Q1)" was not executed	fprintf('Max. abs. error is %s.\n', num2str(max(abs(TrueData.x3.data(12:end)-TrueData_.x3.data(12:end))), 16));
+pac/trend-component-28/example1.mod	block	'TrueData' is unknown: "TrueData = equation.evaluate(TrueData, 'eq:x3', 2004Q1)" was not executed	if max(abs(TrueData.x3.data(12:end)-TrueData_.x3.data(12:end)))>1e-12
+pac/trend-component-28/example2.mod	syntax	cannot parse: bad number or date literal "2000Q1,"	initialconditions = dseries(init, 2000Q1, vertcat(M_.endo_names,M_.exo_names))
+pac/trend-component-28/example2.mod	tainted	'initialconditions' is unknown: "initialconditions = dseries(init, 2000Q1, vertcat(M_.endo_na" was not executed	TrueData = simul_backward_model(initialconditions, 500);
+pac/trend-component-28/example2.mod	tainted	'TrueData' is unknown: "TrueData = simul_backward_model(initialconditions, 500);" was not executed	TrueData_ = copy(TrueData);
+pac/trend-component-28/example2.mod	syntax	cannot parse: bad number or date literal "2004Q1)"	TrueData = equation.evaluate(TrueData, 'eq:x3', 2004Q1)
+pac/trend-component-28/example2.mod	tainted	'TrueData_' is unknown: "TrueData_ = copy(TrueData);" was not executed	plot(TrueData_.x.data(12:end), TrueData_.x3.data(12:end)-TrueData.x3.data(12:end), '.k', 'linewidth', 2);
+pac/trend-component-28/example2.mod	tainted	'TrueData_' is unknown: "TrueData_ = copy(TrueData);" was not executed	plot(TrueData_.x.data(12:end), '-k', 'linewidth', 2);
+pac/trend-component-28/example2.mod	tainted	'TrueData_' is unknown: "TrueData_ = copy(TrueData);" was not executed	plot([TrueData_.x3.data(12:end)-TrueData.x3.data(12:end)], '-k', 'linewidth', 2);
+pac/trend-component-28/example2.mod	tainted	'TrueData' is unknown: "TrueData = equation.evaluate(TrueData, 'eq:x3', 2004Q1)" was not executed	fprintf('Max. abs. error is %s.\n', num2str(max(abs(TrueData.x3.data(12:end)-TrueData_.x3.data(12:end))), 16));
+pac/trend-component-28/example2.mod	block	'TrueData' is unknown: "TrueData = equation.evaluate(TrueData, 'eq:x3', 2004Q1)" was not executed	if max(abs(TrueData.x3.data(12:end)-TrueData_.x3.data(12:end)))>1e-5
+pac/trend-component-28/example3.mod	syntax	cannot parse: bad number or date literal "2000Q1,"	initialconditions = dseries(init, 2000Q1, vertcat(M_.endo_names,M_.exo_names))
+pac/trend-component-28/example3.mod	tainted	'initialconditions' is unknown: "initialconditions = dseries(init, 2000Q1, vertcat(M_.endo_na" was not executed	TrueData = simul_backward_model(initialconditions, 500);
+pac/trend-component-28/example3.mod	tainted	'TrueData' is unknown: "TrueData = simul_backward_model(initialconditions, 500);" was not executed	TrueData_ = copy(TrueData);
+pac/trend-component-28/example3.mod	syntax	cannot parse: bad number or date literal "2004Q1)"	TrueData = equation.evaluate(TrueData, 'eq:x3', 2004Q1)
+pac/trend-component-28/example3.mod	tainted	'TrueData_' is unknown: "TrueData_ = copy(TrueData);" was not executed	plot(TrueData_.x.data(12:end), TrueData_.x3.data(12:end)-TrueData.x3.data(12:end), '.k', 'linewidth', 2);
+pac/trend-component-28/example3.mod	tainted	'TrueData_' is unknown: "TrueData_ = copy(TrueData);" was not executed	plot(TrueData_.x.data(12:end), '-k', 'linewidth', 2);
+pac/trend-component-28/example3.mod	tainted	'TrueData_' is unknown: "TrueData_ = copy(TrueData);" was not executed	plot([TrueData_.x3.data(12:end)-TrueData.x3.data(12:end)], '-k', 'linewidth', 2);
+pac/trend-component-28/example3.mod	tainted	'TrueData' is unknown: "TrueData = equation.evaluate(TrueData, 'eq:x3', 2004Q1)" was not executed	fprintf('Max. abs. error is %s.\n', num2str(max(abs(TrueData.x3.data(12:end)-TrueData_.x3.data(12:end))), 16));
+pac/trend-component-28/example3.mod	block	'TrueData' is unknown: "TrueData = equation.evaluate(TrueData, 'eq:x3', 2004Q1)" was not executed	if max(abs(TrueData.x3.data(12:end)-TrueData_.x3.data(12:end)))>1e-12
+pac/trend-component-28/example4.mod	syntax	cannot parse: bad number or date literal "2000Q1,"	initialconditions = dseries(init, 2000Q1, vertcat(M_.endo_names,M_.exo_names))
+pac/trend-component-28/example4.mod	tainted	'initialconditions' is unknown: "initialconditions = dseries(init, 2000Q1, vertcat(M_.endo_na" was not executed	TrueData = simul_backward_model(initialconditions, 5000);
+pac/trend-component-28/example4.mod	tainted	'TrueData' is unknown: "TrueData = simul_backward_model(initialconditions, 5000);" was not executed	TrueData_ = copy(TrueData);
+pac/trend-component-28/example4.mod	syntax	cannot parse: bad number or date literal "2004Q1)"	TrueData = equation.evaluate(TrueData, 'eq:x3', 2004Q1)
+pac/trend-component-28/example4.mod	tainted	'TrueData_' is unknown: "TrueData_ = copy(TrueData);" was not executed	plot(TrueData_.x.data(12:end), TrueData_.x3.data(12:end)-TrueData.x3.data(12:end), '.k', 'linewidth', 2);
+pac/trend-component-28/example4.mod	tainted	'TrueData_' is unknown: "TrueData_ = copy(TrueData);" was not executed	plot(TrueData_.x.data(12:end), '-k', 'linewidth', 2);
+pac/trend-component-28/example4.mod	tainted	'TrueData_' is unknown: "TrueData_ = copy(TrueData);" was not executed	plot([TrueData_.x3.data(12:end)-TrueData.x3.data(12:end)], '-k', 'linewidth', 2);
+pac/trend-component-28/example4.mod	tainted	'TrueData' is unknown: "TrueData = equation.evaluate(TrueData, 'eq:x3', 2004Q1)" was not executed	fprintf('Max. abs. error is %s.\n', num2str(max(abs(TrueData.x3.data(12:end)-TrueData_.x3.data(12:end))), 16));
+pac/trend-component-28/example4.mod	block	'TrueData' is unknown: "TrueData = equation.evaluate(TrueData, 'eq:x3', 2004Q1)" was not executed	if max(abs(TrueData.x3.data(12:end)-TrueData_.x3.data(12:end)))>1e-5
+pac/trend-component-28/example5.mod	syntax	cannot parse: bad number or date literal "2000Q1,"	initialconditions = dseries(init, 2000Q1, vertcat(M_.endo_names,M_.exo_names))
+pac/trend-component-28/example5.mod	tainted	'initialconditions' is unknown: "initialconditions = dseries(init, 2000Q1, vertcat(M_.endo_na" was not executed	TrueData = simul_backward_model(initialconditions, 500);
+pac/trend-component-28/example5.mod	tainted	'TrueData' is unknown: "TrueData = simul_backward_model(initialconditions, 500);" was not executed	TrueData_ = copy(TrueData);
+pac/trend-component-28/example5.mod	syntax	cannot parse: bad number or date literal "2004Q1)"	TrueData = equation.evaluate(TrueData, 'eq:x3', 2004Q1)
+pac/trend-component-28/example5.mod	tainted	'TrueData_' is unknown: "TrueData_ = copy(TrueData);" was not executed	plot(TrueData_.x.data(12:end), TrueData_.x3.data(12:end)-TrueData.x3.data(12:end), '.k', 'linewidth', 2);
+pac/trend-component-28/example5.mod	tainted	'TrueData_' is unknown: "TrueData_ = copy(TrueData);" was not executed	plot(TrueData_.x.data(12:end), '-k', 'linewidth', 2);
+pac/trend-component-28/example5.mod	tainted	'TrueData_' is unknown: "TrueData_ = copy(TrueData);" was not executed	plot([TrueData_.x3.data(12:end)-TrueData.x3.data(12:end)], '-k', 'linewidth', 2);
+pac/trend-component-28/example5.mod	tainted	'TrueData' is unknown: "TrueData = equation.evaluate(TrueData, 'eq:x3', 2004Q1)" was not executed	fprintf('Max. abs. error is %s.\n', num2str(max(abs(TrueData.x3.data(12:end)-TrueData_.x3.data(12:end))), 16));
+pac/trend-component-28/example5.mod	block	'TrueData' is unknown: "TrueData = equation.evaluate(TrueData, 'eq:x3', 2004Q1)" was not executed	if max(abs(TrueData.x3.data(12:end)-TrueData_.x3.data(12:end)))>1e-12
+pac/trend-component-28/example6.mod	syntax	cannot parse: bad number or date literal "2000Q1,"	initialconditions = dseries(init, 2000Q1, vertcat(M_.endo_names,M_.exo_names))
+pac/trend-component-28/example6.mod	tainted	'initialconditions' is unknown: "initialconditions = dseries(init, 2000Q1, vertcat(M_.endo_na" was not executed	TrueData = simul_backward_model(initialconditions, 50);
+pac/trend-component-28/example6.mod	tainted	'TrueData' is unknown: "TrueData = simul_backward_model(initialconditions, 50);" was not executed	TrueData_ = copy(TrueData);
+pac/trend-component-28/example6.mod	syntax	cannot parse: bad number or date literal "2004Q1)"	TrueData = equation.evaluate(TrueData, 'eq:x3', 2004Q1)
+pac/trend-component-28/example6.mod	tainted	'TrueData_' is unknown: "TrueData_ = copy(TrueData);" was not executed	plot(TrueData_.x.data(12:end), TrueData_.x3.data(12:end)-TrueData.x3.data(12:end), '.k', 'linewidth', 2);
+pac/trend-component-28/example6.mod	tainted	'TrueData_' is unknown: "TrueData_ = copy(TrueData);" was not executed	plot(TrueData_.x.data(12:end), '-k', 'linewidth', 2);
+pac/trend-component-28/example6.mod	tainted	'TrueData_' is unknown: "TrueData_ = copy(TrueData);" was not executed	plot([TrueData_.x3.data(12:end)-TrueData.x3.data(12:end)], '-k', 'linewidth', 2);
+pac/trend-component-28/example6.mod	tainted	'TrueData' is unknown: "TrueData = equation.evaluate(TrueData, 'eq:x3', 2004Q1)" was not executed	fprintf('Max. abs. error is %s.\n', num2str(max(abs(TrueData.x3.data(12:end)-TrueData_.x3.data(12:end))), 16));
+pac/trend-component-28/example6.mod	block	'TrueData' is unknown: "TrueData = equation.evaluate(TrueData, 'eq:x3', 2004Q1)" was not executed	if max(abs(TrueData.x3.data(12:end)-TrueData_.x3.data(12:end)))>1e-5
+pac/trend-component-29/example1.mod	function	unknown function or variable 'cherrypick'	cherrypick('example1', 'simulation-files1', {'zpac', 'eq:x1', 'eq:x2', 'eq:x1bar', 'eq:x2bar', 'eq:azertyuiopiop'}, true
+pac/trend-component-29/example2.mod	function	unknown function or variable 'cherrypick'	cherrypick('example2', 'simulation-files2', {'zpac', 'eq:x1', 'eq:x2', 'eq:x1bar', 'eq:x2bar'}, true);
+var-expectations/2/example1.mod	function	unknown function or variable 'search'	search('x')
+var-expectations/2/example1.mod	function	unknown function or variable 'search'	search('y', 'withparamvalues')
+var-expectations/2-with-time-shift/example1.mod	function	unknown function or variable 'search'	search('x')
+var-expectations/2-with-time-shift/example1.mod	function	unknown function or variable 'search'	search('y', 'withparamvalues')
+var-expectations/4/example1.mod	file	file-system, shell or interactive functions are not available	delete('../3/weights.mat')
+var-expectations/4-with-time-shift/example1.mod	file	file-system, shell or interactive functions are not available	delete('../3-with-time-shift/weights.mat')
+var-expectations/6/example1.mod	function	unknown function or variable 'dates'	initialconditions = ... dseries(initialconditions, dates('2000Q1'), {'foo', 'x1','x2', 'x1bar', 'x2bar'});
+var-expectations/6/example1.mod	tainted	'initialconditions' is unknown: "initialconditions = ... dseries(initialconditions, dates('20" was not executed	ts = simul_backward_model(initialconditions, 100);
+var-expectations/6/example1.mod	tainted	'ts' is unknown: "ts = simul_backward_model(initialconditions, 100);" was not executed	foo = ts.foo.data;
+var-expectations/6/example1.mod	file	save of a double value	save('example1.mat', 'foo');
+var-expectations/6-with-time-shift/example1.mod	function	unknown function or variable 'dates'	initialconditions = ... dseries(initialconditions, dates('2000Q1'), {'foo', 'x1','x2', 'x1bar', 'x2bar'});
+var-expectations/6-with-time-shift/example1.mod	tainted	'initialconditions' is unknown: "initialconditions = ... dseries(initialconditions, dates('20" was not executed	ts = simul_backward_model(initialconditions, 100);
+var-expectations/6-with-time-shift/example1.mod	tainted	'ts' is unknown: "ts = simul_backward_model(initialconditions, 100);" was not executed	foo = ts.foo.data;
+var-expectations/6-with-time-shift/example1.mod	file	save of a double value	save('example1.mat', 'foo');
+var-expectations/7/example1.mod	function	unknown function or variable 'dates'	initialconditions = ... dseries(initialconditions, dates('2000Q1'), {'foo', 'y','z', 'x'});
+var-expectations/7/example1.mod	tainted	'initialconditions' is unknown: "initialconditions = ... dseries(initialconditions, dates('20" was not executed	ts = simul_backward_model(initialconditions, 100);
+var-expectations/7/example1.mod	tainted	'ts' is unknown: "ts = simul_backward_model(initialconditions, 100);" was not executed	foo = ts.foo.data;
+var-expectations/7/example1.mod	file	save of a double value	save('example1.mat', 'foo');
+var-expectations/8/example1.mod	function	unknown function or variable 'dates'	initialconditions = ... dseries(initialconditions, dates('2000Q1'), {'foo', 'y','z', 'x'});
+var-expectations/8/example1.mod	tainted	'initialconditions' is unknown: "initialconditions = ... dseries(initialconditions, dates('20" was not executed	ts = simul_backward_model(initialconditions, 100);
+var-expectations/8/example1.mod	tainted	'ts' is unknown: "ts = simul_backward_model(initialconditions, 100);" was not executed	foo = ts.foo.data;
+var-expectations/8/example1.mod	file	save of a double value	save('example1.mat', 'foo');
+var-expectations/10/example1.mod	function	unknown function or variable 'dates'	initialconditions = ... dseries(initialconditions, dates('2000Q1'), {'foo', 'y','z', 'x'});
+var-expectations/10/example1.mod	tainted	'initialconditions' is unknown: "initialconditions = ... dseries(initialconditions, dates('20" was not executed	ts = simul_backward_model(initialconditions, 15);
+var-expectations/10/example1.mod	tainted	'ts' is unknown: "ts = simul_backward_model(initialconditions, 15);" was not executed	foo = ts.foo.data;
+var-expectations/10/example1.mod	function	unknown variable, package or object 'example1'	ts{'toto'} = example1.var_expectations.varexp.evaluate(ts);
+var-expectations/10/example1.mod	function	unknown function or variable 'dates'	range = dates('2000Q4'):dates('2004Q2');
+var-expectations/10/example1.mod	block	'ts' is unknown: "ts{'toto'} = example1.var_expectations.varexp.evaluate(ts);" was not executed	if max(abs(ts(range).foo.data-ts(range).toto.data))>1e-5
+var-expectations/12/example1.mod	function	unknown function or variable 'dates'	initialconditions = ... dseries(initialconditions, dates('2000Q1'), {'foo', 'y','z', 'x'});
+var-expectations/12/example1.mod	tainted	'initialconditions' is unknown: "initialconditions = ... dseries(initialconditions, dates('20" was not executed	ts = simul_backward_model(initialconditions, 15);
+var-expectations/12/example1.mod	tainted	'ts' is unknown: "ts = simul_backward_model(initialconditions, 15);" was not executed	foo = ts.foo.data;
+var-expectations/12/example1.mod	function	unknown variable, package or object 'example1'	ts{'toto'} = example1.var_expectations.varexp.evaluate(ts);
+var-expectations/12/example1.mod	function	unknown function or variable 'dates'	range = dates('2000Q4'):dates('2004Q2');
+var-expectations/12/example1.mod	block	'ts' is unknown: "ts{'toto'} = example1.var_expectations.varexp.evaluate(ts);" was not executed	if max(abs(ts(range).foo.data-ts(range).toto.data))>1e-5
+trend-component-and-var-models/vm4.mod	function	get_companion_matrix_legacy (legacy VAR / trend component matrices from the model's Jacobian) is not implemented in JDyn	[~, b0] = get_companion_matrix_legacy('toto');
+trend-component-and-var-models/vm4.mod	block	'b0' is unknown: "[~, b0] = get_companion_matrix_legacy('toto');" was not executed	if any(abs(b0(:)-b1(:))>1e-9)
+trend-component-and-var-models/legacy/tcm2.mod	function	get_companion_matrix_legacy (legacy VAR / trend component matrices from the model's Jacobian) is not implemented in JDyn	[EC, AR, T] = get_companion_matrix_legacy('toto');
+trend-component-and-var-models/legacy/tcm2.mod	block	'EC' is unknown: "[EC, AR, T] = get_companion_matrix_legacy('toto');" was not executed	if max(max(abs(EC-B)))>1e-12
+trend-component-and-var-models/legacy/tcm2.mod	block	'AR' is unknown: "[EC, AR, T] = get_companion_matrix_legacy('toto');" was not executed	if max(max(abs(AR(:,:,1)-A1(1:2,1:2))))>1e-12
+trend-component-and-var-models/legacy/tcm2.mod	block	'AR' is unknown: "[EC, AR, T] = get_companion_matrix_legacy('toto');" was not executed	if max(max(abs(AR(:,:,2)-A2(1:2,1:2))))>1e-12
+trend-component-and-var-models/legacy/tcm2.mod	block	'AR' is unknown: "[EC, AR, T] = get_companion_matrix_legacy('toto');" was not executed	if max(max(abs(AR(:,:,3)-A3(1:2,1:2))))>1e-12
+trend-component-and-var-models/legacy/tcm3.mod	function	get_companion_matrix_legacy (legacy VAR / trend component matrices from the model's Jacobian) is not implemented in JDyn	[EC, AR, T] = get_companion_matrix_legacy('toto');
+trend-component-and-var-models/legacy/tcm3.mod	block	'EC' is unknown: "[EC, AR, T] = get_companion_matrix_legacy('toto');" was not executed	if max(max(abs(EC-B)))>1e-12
+trend-component-and-var-models/legacy/tcm3.mod	block	'AR' is unknown: "[EC, AR, T] = get_companion_matrix_legacy('toto');" was not executed	if max(max(abs(AR(:,:,1)-A1(1:2,1:2))))>1e-12
+trend-component-and-var-models/legacy/tcm3.mod	block	'AR' is unknown: "[EC, AR, T] = get_companion_matrix_legacy('toto');" was not executed	if max(max(abs(AR(:,:,2)-A2(1:2,1:2))))>1e-12
+trend-component-and-var-models/legacy/tcm3.mod	block	'AR' is unknown: "[EC, AR, T] = get_companion_matrix_legacy('toto');" was not executed	if max(max(abs(AR(:,:,3)-A3(1:2,1:2))))>1e-12
+trend-component-and-var-models/legacy/tcm4.mod	function	get_companion_matrix_legacy (legacy VAR / trend component matrices from the model's Jacobian) is not implemented in JDyn	[EC, AR, T] = get_companion_matrix_legacy('toto');
+trend-component-and-var-models/legacy/tcm4.mod	block	'EC' is unknown: "[EC, AR, T] = get_companion_matrix_legacy('toto');" was not executed	if max(max(abs(EC-B)))>1e-12
+trend-component-and-var-models/legacy/tcm4.mod	block	'AR' is unknown: "[EC, AR, T] = get_companion_matrix_legacy('toto');" was not executed	if max(max(abs(AR(:,:,1)-A1(1:2,1:2))))>1e-12
+trend-component-and-var-models/legacy/tcm4.mod	block	'AR' is unknown: "[EC, AR, T] = get_companion_matrix_legacy('toto');" was not executed	if max(max(abs(AR(:,:,2)-A2(1:2,1:2))))>1e-12
+trend-component-and-var-models/legacy/tcm4.mod	block	'AR' is unknown: "[EC, AR, T] = get_companion_matrix_legacy('toto');" was not executed	if max(max(abs(AR(:,:,3)-A3(1:2,1:2))))>1e-12
+trend-component-and-var-models/legacy/tcm5.mod	function	get_companion_matrix_legacy (legacy VAR / trend component matrices from the model's Jacobian) is not implemented in JDyn	[EC, AR, T] = get_companion_matrix_legacy('toto');
+trend-component-and-var-models/legacy/tcm5.mod	block	'EC' is unknown: "[EC, AR, T] = get_companion_matrix_legacy('toto');" was not executed	if max(max(abs(EC-B)))>1e-12
+trend-component-and-var-models/legacy/tcm5.mod	block	'AR' is unknown: "[EC, AR, T] = get_companion_matrix_legacy('toto');" was not executed	if max(max(abs(AR(:,:,1)-A1(1:2,1:2))))>1e-12
+trend-component-and-var-models/legacy/tcm5.mod	block	'AR' is unknown: "[EC, AR, T] = get_companion_matrix_legacy('toto');" was not executed	if max(max(abs(AR(:,:,2)-A2(1:2,1:2))))>1e-12
+trend-component-and-var-models/legacy/tcm5.mod	block	'AR' is unknown: "[EC, AR, T] = get_companion_matrix_legacy('toto');" was not executed	if max(max(abs(AR(:,:,3)-A3(1:2,1:2))))>1e-12

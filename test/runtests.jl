@@ -5,7 +5,7 @@ const ALL_TESTS = ["test_matlab.jl", "test_first_order.jl", "test_examples.jl", 
                    "test_occbin.jl", "test_occbin_options.jl", "test_estimation.jl",
                    "test_perfect_foresight.jl", "test_smoother.jl", "test_shock_decomposition.jl", "test_results.jl", "test_review_findings.jl", "test_review2_findings.jl", "test_results_estimation.jl", "test_perf_seeds.jl",
                    "test_forecast.jl", "test_optimizers.jl", "test_occbin_estimation.jl", "test_acceptance_smoke.jl",
-                   "test_nonlinear_estimation.jl"]
+                   "test_nonlinear_estimation.jl", "test_pac.jl"]
 failed = String[]
 for f in (isempty(ARGS) ? ALL_TESTS : ARGS)
     println("=== ", f)

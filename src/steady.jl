@@ -127,7 +127,9 @@ function fill_auxiliary(m::Model, ys, x, params)
         for (k, i) in enumerate(aux)
             isfinite(ys[i]) || (ys[i] = 0.0)
             r = static_resid(m, ys, x, params)[i]
-            ys[i] -= r / (exact ? diagc[k] : static_jac(m, ys, x, params)[i, i])
+            d = exact ? diagc[k] : static_jac(m, ys, x, params)[i, i]
+            (isfinite(d) && d != 0) || continue          # equation without its own variable (a lead-lag auxiliary of a unit-root / MCE model): keep the start value
+            ys[i] -= r / d
         end
     end
     ys

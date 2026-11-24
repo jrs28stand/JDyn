@@ -1,0 +1,12 @@
+Precompiling packages...
+    JDyn Being precompiled by another process (pid: 4497, pidfile: /root/.julia/compiled/v1.12/JDyn/o8A7n_sAv93.ji.pidfile)
+ 633402.5 ms  ✓ JDyn
+  1 dependency successfully precompiled in 634 seconds. 116 already precompiled.
+PAC model pacman is used in equation eq:pac.
+
+PAC model pacman is used in equation eq:pac.
+
+PAC model pacman is used in equation eq:pac.
+
+PAC model pacman is used in equation eq:pac.
+

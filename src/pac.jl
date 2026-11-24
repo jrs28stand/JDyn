@@ -247,7 +247,7 @@ function _varmatrices(m::Model, name::AbstractString, params::Vector{Float64}, r
         elseif (mt = match(r"^ar\((\d+),(\d+),(\d+)\)\s*=\s*(.*)$", t)) !== nothing
             i, j, k = parse.(Int, mt.captures[1:3])
             ar[i, j, k] = _coef_fun(mt.captures[4])(params)
-        elseif (mt = match(r"^a0\s*=\s*eye\((\d+)\)$", t)) !== nothing
+        elseif a0 === nothing && (mt = match(r"^a0\s*=\s*eye\((\d+)\)$", t)) !== nothing      # later `a0 = eye(n)` lines belong to the reduced form
             a0 = Matrix{Float64}(LinearAlgebra.I, parse(Int, mt.captures[1]), parse(Int, mt.captures[1]))
         elseif (mt = match(r"^a0\((\d+),(\d+)\)\s*=\s*(.*)$", t)) !== nothing
             a0[parse(Int, mt.captures[1]), parse(Int, mt.captures[2])] = _coef_fun(mt.captures[3])(params)
