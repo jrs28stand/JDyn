@@ -693,7 +693,7 @@ function run_stmt!(s::ModSession, st)
         n0 = s.host.nwrites
         try
             if st isa Assign && st.rhs isa IndexE && st.rhs.base isa Id && st.rhs.base.name in SOLVE_FUNCS &&
-               !has_var(I, sc, st.rhs.base.name)
+               !has_var(I, sc, st.rhs.base.name) && !haskey(BUILTINS, st.rhs.base.name)
                 s.in_try > 0 && throw(TryUnknown(Unsupported("$(st.rhs.base.name) is not run while loading", "function")))
                 info = analyze(s, Any[st])
                 info.calib = nothing

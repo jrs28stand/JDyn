@@ -113,7 +113,8 @@ const PF_SOLVER_KEYS = Dict("tolf" => "dynatol.f", "tolx" => "dynatol.x", "maxit
     "homotopy_linearization_fallback" => "simul.homotopy_linearization_fallback",
     "homotopy_marginal_linearization_fallback" => "simul.homotopy_marginal_linearization_fallback",
     "homotopy_exclude_varexo" => "simul.homotopy_exclude_varexo", "steady_tolf" => "simul.steady_tolf",
-    "constant_simulation_length" => "pfwee.constant_simulation_length", "noprint" => "noprint")
+    "constant_simulation_length" => "pfwee.constant_simulation_length", "noprint" => "noprint",
+    "robust_lin_solve" => "simul.robust_lin_solve", "allow_nonfinite_values" => "simul.allow_nonfinite_values")
 const PF_SETUP_KEYS = Dict("periods" => "periods", "endval_steady" => "simul.endval_steady",
     "endval_steady_nocheck" => "simul.endval_steady_nocheck", "datafile" => "datafile")
 const PF_DEFAULTS = Dict{String,Any}("dynatol.f" => nothing, "dynatol.x" => 1e-5, "simul.maxit" => 50,
@@ -123,12 +124,12 @@ const PF_DEFAULTS = Dict{String,Any}("dynatol.f" => nothing, "dynatol.x" => 1e-5
     "simul.homotopy_max_completion_share" => 1.0, "simul.homotopy_linearization_fallback" => false,
     "simul.homotopy_marginal_linearization_fallback" => 0.0, "simul.homotopy_exclude_varexo" => String[],
     "simul.steady_tolf" => nothing, "pfwee.constant_simulation_length" => false, "noprint" => false,
+    "simul.robust_lin_solve" => false, "simul.allow_nonfinite_values" => false,
     "periods" => nothing, "simul.first_simulation_period" => nothing, "simul.last_simulation_period" => nothing, "simul.endval_steady" => false, "simul.endval_steady_nocheck" => false, "datafile" => nothing)
 "Dynare's default tolerance on the residuals of a perfect foresight simulation (options_.dynatol.f)."
 const PF_DEFAULT_TOLF = 1e-5
 const PF_NOTES = Dict("markowitz" => "markowitz only matters for Dynare's bytecode solvers",
     "minimal_solving_periods" => "minimal_solving_periods only matters for Dynare's bytecode solvers",
-    "simul.robust_lin_solve" => "robust_lin_solve (iterative fallbacks for singular stacked Jacobians) is not implemented: a singular Jacobian makes the simulation fail",
     "simul.steady_solve_algo" => "steady_solve_algo: JDyn has one steady-state solver",
     "simul.steady_maxit" => "steady_maxit: JDyn has one steady-state solver",
     "simul.steady_tolx" => "steady_tolx: JDyn has one steady-state solver",
@@ -157,6 +158,18 @@ function _pf_resolve_options(m::Model, pfwee::Bool, kw)
             push!(given, key)
         end
     end
+    _pf_normalize_options!(m, o, given)
+    for (st, src) in zip(names, (setup, solver))
+        notes = ["$k ($(PF_NOTES[k]))" for k in keys(src) if haskey(PF_NOTES, k)]
+        other = sort([k for k in keys(src) if !haskey(PF_DEFAULTS, k) && !haskey(PF_NOTES, k) && !(k in COSMETIC) && k != "stack_solve_algo"])
+        isempty(notes) && isempty(other) ||
+            warn_once(m, "perfect_foresight does not act on these $st options from the .mod file: " * join(vcat(sort(notes), other), "; "))
+    end
+    o
+end
+
+"Types and checks of the options of the perfect foresight commands (`given`: the keys the user set)."
+function _pf_normalize_options!(m::Model, o, given)
     excl = o["simul.homotopy_exclude_varexo"]
     excl isa AbstractDict && (excl = get(excl, "symbol_list", String[]))
     o["simul.homotopy_exclude_varexo"] = excl isa AbstractString ? [String(excl)] : String[String(x) for x in something(excl, String[])]
@@ -169,7 +182,8 @@ function _pf_resolve_options(m::Model, pfwee::Bool, kw)
     marg = o["simul.homotopy_marginal_linearization_fallback"]
     o["simul.homotopy_marginal_linearization_fallback"] = marg === true ? 0.01 : marg === false || marg === nothing ? 0.0 : _pf_float(marg)
     for k in ("no_homotopy", "linear_approximation", "endogenous_terminal_period", "lmmcp.status", "simul.homotopy_linearization_fallback",
-              "pfwee.constant_simulation_length", "simul.endval_steady", "simul.endval_steady_nocheck")
+              "pfwee.constant_simulation_length", "simul.endval_steady", "simul.endval_steady_nocheck",
+              "simul.robust_lin_solve", "simul.allow_nonfinite_values")
         o[k] = _pf_bool(o[k])
     end
     o["simul.homotopy_step_size_increase_success_count"] = Int(_pf_float(o["simul.homotopy_step_size_increase_success_count"]))
@@ -179,12 +193,6 @@ function _pf_resolve_options(m::Model, pfwee::Bool, kw)
         0 <= algo <= 10 || throw(ArgumentError("stack_solve_algo must be between 0 and 10"))
         warn_once(m, "stack_solve_algo=$algo: JDyn has one solver for the stacked system, Newton's method with a sparse LU " *
                      "factorisation (Dynare's stack_solve_algo=0); every value of stack_solve_algo is solved that way")
-    end
-    for (st, src) in zip(names, (setup, solver))
-        notes = ["$k ($(PF_NOTES[k]))" for k in keys(src) if haskey(PF_NOTES, k)]
-        other = sort([k for k in keys(src) if !haskey(PF_DEFAULTS, k) && !haskey(PF_NOTES, k) && !(k in COSMETIC) && k != "stack_solve_algo"])
-        isempty(notes) && isempty(other) ||
-            warn_once(m, "perfect_foresight does not act on these $st options from the .mod file: " * join(vcat(sort(notes), other), "; "))
     end
     o
 end
@@ -635,6 +643,130 @@ function _pf_lu_solve(A::SparseMatrixCSC, b::AbstractVector, pat=nothing)
     end
 end
 
+# ---- robust_lin_solve: lin_solve_robust of sim1.m
+"""
+Octave's `A\\b` for a square sparse matrix. LU first; a singular matrix then gets a regularised factorisation
+(A + 1e-10 max|A| I) with iterative refinement against A, and finally a dense rank-revealing least-squares
+solve (up to 6000 unknowns). pydyn's `_backslash` is the specification (it matches Octave on the singular
+stacked Jacobian of Dynare's Irreversible_investment test).
+"""
+function _pf_backslash(A::SparseMatrixCSC, b::AbstractVector)
+    n = length(b)
+    try
+        F = lu(A; check=false)
+        if issuccess(F)
+            x = F \ b
+            all(isfinite, x) && return x
+        end
+    catch e
+        e isa LinearAlgebra.SingularException || e isa LinearAlgebra.LAPACKException || e isa ArgumentError || rethrow()
+    end
+    nb = norm(b)
+    try
+        delta = 1e-10 * maximum(abs, A)
+        F = lu(A + delta * sparse(1.0I, n, n); check=false)
+        if issuccess(F)
+            x = F \ b
+            best, rbest = x, norm(b - A * x)
+            for _ in 1:30
+                x = x + F \ (b - A * x)
+                r = norm(b - A * x)
+                r < rbest || break
+                best, rbest = x, r
+                rbest <= 1e-15 * nb && break
+            end
+            all(isfinite, best) && rbest <= 1e-10 * nb && return best
+        end
+    catch e
+        e isa LinearAlgebra.SingularException || e isa LinearAlgebra.LAPACKException || e isa ArgumentError || rethrow()
+    end
+    n <= 6000 || return fill(NaN, n)
+    M = Matrix(A)
+    (all(isfinite, M) && all(isfinite, b)) || return fill(NaN, n)
+    qr(M, ColumnNorm()) \ b
+end
+
+"BiCGSTAB (van der Vorst) from x0; returns the iterate after at most maxit iterations or when the relative residual is below tol."
+function _pf_bicgstab(A, b, x0, tol, maxit)
+    x = copy(x0); r = b - A * x; nb = norm(b)
+    norm(r) <= tol * nb && return x
+    rt = copy(r); rho = alpha = omega = 1.0; v = zeros(length(b)); p = zeros(length(b))
+    for _ in 1:maxit
+        rho1 = dot(rt, r)
+        (rho1 == 0 || !isfinite(rho1)) && break
+        beta = (rho1 / rho) * (alpha / omega)
+        p = r + beta * (p - omega * v)
+        v = A * p
+        alpha = rho1 / dot(rt, v)
+        s = r - alpha * v
+        if norm(s) <= tol * nb
+            return x + alpha * p
+        end
+        t = A * s
+        omega = dot(t, s) / dot(t, t)
+        x = x + alpha * p + omega * s
+        r = s - omega * t
+        rho = rho1
+        (norm(r) <= tol * nb || !isfinite(omega) || omega == 0) && break
+    end
+    x
+end
+
+"GMRES with restart `restart` (one outer cycle) from x0."
+function _pf_gmres(A, b, x0, tol, restart)
+    n = length(b); x = copy(x0); r = b - A * x; nb = norm(b); beta = norm(r)
+    (beta <= tol * nb || !isfinite(beta)) && return x
+    m = min(restart, n)
+    V = zeros(n, m + 1); H = zeros(m + 1, m)
+    V[:, 1] = r / beta
+    k = 0
+    for j in 1:m
+        w = A * V[:, j]
+        for i in 1:j
+            H[i, j] = dot(V[:, i], w)
+            w -= H[i, j] * V[:, i]
+        end
+        H[j+1, j] = norm(w)
+        k = j
+        H[j+1, j] < 1e-14 * beta && break
+        V[:, j+1] = w / H[j+1, j]
+    end
+    e1 = zeros(k + 1); e1[1] = beta
+    y = H[1:k+1, 1:k] \ e1
+    x + V[:, 1:k] * y
+end
+
+"lin_solve_robust of sim1.m: A\\b, BiCGSTAB from it, from zero, GMRES from the better of the two, from zero, then the pseudo-inverse."
+function _pf_lin_solve_robust(A::SparseMatrixCSC, b::AbstractVector, allow_nonfinite::Bool)
+    n = length(b)
+    nb = norm(b)
+    nb < sqrt(eps()) && return zeros(n)
+    clean(x) = allow_nonfinite ? x : map(v -> isfinite(v) ? v : 0.0, x)
+    relres(x) = (r = norm(b - A * x) / nb; isfinite(r) ? r : Inf)
+    tol = 1e-6
+    x = clean(_pf_backslash(A, b))
+    relres(x) <= tol && return x
+    x = _pf_bicgstab(A, b, x, tol, min(n, 20))
+    relres(x) <= tol && return x
+    old_x, old_r = x, relres(x)
+    x = _pf_bicgstab(A, b, zeros(n), tol, min(n, 20))
+    relres(x) <= tol && return x
+    x = clean(x)
+    old_r < relres(x) && (x = old_x)
+    x = _pf_gmres(A, b, x, tol, min(n, 10))
+    relres(x) <= tol && return x
+    x = clean(x)
+    old_x, old_r = x, relres(x)
+    x = _pf_gmres(A, b, zeros(n), tol, min(n, 10))
+    relres(x) <= tol && return x
+    x = clean(x)
+    old_r < relres(x) && (x = old_x)
+    old_x, old_r = x, relres(x)
+    x = clean(pinv(Matrix(A)) * b)
+    old_r < relres(x) && (x = old_x)
+    x
+end
+
 function _pf_boundaries(m::Model, endo::AbstractMatrix, periods::Int)
     lag, lead, n = m.info["maximum_lag"], m.info["maximum_lead"], m.n_endo
     y0 = lag > 0 ? Vector{Float64}(endo[:, lag]) : fill(NaN, n)
@@ -681,7 +813,8 @@ function _pf_sim1(m::Model, P::PFStacked, endo, exo, periods, o, log)
         if err < tolf
             converged = true
         else
-            dy = _pf_lu_solve(A, res, _pf_pattern(P, periods))
+            dy = o["simul.robust_lin_solve"] ? _pf_lin_solve_robust(A, res, o["simul.allow_nonfinite_values"]) :
+                                               _pf_lu_solve(A, res, _pf_pattern(P, periods))
             Y = Y .- reshape(dy, n, T)
         end
         it += 1

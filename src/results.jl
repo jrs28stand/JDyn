@@ -524,8 +524,36 @@ function _store_pf!(ws, r)
     ws
 end
 
-"perfect_foresight_with_expectation_errors_solver (from the .mod file's declarations)."
+"""
+perfect_foresight_with_expectation_errors_setup: builds oo_.pfwee (information sets) and the initial guess
+in oo_.endo_simul / oo_.exo_simul (src/pf_functions.jl); a failure is left to the solver command, which then
+replays the declarations of the file.
+"""
+function _perfect_foresight_wee_setup!(ws::DynareWorkspace)
+    m = _sync_model!(ws)
+    delete!(ws.oo_, "pfwee")
+    try
+        pws = _pf_replay(m, nothing, nothing, (), ())
+        ws.oo_.steady_state = _col(pws.ss)
+        ws.oo_.exo_steady_state = _col(pws.xss)
+        pws.ss0 === nothing ? (haskey(ws.oo_, "initial_steady_state") && delete!(ws.oo_, "initial_steady_state"),
+                               haskey(ws.oo_, "initial_exo_steady_state") && delete!(ws.oo_, "initial_exo_steady_state")) :
+                              (ws.oo_.initial_steady_state = _col(pws.ss0); ws.oo_.initial_exo_steady_state = _col(pws.xss0))
+        _pfo_pfwee_setup!(m, ws.options_, ws.oo_, copy(m.params))
+    catch e
+        e isa Union{ModelError,PerfectForesightError,SteadyStateError,ArgumentError,Unsupported} || rethrow()
+        delete!(ws.oo_, "pfwee")
+    end
+    ws
+end
+
+"perfect_foresight_with_expectation_errors_solver (from oo_.pfwee when the setup command stored it, else from the .mod file's declarations)."
 function _perfect_foresight_wee!(ws::DynareWorkspace)
+    if haskey(ws.oo_, "pfwee")
+        m = _sync_model!(ws)
+        _pfo_pfwee_solve!(m, ws.options_, ws.oo_, copy(m.params))
+        return ws
+    end
     r = perfect_foresight(_sync_model!(ws); expectation_errors=true)
     _store_pf!(ws, r)
     ws.oo_.steady_state = _col(r.steady_state)
@@ -607,6 +635,7 @@ function dynare(modfile::AbstractString; output=nothing, shocks=Dict{Int,Any}(),
         ws.oo_.dynare_version = "7.2"
         ws.state[:matlab_options] = Dict{String,Any}()
         m.session.host.oo.results = ws.oo_          # MATLAB lines of the file see (and write) this oo_
+        _pf_register_host!(ws)                      # perfect_foresight_solver(M_, options_, oo_) & co. (src/pf_functions.jl)
         wsref[] = ws
         st -> _run_in_place!(ws, st, nss, shocks, rng)
     end
@@ -639,9 +668,34 @@ function dynare(modfile::AbstractString; output=nothing, shocks=Dict{Int,Any}(),
     ws
 end
 
-const _QUIET_KINDS = Set(["perfect_foresight_with_expectation_errors_setup", "occbin_setup", "occbin_graph", "rplot",
+const _QUIET_KINDS = Set(["occbin_setup", "occbin_graph", "rplot",
     "write_latex_dynamic_model", "write_latex_static_model", "write_latex_original_model",
     "write_latex_steady_state_model", "collect_latex_files", "write_latex_definitions", "resid"])
+
+"""
+endval (also endval(learnt_in=1), which the preprocessor turns into a plain block) as the driver runs it: the initial steady state is stored if there is none, then
+oo_.exo_steady_state and oo_.steady_state (auxiliary variables included) take the values of the block.
+"""
+function _endval_learnt_in!(ws, st)
+    m = ws.model
+    oo = ws.oo_
+    haskey(oo, "steady_state") || (oo.steady_state = _col(Float64[get(m.oo, v, 0.0) for v in m.endo_names]))
+    haskey(oo, "exo_steady_state") || (oo.exo_steady_state = _col(exo_steady(m)))
+    if !_pfo_has(oo, "initial_steady_state")
+        oo.initial_steady_state = copy(oo.steady_state)
+        oo.initial_exo_steady_state = copy(oo.exo_steady_state)
+    end
+    ss, xss = _pfo_vec(oo, "steady_state"), something(_pfo_vec(oo, "exo_steady_state"), Float64[])
+    for d in get_or(st, "vals", [])
+        name = d["name"]
+        get(d, "type", "level") == "level" || throw(ModelError("endval(learnt_in=1) with add or multiply is not supported"))
+        v = haskey(m.endval, name) ? Float64(m.endval[name]) : Float64(_eval_with_vars(m, d["value"]))    # as _pf_replay reads the block
+        haskey(m.ie, name) ? (ss[m.ie[name]] = v) : haskey(m.ix, name) ? (xss[m.ix[name]] = v) : nothing
+    end
+    oo.steady_state = _col(fill_auxiliary(m, ss, xss, m.params))
+    oo.exo_steady_state = _col(xss)
+    nothing
+end
 
 "A Dynare statement of the file, where it stands: options into options_, then the command."
 function _run_in_place!(ws, st, nss, shocks, rng)
@@ -649,6 +703,10 @@ function _run_in_place!(ws, st, nss, shocks, rng)
     kind = st["statementName"]
     _apply_matlab_options!(ws)
     _apply_options!(ws.options_, st)
+    if kind == "endval"                                # (learnt_in=p > 1 is news for the expectation-errors commands, M_.learnt_endval: oo_ is not touched)
+        haskey(st, "learnt_in") && _pf_period(st["learnt_in"], "learnt_in") != 1 || _endval_learnt_in!(ws, st)
+        return
+    end
     if kind in ("initval", "endval")                   # these blocks also write oo_.steady_state
         ws.oo_.steady_state = _col(Float64[get(m.oo, v, 0.0) for v in m.endo_names])
         ws.oo_.exo_steady_state = _col(exo_steady(m))
@@ -682,6 +740,8 @@ function _run_in_place!(ws, st, nss, shocks, rng)
         ws.oo_.deterministic_simulation.status == true ||
             @warn "perfect_foresight_solver: the simulation failed (oo_.deterministic_simulation.status = false)"
         _simulated_series!(ws)
+    elseif kind == "perfect_foresight_with_expectation_errors_setup"
+        _perfect_foresight_wee_setup!(ws)
     elseif kind == "perfect_foresight_with_expectation_errors_solver"
         _perfect_foresight_wee!(ws)
     elseif kind == "ramsey_policy"
