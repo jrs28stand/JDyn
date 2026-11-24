@@ -5,7 +5,9 @@
 mutable struct HostM <: HostStruct
     h::Any
     cells::Dict{String,Cell}
+    results::Any                   # dynare(): the workspace's M_ (an MStruct); the fields below are read from it
 end
+HostM(h, cells) = HostM(h, cells, nothing)
 mutable struct HostOptions <: HostStruct
     store::MStruct                 # model.matlab_options: what the .mod file assigned
     unknown::Set{String}           # fields a Dynare command has overwritten since
@@ -98,7 +100,7 @@ function restore!(M::HostM, value)
     set_field!(M, "params", value["params"])
     set_field!(M, "Sigma_e", value["Sigma_e"])
 end
-has_field(M::HostM, name) = name in field_names(M) ? true : _semi_has(M.h.model, name) ? true : throw(Unsupported("JDyn does not know whether M_ has a field '$name'", "results"))
+has_field(M::HostM, name) = name in field_names(M) || name in ("H", "Correlation_matrix_ME", "Correlation_matrix") ? true : _semi_has(M.h.model, name) ? true : throw(Unsupported("JDyn does not know whether M_ has a field '$name'", "results"))
 get_field(M::HostM, name) = peek_field(M, name)
 function peek_field(M::HostM, name; raw=false)
     h = M.h; m = h.model
@@ -128,6 +130,14 @@ function peek_field(M::HostM, name; raw=false)
     end
     name in ("fname", "dname") && return m.name
     _semi_has(m, name) && return semi_M(m)[name]          # M_.var, M_.pac, ... (src/pac.jl)
+    if name in ("H", "Correlation_matrix_ME", "Correlation_matrix")      # read-only views of the covariance structure
+        if M.results !== nothing && haskey(M.results, name)
+            return deepcopy(M.results[name])
+        end
+        name == "H" && return me_H(m, m.varobs)
+        name == "Correlation_matrix_ME" && return me_corr_matrix(m, m.varobs)
+        return copy(declared_correlation_matrix(m))
+    end
     throw(Unsupported("M_.$name is not available in JDyn", "results"))
 end
 function set_field!(M::HostM, name, value)

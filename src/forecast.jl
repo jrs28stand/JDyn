@@ -254,7 +254,7 @@ function forecast(m::Model; periods::Integer=5, conf_sig::Real=0.9, var_list=Str
         y0 = h === nothing ? copy(dr["ys"]) : (loglinear ? _log_histval(m, h) : h)
     end
     vl = _check_var_list(m, var_list)
-    H = Matrix(Diagonal(Float64[get(m.measurement_errors, v, 0.0) for v in m.varobs]))
+    H = me_H(m, m.varobs)
     xd = nothing
     if n_exo_det(m) > 0
         # varexo_det (forecasts.run): orders 1 and 2 without pruning, along the paths of the `shocks` blocks (src/varexo_det.jl)
@@ -665,7 +665,7 @@ function forecast!(ws::DynareWorkspace, var_list=String[]; draws=nothing, me_dra
     # M_.H; while the file runs the shocks block's measurement errors are in the model (M_ is rebuilt at the end)
     H = Matrix{Float64}(ws.M_.H)
     np = length(m.varobs)
-    (size(H) != (np, np) || all(iszero, H)) && (H = Matrix(Diagonal(Float64[get(m.measurement_errors, v, 0.0) for v in m.varobs])))
+    (size(H) != (np, np) || all(iszero, H)) && (H = me_H(m, m.varobs))
     res = _forecast_simul(dr, y0, vl, m; periods=_opti(ws, "periods", 0), conf_sig=_optf(ws, "forecasts.conf_sig", 0.9), order=order,
                           pruning=_optb(ws, "pruning", false), Sigma_e=Matrix{Float64}(ws.M_.Sigma_e), H=H,
                           varobs=m.varobs, replic=_opti(ws, "forecast_replic", 1000), draws=draws, me_draws=me_draws, rng=rng, max_lag=max(ml, 1))

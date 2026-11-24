@@ -520,6 +520,8 @@ mutable struct Estimation
     Sigma_e0::Matrix{Float64}
     corr0::Matrix{Float64}
     H0::Matrix{Float64}
+    corrME0::Matrix{Float64}           # declared M_.Correlation_matrix_ME
+    calibrated_cov_ME::Vector{Tuple{Int,Int}}   # calibrated off-diagonal entries of M_.H that are not estimated (i > j)
     Q_check::Vector{Int}
     H_check::Vector{Int}
     restrict::Vector{Int}              # declaration indices of the filter states
@@ -648,7 +650,7 @@ function Estimation(m::Model; data=nothing, allow_unsupported::Bool=false, state
     end
     obs_decl = Int[m.ie[v] for v in varobs]
     est = Estimation(m, opts, varobs, obs_decl, String[], Float64[], Float64[], Float64[], Prior(Int[], Float64[], Float64[]),
-                     Float64[], 0, (vx=Any[], vn=Any[], cx=Any[], cn=Any[], p=Any[]), zeros(0, 0), zeros(0, 0), zeros(0, 0),
+                     Float64[], 0, (vx=Any[], vn=Any[], cx=Any[], cn=Any[], p=Any[]), zeros(0, 0), zeros(0, 0), zeros(0, 0), zeros(0, 0), Tuple{Int,Int}[],
                      Int[], Int[], Int[], Int[], Int[], Int[], trues(0), nothing, zeros(0, 0), zeros(0, 0), 0, nothing, 1,
                      unsupported, "", "", 0)
     _setup_parameters!(est)
@@ -766,15 +768,21 @@ function _setup_parameters!(est::Estimation)
     end
     est.Sigma_e0, est.corr0 = S, C
     pp = length(est.varobs)
-    H = zeros(pp, pp)
-    for (name, var) in m.measurement_errors
+    for (name, _) in m.measurement_errors
         name in est.varobs || throw(EstimationError("measurement error on $name, which is not an observed variable"))
-        i = findfirst(==(name), est.varobs)
-        H[i, i] = var
+    end
+    H = try
+        me_H(m, est.varobs)
+    catch e
+        e isa ModelError ? throw(EstimationError(e.msg)) : rethrow()
     end
     est.H0 = H
-    any(s -> occursin("measurement-error covariance", s), m.unhandled_statements) &&
-        warn_once(m, "calibrated measurement-error covariances are ignored by estimation")
+    est.corrME0 = me_corr_matrix(m, est.varobs)
+    # check_for_calibrated_covariances.m: the calibrated off-diagonal entries of M_.H that are not estimated keep their value
+    estimated_corrn = Set(Set(k) for (_, k, _) in est.groups.cn)
+    est.calibrated_cov_ME = Tuple{Int,Int}[(i, j) for i in 1:pp for j in 1:i-1 if H[i, j] != 0 && !(Set((i, j)) in estimated_corrn)]
+    any(s -> occursin("structural shock and a measurement error", s), m.unhandled_statements) &&
+        warn_once(m, "calibrated covariances between structural shocks and measurement errors are ignored by estimation")
     nz = .!vec(all(S .== 0; dims=1))
     for (_, k, _) in vx
         nz[k] = true
@@ -828,8 +836,8 @@ function _calibrated_values(est::Estimation)
     for (_, (k1, k2), _) in est.groups.cx
         out[o+1] = est.corr0[k1, k2]; o += 1
     end
-    for _ in est.groups.cn
-        o += 1                                          # correlations of measurement errors are not calibrated here
+    for (_, (k1, k2), _) in est.groups.cn
+        out[o+1] = est.corrME0[k1, k2]; o += 1
     end
     for (_, k, _) in est.groups.p
         out[o+1] = m.params[k]; o += 1
@@ -838,10 +846,13 @@ function _calibrated_values(est::Estimation)
 end
 
 "Structural-shock and measurement-error covariance matrices implied by `theta` (`set_all_parameters.m`)."
-function covariances(est::Estimation, theta::AbstractVector)
+covariances(est::Estimation, theta::AbstractVector) = _covariances(est, theta)[1:2]
+
+"`(Sigma_e, H, Correlation_matrix_ME)` implied by `theta` (the last as `set_all_parameters.m` stores it)."
+function _covariances(est::Estimation, theta::AbstractVector)
     g = est.groups
     Q, C = copy(est.Sigma_e0), copy(est.corr0)
-    H, CH = copy(est.H0), Matrix{Float64}(I, length(est.varobs), length(est.varobs))
+    H, CH = copy(est.H0), copy(est.corrME0)
     o = 0
     for (i, (_, k, _)) in enumerate(g.vx)
         Q[k, k] = theta[o+i]^2
@@ -865,8 +876,11 @@ function covariances(est::Estimation, theta::AbstractVector)
     if !isempty(g.vn) || !isempty(g.cn)
         sd = sqrt.(diag(H))
         H = CH .* (sd * sd')
+        for (k1, k2) in est.calibrated_cov_ME           # estim_params_.calibrated_covariances_ME
+            H[k1, k2] = H[k2, k1] = est.H0[k1, k2]
+        end
     end
-    Q, H
+    Q, H, CH
 end
 
 "Copy of the model's parameter vector with the estimated structural parameters set."
@@ -996,6 +1010,16 @@ struct _Rejected <: Exception
     msg::String
 end
 
+"check_consistency_covariances.m: no off-diagonal entry exceeds the product of the standard deviations."
+function _consistent_covariances(C)
+    isempty(C) && return true
+    sd = sqrt.(diag(C))
+    for i in axes(C, 1), j in 1:i-1
+        b = sd[i] * sd[j]
+        (C[i, j] > b || C[i, j] < -b) && return false
+    end
+    true
+end
 _ispd(A) = isempty(A) || (all(isfinite, A) && isposdef(Hermitian(A)))
 function _ispd_penalty(A)
     _ispd(A) && return 0.0
@@ -1053,8 +1077,12 @@ function _dsge_likelihood(est::Estimation, theta::AbstractVector; bounds=(est.lb
     if !isempty(est.groups.cx) && !_ispd(Q[est.Q_check, est.Q_check])
         return reject(43, _ispd_penalty(Q[est.Q_check, est.Q_check]), "covariance matrix of the structural shocks is not positive definite (info 43)")
     end
-    if !isempty(est.groups.cn) && !_ispd(Hm[est.H_check, est.H_check])
+    if (!isempty(est.groups.cn) || !isempty(est.calibrated_cov_ME)) && !_ispd(Hm[est.H_check, est.H_check])
         return reject(44, _ispd_penalty(Hm[est.H_check, est.H_check]), "covariance matrix of the measurement errors is not positive definite (info 44)")
+    end
+    if !isempty(est.calibrated_cov_ME) && !_consistent_covariances(Hm)
+        return reject(72, 2 * sum(Hm[i, j]^2 for (i, j) in est.calibrated_cov_ME),
+                      "the calibrated covariances of the measurement errors are inconsistent with their variances (info 72)")
     end
     get(o, "occbin", nothing) === nothing || return _occbin_likelihood(est, theta, with_lik)    # src/occbin_estimation.jl
     if dsge_var_active(est)                                                                      # src/dsge_var.jl

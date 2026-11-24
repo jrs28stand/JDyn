@@ -268,9 +268,11 @@ end
 function _apply_theta!(ws, est::Estimation, theta)
     m = ws.model
     apply_estimates!(m, est, theta)
-    _, H = covariances(est, theta)
+    _, H, CME = _covariances(est, theta)
     _model_to_M!(ws)
     ws.M_.H = Matrix{Float64}(H)
+    ws.M_.Correlation_matrix_ME = Matrix{Float64}(CME)
+    ws.state[:CME] = copy(ws.M_.Correlation_matrix_ME)
     ws.state[:H] = copy(ws.M_.H)                 # dynare() rebuilds M_ at the end of the file and keeps this H
     C = copy(declared_correlation_matrix(m))          # estimated correlations replace their entries (set_all_parameters.m)
     Cs = _corr(m.Sigma_e)
@@ -366,6 +368,12 @@ function _estimation!(ws::DynareWorkspace, st, var_list, data, seed, options)
             @warn "estimation: mode_compute=0 without a mode_file: Dynare returns before the Metropolis-Hastings run, so mh_replic=$(o["mh_replic"]) is not used"
         end
         initial_estimation_checks(est)
+        if _optb(ws, "debug", false)         # initial_estimation_checks.m: with options_.debug the objective at the initial (or mode-file) values
+            theta_init = isempty(mfile) ? est.x0 : match_mode_file(est, read_mode_file(m, mfile); mode_compute=o["mode_compute"])[1]
+            fv, finfo = _dsge_likelihood(est, theta_init; bounds=(est.lb, est.ub))[1:2]
+            finfo == 0 || throw(EstimationError("the likelihood at the initial parameters cannot be computed: $(est.last_info)"))
+            oo.likelihood_at_initial_parameters = Float64(fv)
+        end
         # Dynare sets M_ to the initial values first; the steady state it stores is the one at those values
         sol0 = try
             first_order(m; params=model_params(est, est.x0), qz_criterium=o["qz_criterium"], loglinear=o["loglinear"])

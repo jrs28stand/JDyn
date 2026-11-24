@@ -101,7 +101,8 @@ function build_M(m::Model)
     M.Sigma_e = copy(m.Sigma_e)
     M.Correlation_matrix = copy(declared_correlation_matrix(m))
     M.sigma_e_is_diagonal = isdiag(m.Sigma_e)
-    M.H = Matrix{Float64}(LinearAlgebra.Diagonal([get(m.measurement_errors, v, 0.0) for v in m.varobs]))
+    M.H = me_H(m, m.varobs)
+    M.Correlation_matrix_ME = me_corr_matrix(m, m.varobs)
     aux = Any[]
     for a in get_or(m.raw, "aux_vars", [])
         s = MStruct()
@@ -199,6 +200,10 @@ function _sync_model!(ws)
         ws.M_.Sigma_e = copy(m.Sigma_e)
     end
     ws.M_.Correlation_matrix = copy(declared_correlation_matrix(m))
+    if !haskey(ws.state, :H)                      # no estimation has set the measurement-error covariance
+        ws.M_.H = me_H(m, m.varobs)
+        ws.M_.Correlation_matrix_ME = me_corr_matrix(m, m.varobs)
+    end
     _mark_synced!(ws)
     m
 end
@@ -636,6 +641,7 @@ function dynare(modfile::AbstractString; output=nothing, shocks=Dict{Int,Any}(),
         ws.oo_.exo_det_steady_state = n_exo_det(m) > 0 ? _col(exo_det_steady(m)) : zeros(0, 0)
         ws.oo_.dynare_version = "7.2"
         ws.state[:matlab_options] = Dict{String,Any}()
+        m.session.host.M.results = ws.M_
         m.session.host.oo.results = ws.oo_          # MATLAB lines of the file see (and write) this oo_
         _pf_register_host!(ws)                      # perfect_foresight_solver(M_, options_, oo_) & co. (src/pf_functions.jl)
         ws.state[:plots] = plots; ws.state[:plots_backend] = plots_backend
@@ -649,6 +655,7 @@ function dynare(modfile::AbstractString; output=nothing, shocks=Dict{Int,Any}(),
         ALLOW_RANDOM[] = allow0
     end
     ws = wsref[]
+    m.session.host.M.results = nothing
     m.session.host.oo.results = nothing             # the struct now belongs to the workspace alone
     _apply_matlab_options!(ws)
     # M_ as the driver leaves it at the end of the file (declarations, final calibration); histval kept
@@ -659,6 +666,7 @@ function dynare(modfile::AbstractString; output=nothing, shocks=Dict{Int,Any}(),
         ws.M_[k] = fresh[k]
     end
     ws.M_.endo_histval = h
+    haskey(ws.state, :CME) && (ws.M_.Correlation_matrix_ME = ws.state[:CME])
     haskey(ws.state, :H) && (ws.M_.H = ws.state[:H])           # the measurement-error covariance estimation left (results_estimation.jl)
     _mark_synced!(ws)
     # Dynare writes <fname>/Output/<fname>_results.mat; not while precompiling (the fixture lives in the package source)
