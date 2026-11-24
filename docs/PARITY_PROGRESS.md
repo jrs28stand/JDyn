@@ -9,7 +9,7 @@ Branch `parity` (base main ce58c84). References: Dynare 7.2 under Octave 8.4; ge
 | 3 | pruned order-3 theoretical moments | done: `src/moments_order3.jl`, `test/test_parity_moments3.jl`; 3 models x 2 cases x (JDyn, Dynare decision rules), max scaled diff 4.5e-15 with Dynare's rules; no variance decomposition at order 3 (as Dynare); order 3 without `pruning` and with filters refused (ArgumentError) |
 | 4 | `varexo_det` | done: `src/varexo_det.jl`, `test/test_parity_varexo_det.jl`; ghud/ghxud/ghuud/ghudud (orders 1-2) and simult_varexo_det paths 5e-14, forecast with exo_det paths (order 1 3e-15, order 2 with replayed draws 6e-15); perfect foresight, order 3 and pruning refused |
 | 5 | `epilogue` | done as a Julia API (src/epilogue.jl); not hooked into the MATLAB interpreter or shock decompositions. Dynare numbers: bit-identical with `replicate_dynare_bugs=true`, <1e-6 without (static: 1e-14) |
-| 6 | `external_function` | |
+| 6 | `external_function` | done: orders 1-2, .m files (also +pkg), Julia callables, numerical derivatives as jacob_element/hess_element; decision rules agree with Dynare to 1.8e-15 (scaled) |
 | 7 | heteroskedastic shocks / filter | done: likelihood (multivariate, univariate, diffuse, missing data) and multivariate smoother; max rel diff vs Dynare 4e-14 |
 | 8 | `M_.Correlation_matrix` | done (exact match with Dynare 7.2 on corr8.mod) |
 
@@ -42,3 +42,9 @@ Branch `parity` (base main ce58c84). References: Dynare 7.2 under Octave 8.4; ge
   slice t + 1; no steady-state switch). The initial covariance and the diffuse setup use the constant Sigma_e. The smoother (multivariate only) takes
   the Q path (prediction slice t + 1, shocks slice t); with the univariate smoother it is refused. Periods given as dates are refused; correlated
   measurement errors with the univariate filter and the heteroskedastic filter are refused. Without the option the blocks are ignored, as in Dynare.
+- external_function: the preprocessor's Julia output has MATLAB-style TEF lines (`[TEF_0, TEFD_0] = f(..)`, `jacob_element('f',2,{..})`) that do not parse as Julia;
+  `load_model_functions` rewrites them (src/external.jl, `_rewrite_external`) to `_ext_*` calls of a per-model `ExternalFunctions` table. Julia callables come from
+  `Model(...; functions=Dict(name => f))` (Float64 arguments; a function returning its own derivatives returns a tuple); otherwise `name.m` / `+pkg/name.m` next to the
+  .mod runs in the MATLAB interpreter through `matlab_function_caller` (src/matlab/extern.jl, the only addition under src/matlab besides one line in session.jl).
+  Order 3 is impossible (the preprocessor cannot differentiate external functions three times), as in Dynare. Not done: external functions in the planner objective
+  of ramsey models (still refused), and perfect foresight with external functions is untested.

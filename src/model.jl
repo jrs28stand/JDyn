@@ -247,7 +247,14 @@ function load_model_functions(json_dir::AbstractString, raw::Dict{String,Any}; h
             end
             continue
         end
-        Base.include(_matlab_comparisons, mod, joinpath(jdir, f))
+        path = joinpath(jdir, f)
+        text = read(path, String)
+        if _has_external(text)                         # external functions (src/external.jl): rewrite the MATLAB-style lines
+            isdefined(mod, :_EXT) || _install_external!(mod, ExternalFunctions(helpers, dirname(dirname(dirname(json_dir)))))
+            Base.include_string(_matlab_comparisons, mod, _rewrite_external(text), path)
+        else
+            Base.include(_matlab_comparisons, mod, path)
+        end
     end
     get(n, m=mod) = Base.invokelatest(isdefined, m, Symbol(n)) ? Base.invokelatest(getfield, m, Symbol(n)) : nothing
     req(n) = (f = get(n); f === nothing ? throw(ModelError("generated function $n is missing")) : f)
@@ -341,16 +348,6 @@ function Model(json_dir::AbstractString; functions=Dict{String,Any}(), steady_st
     lead_lag = hcat(cols...)
     (info["maximum_endo_lag"] > 1 || info["maximum_endo_lead"] > 1) &&
         throw(ModelError("expected the preprocessor to reduce the model to one lead/lag"))
-    # external functions in the model block are not supported (the generated code would call them)
-    for fj in ("dynamic.json", "static.json")
-        p = joinpath(json_dir, fj)
-        if isfile(p)
-            txt = replace(read(p, String), " " => "")
-            (occursin("external_functions_temporary_terms\":[{", txt) || occursin("\"external_function_term\"", txt) ||
-             occursin("\"external_function\":", txt)) &&
-                throw(ModelError("external functions in the model block are not supported"))
-        end
-    end
     ssm = nothing
     ssm_path = joinpath(json_dir, "steady_state_model.json")
     if isfile(ssm_path)
