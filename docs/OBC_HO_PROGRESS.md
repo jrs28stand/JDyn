@@ -5,6 +5,11 @@ Branch `obc-ho` (pushed to `origin wip/obc-ho`), based on `wip/obc` at 5f0d3a0. 
 
 ## State / next step
 
+CUBATURE PORT (current task; spec: pydyn docs/OBC_HO_PERF.md). Step 1 in progress: `obc_cubature_regions = all` (internal regions = 0; `_obc_regions`) implemented in
+src/obc_cubature.jl (cached-LU scalar point solver, `cub_mode` :scalar/:cache) and `_cub_all!` in src/obc_ho.jl; default still regions = 1 until step 2.
+Loop (existing solve_active_set) vs cache so far (nk L9 4.8 ms -> 1.5 ms/period). Next: :group lockstep mode, timing table (bench script idea: simulate 100 periods,
+min of repeats, levels 9/11/13, nk and NKM), then tests, then steps 2-6.
+
 State: H1, H2, C1 done. Follow-up (rule 7, regime selection, end-to-end estimation) done, see docs/OBC_ESTIMATION.md. Task 1 (mod-file/workspace/keyword routes and refusals for the higher-order options) and Task 2 (estimation under obc_method, steps a-d, docs/OBC_ESTIMATION.md) done; test_obc_ho.jl (85), test_obc_estimation.jl and the existing OccBin/OBC suites pass.
 Next step: review by the coordinator; the cubature step is untouched (being redesigned elsewhere).
 Perf items from pydyn docs/OBC_HO_PERF.md adopted (affine state-to-gap map, Cauchy-Schwarz skipping with norm-sorted points, mean-point

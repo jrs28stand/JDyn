@@ -82,9 +82,23 @@ mutable struct ObcHO
     pbuf::Matrix{Float64}        # N x npoints work space
     tol::Float64
     stats::Dict{Symbol,Int}
+    cub::CubState                # work space, factorisation cache and mode of the full average (src/obc_cubature.jl)
 end
 Base.show(io::IO, h::ObcHO) = print(io, "ObcHO(order = ", h.order, ", T = ", h.T, ", N = ", h.N, h.cubature ? ", cubature: " * string(size(h.R, 2)) * " dims, " *
                                     string(size(h.xi, 2)) * " points" : "", ")")
+
+"""
+The `obc_cubature_regions` option: `1` (one region), `k > 1` (DynareOBC's k regions, not implemented yet) or `all` (`:all`, `"all"` or `0`: the average over
+every relevant point). Returned as an Int, 0 for `all`.
+"""
+function _obc_regions(x)
+    v = x isa AbstractArray && length(x) == 1 ? x[1] : x
+    (v isa Symbol || v isa AbstractString) && lowercase(strip(string(v))) == "all" && return 0
+    v isa AbstractString && (v = tryparse(Float64, v); v === nothing && throw(ArgumentError("obc_cubature_regions must be 1, k or all (got $x)")))
+    (v isa Real && isfinite(v) && v == round(v) && v >= 0) || throw(ArgumentError("obc_cubature_regions must be 1, k or all (got $x)"))
+    v > 1 && throw(ArgumentError("obc_cubature_regions = $(Int(v)): several regions are not implemented; use 1 or all"))
+    Int(v)
+end
 
 "Reorder the rows of a decision-rule array from decision-rule order to declaration order."
 _dr_rows(A::AbstractMatrix, ov) = (B = similar(A); B[ov, :] = A; Matrix{Float64}(B))
@@ -99,10 +113,10 @@ or 2. `horizon`, `check_ahead`: periods with wedges and further periods over whi
 the first `2^(level+1) - 1` of the unscrambled Sobol sequence after the origin), `regions` (only 1: one region, DynareOBC's default).
 """
 function obc_ho(ob::Occbin; order::Integer=2, horizon::Integer=40, check_ahead::Integer=40, cubature::Bool=false,
-                periods_of_uncertainty::Integer=16, qmc_level::Integer=10, regions::Integer=1, taper::Bool=true,
+                periods_of_uncertainty::Integer=16, qmc_level::Integer=10, regions=1, taper::Bool=true,
                 pruning_cutoff=0.01, max_cubature_dimension::Integer=128, tol::Real=1e-10, Sigma_e=nothing)
     order in (1, 2) || throw(ArgumentError("obc_order must be 1 or 2 (order 3 is not implemented)"))
-    regions == 1 || throw(ArgumentError("obc_cubature_regions must be 1: several regions are not implemented"))
+    regions = _obc_regions(regions)
     periods_of_uncertainty >= 1 || throw(ArgumentError("obc_periods_of_uncertainty must be at least 1"))
     qmc_level >= 0 || throw(ArgumentError("obc_qmc_level must be non-negative"))
     m = ob.model
@@ -136,10 +150,10 @@ function obc_ho(ob::Occbin; order::Integer=2, horizon::Integer=40, check_ahead::
     h = ObcHO(ob, sys, Int(order), T, N, n, nx, ns, sv, Vector{Float64}(ob.ys), Matrix{Float64}(ob.P), Matrix{Float64}(sys.Wn), Sigma,
               ghx, ghu, ghxx, ghxu, ghuu, cst2, c2, ghxs, ghus, SigS, aC, aB, aA, aJ, a0, Mf, ext.Mb, Gq,
               zeros(N), zeros(N, n), zeros(N, n), zeros(N, ns^2), zeros(N, n),
-              cubature, Int(periods_of_uncertainty), Int(qmc_level), Int(regions), taper,
+              cubature, Int(periods_of_uncertainty), Int(qmc_level), regions, taper,
               pruning_cutoff === nothing ? nothing : Float64(pruning_cutoff), Int(max_cubature_dimension), zeros(N, 0), zeros(0, 0),
               zeros(0, 0), zeros(0, 0), Float64[], Float64[], zeros(0, 0), Float64(tol),
-              Dict(:lcp => 0, :cubature_points => 0, :relevant_points => 0))
+              Dict(:lcp => 0, :cubature_points => 0, :relevant_points => 0), CubState(sys.M, N))
     _ho_build_q_map!(h)
     if cubature
         h.R = ho_conditional_root(h)
@@ -310,8 +324,10 @@ end
 """
     ho_news_shocks(h, q, period=0) -> Vector
 
-The news shocks at gap path `q`: the LCP solution, or with cubature its average over the perturbed paths `q + R xi` (one region: the
-solution at the mean of the relevant paths, times their share). A path is relevant if it goes negative (below `-1e-8 max(1, max|p|)`).
+The news shocks at gap path `q`: the LCP solution, or with cubature its average over the perturbed paths `q + R xi`. A path is relevant if it goes
+negative (below `-1e-8 max(1, max|p|)`); the others contribute zero. `regions = 1` (DynareOBC's default): the solution at the mean of the relevant paths,
+times their share (it does not price tail risk: the wedge of the average path is not the average of the wedges). `regions = 0` (option value `all`):
+the average of the solutions at every relevant path (`_cub_all!`).
 Exact skipping: `p_h >= q_h - |R_h| |xi|` (Cauchy-Schwarz), so when `q >= 0` every point with `|xi| < min_h q_h / |R_h|` is irrelevant
 (points are sorted by norm: a prefix); and a path with `min p >= -1e-8` is irrelevant whatever its maximum.
 """
@@ -337,6 +353,8 @@ function ho_news_shocks(h::ObcHO, q::AbstractVector, period::Int=0)
     mul!(P, h.R, view(h.xs, :, first:npts))
     nrel = 0
     xsum = zeros(size(h.R, 2))
+    rel = h.cub.rel
+    empty!(rel)
     @inbounds for j in 1:nc
         pmin = Inf
         for i in 1:N
@@ -349,16 +367,66 @@ function ho_news_shocks(h::ObcHO, q::AbstractVector, period::Int=0)
         end
         if pmin < -1e-8 * pmax
             nrel += 1
-            for k in eachindex(xsum)
-                xsum[k] += h.xs[k, first+j-1]
+            push!(rel, j)
+            if h.regions == 1
+                for k in eachindex(xsum)
+                    xsum[k] += h.xs[k, first+j-1]
+                end
             end
         end
     end
     h.stats[:cubature_points] += npts
     h.stats[:relevant_points] += nrel
     nrel == 0 && return zeros(h.T)
+    h.regions == 0 && return _cub_all!(h, q, P, rel, npts, period)
     qm = q .+ h.R * (xsum ./ nrel)
     (nrel / npts) .* _ho_lcp(h, qm, period)
+end
+
+"""
+    _cub_all!(h, q, P, rel, npts, period) -> Vector
+
+The full average: the solution at `q + P[:, j]` for every relevant column `j` in `rel`, summed and divided by the number of points `npts`.
+"""
+function _cub_all!(h::ObcHO, q::AbstractVector, P::AbstractMatrix, rel::Vector{Int}, npts::Int, period::Int)
+    st, T, N = h.cub, size(h.sys.M, 1), h.N
+    acc = fill!(st.acc, 0.0)
+    pt = st.pt
+    Mh = h.sys.M
+    scale = st.Mscale
+    tol = h.tol
+    nb = N - T
+    for j in rel
+        @inbounds for i in 1:N
+            pt[i] = q[i] + P[i, j]
+        end
+        h.stats[:lcp] += 1
+        ok = false
+        if st.mode == :scalar
+            y, s, _ = solve_active_set(Mh, view(pt, 1:T); tol=tol)
+            if s == :ok
+                ok = true
+                copyto!(st.y, y)
+            end
+        else
+            ok = _cub_point!(st, Mh, scale, pt, T, tol)
+        end
+        if ok && nb > 0                                      # the check-ahead rows beyond the horizon
+            @inbounds for i in 1:nb
+                v = pt[T+i]
+                for a in 1:T
+                    v += h.Mb[i, a] * st.y[a]
+                end
+                v < -tol && (ok = false; break)
+            end
+        end
+        if ok
+            acc .+= st.y
+        else
+            acc .+= _ho_lcp(h, copy(pt), period)               # MILP route (raises on failure; src/obc_cubature.jl, failure handling)
+        end
+    end
+    acc ./ npts
 end
 
 # ----------------------------------------------------------------------------------------------------- simulation

@@ -437,8 +437,7 @@ function simulate(ob::Occbin, shocks_in::AbstractMatrix; periods::Integer=100, c
     method = _obc_method(obc_method)
     selection = _obc_selection(obc_selection)
     selection != :occbin && method != :news && throw(ArgumentError("obc_selection = $selection needs obc_method = news"))
-    _obc_int_option(obc_cubature_regions, "obc_cubature_regions") == 1 ||
-        throw(ArgumentError("obc_cubature_regions must be 1: several regions are not implemented"))
+    _obc_regions(obc_cubature_regions)                  # validates (1 or all)
     if _obc_order(obc_order) != 1 || obc_cubature       # src/obc_ho.jl: order 2 and / or cubature (news only)
         method == :news || throw(ArgumentError("obc_order = 2 and obc_cubature need obc_method = news"))
         # what the loop does not support is refused, not ignored
@@ -451,7 +450,7 @@ function simulate(ob::Occbin, shocks_in::AbstractMatrix; periods::Integer=100, c
         return _simulate_obc_ho(ob, shocks_in; horizon=_obc_horizon(obc_horizon), tol=obc_tol, periods=periods, check_ahead_periods=ca,
                                 max_check_ahead_periods=max_check_ahead_periods, init=init, exo_pos=exo_pos, order=_obc_order(obc_order),
                                 cubature=obc_cubature, periods_of_uncertainty=_obc_int_option(obc_periods_of_uncertainty, "obc_periods_of_uncertainty"),
-                                qmc_level=_obc_int_option(obc_qmc_level, "obc_qmc_level"; min=0), regions=_obc_int_option(obc_cubature_regions, "obc_cubature_regions"),
+                                qmc_level=_obc_int_option(obc_qmc_level, "obc_qmc_level"; min=0), regions=_obc_regions(obc_cubature_regions),
                                 ignored=(maxit=maxit, curb_retrench=curb_retrench, periodic_solution=periodic_solution,
                                          periodic_solution_threshold=periodic_solution_threshold, periodic_solution_strict=periodic_solution_strict,
                                          init_regime=init_regime, init_binding_indicator=init_binding_indicator,
