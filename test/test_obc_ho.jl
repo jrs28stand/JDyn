@@ -5,7 +5,19 @@ using Test; include("common.jl")
 using Random
 
 const HO_DIR = joinpath(@__DIR__, "obc", "ho")
+const JDyn_SRC_ROOT = DYNARE_SRC
 ho_ref(name) = matread(joinpath(HO_DIR, name))
+"Load a copy of the file's whole folder (include files)."
+function load_folder(path)
+    d = mktempdir()
+    for f in readdir(dirname(path))
+        p = joinpath(dirname(path), f)
+        isfile(p) && cp(p, joinpath(d, f))
+    end
+    with_logger(NullLogger()) do
+        JDyn.load(joinpath(d, basename(path)))
+    end
+end
 
 @testset "obc_order / obc_cubature (src/obc_ho.jl)" begin
     m = load_copy(joinpath(HO_DIR, "nk_occ.mod"))
@@ -183,5 +195,75 @@ ho_ref(name) = matread(joinpath(HO_DIR, name))
         @test !(st == :ok && maximum(abs, y) > 1e6)                  # was :ok with wedges of 1.8e14
         err = try; JDyn.simulate(obs, reshape([-0.02], 1, 1); obc_method=:news, obc_horizon=40, periods=20, check_ahead_periods=40); nothing; catch e; e; end
         @test err isa JDyn.ObcError && err.status == :no_solution
+    end
+
+    @testset "mod-file, workspace and keyword routes of the higher-order options" begin
+        S300 = S
+        _, E2 = ref_endo("ref_o2.mat")
+        d = mktempdir()
+        txt = read(joinpath(HO_DIR, "nk_occ.mod"), String)
+        lines = "options_.occbin.obc_method = 'news';\noptions_.occbin.obc_order = 2;\noptions_.occbin.obc_horizon = 32;\noptions_.occbin.obc_check_ahead = 32;\n"
+        write(joinpath(d, "nk_o2.mod"), replace(txt, "steady; check;" => "shocks(surprise); var e; periods 1; values 10; end;\nsteady; check;") |>
+                                        t -> replace(t, "occbin_setup;" => lines * "occbin_setup;"))
+        m2 = with_logger(NullLogger()) do; JDyn.load(joinpath(d, "nk_o2.mod")); end
+        ob2 = JDyn.Occbin(m2)
+        mo = JDyn.mod_options(ob2)
+        @test mo.obc_method == :news && mo.obc_order == 2 && mo.obc_horizon == 32 && mo.obc_check_ahead == 32
+        r = JDyn.simulate(ob2, S300; mo..., periods=300)
+        @test maximum(abs, r.piecewise .- E2) < 1e-12                       # the native lines reproduce the ref_o2 check
+        @test r.news.method == :news && size(r.news.wedges) == (300, 32)
+        # cubature from native lines: the same as the keyword route, and a cubature answer (not the no-cubature one)
+        write(joinpath(d, "nk_o2c.mod"), replace(read(joinpath(d, "nk_o2.mod"), String), "occbin_setup;" =>
+              "options_.occbin.obc_cubature = true;\noptions_.occbin.obc_qmc_level = 9;\noptions_.occbin.obc_periods_of_uncertainty = 16;\noptions_.occbin.obc_cubature_regions = 1;\noccbin_setup;"))
+        mc = with_logger(NullLogger()) do; JDyn.load(joinpath(d, "nk_o2c.mod")); end
+        obc_ = JDyn.Occbin(mc)
+        moc = JDyn.mod_options(obc_)
+        @test moc.obc_cubature === true && moc.obc_qmc_level == 9 && moc.obc_periods_of_uncertainty == 16 && moc.obc_cubature_regions == 1
+        rc = JDyn.simulate(obc_, S300; moc..., periods=300)
+        rk = JDyn.simulate(ob2, S300; obc_method=:news, obc_order=2, obc_cubature=true, obc_qmc_level=9, obc_horizon=32, obc_check_ahead=32, periods=300)
+        @test maximum(abs, rc.piecewise .- rk.piecewise) < 1e-15
+        _, Ec = ref_endo("ref_o2cub.mat")
+        @test 1e-9 < maximum(abs, rc.piecewise .- E2) && maximum(abs, rc.piecewise .- Ec) < 2e-4   # own root signs: see the cubature testset
+        # live workspace: dynare() runs the file, occbin_solver! uses options_.occbin; keywords change the options
+        ws = with_logger(NullLogger()) do; dynare(joinpath(d, "nk_o2.mod")); end
+        @test ws.options_.occbin.obc_order == 2
+        occbin_solver!(ws)
+        @test ws.oo_.occbin.news.method == "news" && size(ws.oo_.occbin.news.wedges, 2) == 32
+        w2 = Matrix(ws.oo_.occbin.simul.piecewise)
+        rs = JDyn.simulate(ob2; mo...)
+        @test maximum(abs, w2 .- rs.piecewise) < 1e-12
+        @test any(!iszero, ws.oo_.occbin.news.wedges)
+        occbin_solver!(ws; obc_order=1)
+        @test ws.options_.occbin.obc_order == 1
+        occbin_solver!(ws; obc_cubature=true, obc_qmc_level=4)
+        @test ws.options_.occbin.obc_cubature == true || ws.options_.occbin.obc_cubature == 1
+    end
+
+    @testset "unsupported combinations are refused, not ignored" begin
+        kw = (obc_method=:news, obc_horizon=32, check_ahead_periods=32, periods=50)
+        @test_throws ArgumentError JDyn.simulate(ob, S[1:50, :]; obc_order=3, kw...)
+        @test_throws ArgumentError JDyn.simulate(ob, S[1:50, :]; obc_order=2, obc_cubature_regions=4, kw...)
+        @test_throws ArgumentError JDyn.simulate(ob, S[1:50, :]; obc_order=1, obc_cubature_regions=4, kw...)       # also when cubature is off
+        @test_throws ArgumentError JDyn.simulate(ob, S[1:50, :]; obc_order=2, obc_raise=false, kw...)
+        @test_throws ArgumentError JDyn.simulate(ob, S[1:50, :]; obc_order=2, obc_fast_path=false, kw...)
+        @test_throws ArgumentError JDyn.simulate(ob, S[1:50, :]; obc_order=2, obc_solver_options=(formulation=:regime,), kw...)
+        @test_throws ArgumentError JDyn.simulate(ob, S[1:50, :]; obc_order=2, obc_selection=:longest, kw...)
+        @test_throws ArgumentError JDyn.simulate(ob, S[1:50, :]; obc_cubature=true, obc_method=:occbin)
+        @test_throws ArgumentError JDyn.simulate(ob, S[1:50, :]; obc_order=2, obc_method=:minnorm, obc_horizon=32, periods=50)
+        @test_throws ArgumentError JDyn.simulate(ob, S[1:50, :]; obc_order=2, obc_qmc_level=-1, kw...)
+        @test_throws ArgumentError JDyn.simulate(ob, S[1:50, :]; obc_selection=:median, kw...)
+        @test_throws ArgumentError JDyn.simulate(ob, S[1:50, :]; obc_selection=:longest, obc_method=:occbin)
+        # constraint classes that are not one complementary pair, and several constraints
+        for (rel, what) in (("examples/occbin/rbc_occbin.mod", "inconsistent"), ("tests/occbin/ppf/bf_ppf.mod", "multi_equation"))
+            mm = load_folder(joinpath(JDyn_SRC_ROOT, rel))
+            obm = JDyn.Occbin(mm)
+            err = try JDyn.simulate(obm, zeros(5, obm.n_exo); obc_method=:news, obc_order=2); nothing catch e; e end
+            @test err isa JDyn.ModelError && occursin(what, err.msg)
+        end
+        # an unknown option value in the file is an error when the file is loaded into the options
+        d = mktempdir()
+        write(joinpath(d, "bad.mod"), replace(read(joinpath(HO_DIR, "nk_occ.mod"), String), "occbin_setup;" => "options_.occbin.obc_order = 3;\noccbin_setup;"))
+        mb = with_logger(NullLogger()) do; JDyn.load(joinpath(d, "bad.mod")); end
+        @test_throws ArgumentError JDyn.mod_options(JDyn.Occbin(mb))
     end
 end

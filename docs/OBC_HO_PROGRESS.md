@@ -5,7 +5,8 @@ Branch `obc-ho` (pushed to `origin wip/obc-ho`), based on `wip/obc` at 5f0d3a0. 
 
 ## State / next step
 
-State: H1 (order 2), H2 (tests) and C1 (cubature) done and passing (test_obc_ho.jl, test_obc_news.jl, test_obc.jl all pass).
+State: H1, H2, C1 done. Task 1 (mod-file/workspace/keyword routes and refusals for the higher-order options) and Task 2 (estimation under obc_method, steps a-d, docs/OBC_ESTIMATION.md) done; test_obc_ho.jl (85), test_obc_estimation.jl and the existing OccBin/OBC suites pass.
+Next step: review by the coordinator; the cubature step is untouched (being redesigned elsewhere).
 Perf items from pydyn docs/OBC_HO_PERF.md adopted (affine state-to-gap map, Cauchy-Schwarz skipping with norm-sorted points, mean-point
 identity, Sobol cache). Active-set singular-block guard added (src/obc_solvers.jl, `OBC_PIVOT_RTOL`).
 Next (optional): wire obc_order & co into mod-file options / results.jl; several regions; tied-wedge class; order 3.
