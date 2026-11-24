@@ -609,11 +609,16 @@ stoch_simul!(var_list::AbstractVector; kw...) = stoch_simul!(_current(), var_lis
 set_param_value!(name::AbstractString, v::Real) = set_param_value!(_current(), name, v)
 
 """
-    dynare(modfile; output=nothing, shocks=Dict(), rng=nothing, seed=nothing, kw...) -> DynareWorkspace
+    dynare(modfile; output=nothing, shocks=Dict(), rng=nothing, seed=nothing, random=:julia, kw...) -> DynareWorkspace
 
 Run a .mod file as `dynare modfile` does and return M_, options_ and oo_ as MATLAB-style structs:
 `ws.oo_.endo_simul`, `ws.oo_.dr.ghx`, `ws.oo_.irfs.y_e`, `ws.M_.params`, ... (Julia reads them with
 MATLAB's syntax). `@dynare "model.mod"` also defines `M_`, `options_` and `oo_` in the caller's module.
+
+`random=:octave` gives Octave's random numbers bit for bit (the Mersenne twister and ziggurat of Octave 8.4): the workspace's
+stream becomes an `OctaveRNG`, so the file's own `rand`/`randn`/`randi`/`randperm`/`rng`/`set_dynare_seed` calls and Dynare's
+commands (simulated shocks, forecast draws, particle filters, MCMC) consume one stream in file order, as Dynare under Octave
+does. The default `random=:julia` keeps the seeded Xoshiro stream (reproducible, not Octave's numbers).
 
 Commands run where they stand in the file, with the calibration of that point, and MATLAB lines read and
 write their results (`irf1 = oo_.irfs.y_e;`, `oo_.exo_simul(2, 1) = 0.1;`). Afterwards, re-run them on the
@@ -626,7 +631,8 @@ otherwise shocks are drawn from the workspace's random stream (`seed=n` seeds it
 seed 0 like Dynare's 'default'; `set_dynare_seed(...)` lines of the file act as in Dynare; an explicit `rng` replaces
 the stream). The draws are Julia's, reproducible run to run but not MATLAB's: see docs/RESULTS.md, "Random draws".
 """
-function dynare(modfile::AbstractString; output=nothing, shocks=Dict{Int,Any}(), rng=nothing, seed=nothing, particle_rng=nothing, mcmc_rng=nothing, _json_dir=nothing, plots::Bool=false, plots_backend::Symbol=:svg, kw...)
+function dynare(modfile::AbstractString; output=nothing, shocks=Dict{Int,Any}(), rng=nothing, seed=nothing, particle_rng=nothing, mcmc_rng=nothing, _json_dir=nothing, plots::Bool=false, plots_backend::Symbol=:svg, random::Symbol=:julia, kw...)
+    random in (:julia, :octave) || throw(ArgumentError("random must be :julia (default) or :octave"))
     if output === nothing
         # derivatives up to the highest order a stoch_simul statement asks for (Dynare's default is 2)
         output = occursin(r"order\s*=\s*3", read(modfile, String)) ? "third" : "second"
@@ -634,6 +640,7 @@ function dynare(modfile::AbstractString; output=nothing, shocks=Dict{Int,Any}(),
     wsref = Ref{Any}(nothing)
     nss = Ref(0)
     factory = function (m)
+        random === :octave && use_octave_random!(m)                  # one Octave stream for simulations and the file's rand/randn (src/matlab/rng.jl)
         set_dynare_seed!(m, seed === nothing ? "default" : seed)     # Dynare seeds its stream with 'default' at start-up
         particle_rng === nothing || set_rng_kind!(m, particle_rng)   # :octave = Octave's numbers in the particle filters (src/octave_rng.jl)
         mcmc_rng === nothing || set_mcmc_rng!(m, mcmc_rng)           # :octave = Dynare's random numbers in the MCMC samplers (src/mcmc_driver.jl)

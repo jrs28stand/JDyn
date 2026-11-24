@@ -68,13 +68,14 @@ mutable struct Interp
     func_order::Dict{String,Int}   # order in which functions appear in a file (first = main)
     jlfuncs::Dict{String,Any}      # Julia callables usable as MATLAB functions (numbers in, numbers out)
     session::Any                   # the ModSession running a .mod file, if any
+    rng::Any                       # an OctaveRNG: the interpreter draws Octave's numbers (src/matlab/rng.jl); nothing: JDyn's default mode
 end
 
 function Interp(directory=nothing, host=nothing)
     base = Scope(; is_base=true)
     I = Interp(directory === nothing ? nothing : String(directory), host, Dict{String,Any}(), base, [base],
                Tuple{Any,Int,Int}[], 0, 0, false, Dict{String,Any}(), nothing, zeros(1, 0), nothing, Dict{String,Int}(),
-               Dict{String,Any}(), nothing)
+               Dict{String,Any}(), nothing, nothing)
     if host !== nothing
         I.globals["M_"] = host_M(host)
         I.globals["options_"] = host_options(host)
@@ -477,6 +478,7 @@ function mcall(I::Interp, name, args, nargout, sc)
         push!(I.scope_stack, sc)
         r = try
             ndr = nd_hook(I, name, args, nargout)
+            ndr === nothing && (ndr = rng_hook(I, name, args, nargout))
             ndr === nothing ? f(I, args, nargout) : ndr
         catch e
             e isa _JULIA_ERRORS ? throw(matlab_error(e)) : rethrow()
@@ -857,8 +859,9 @@ function _assign_chain(I::Interp, cur, chain, i, value, sc)
 end
 
 "Run MATLAB source in a fresh interpreter (no model); returns the workspace."
-function mrun(text; variables=Dict{String,Any}(), directory=nothing)
+function mrun(text; variables=Dict{String,Any}(), directory=nothing, rng=nothing)
     I = Interp(directory)
+    rng === nothing || (I.rng = rng === :octave ? OctaveRNG(0) : rng isa OctaveRNG ? rng : throw(ArgumentError("rng must be :octave or an OctaveRNG")))
     merge!(I.base.vars, variables)
     body, funcs = mparse(text)
     I.base.funcs = funcs
