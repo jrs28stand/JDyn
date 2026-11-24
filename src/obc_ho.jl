@@ -75,6 +75,11 @@ mutable struct ObcHO
     max_dim::Int
     R::Matrix{Float64}
     xi::Matrix{Float64}
+    xs_src::Matrix{Float64}      # cache of `xi` sorted by norm: the matrix it was built from (identity-compared), sorted points, norms
+    xs::Matrix{Float64}
+    xnorm::Vector{Float64}
+    Rnorm::Vector{Float64}       # row norms of R
+    pbuf::Matrix{Float64}        # N x npoints work space
     tol::Float64
     stats::Dict{Symbol,Int}
 end
@@ -132,7 +137,8 @@ function obc_ho(ob::Occbin; order::Integer=2, horizon::Integer=40, check_ahead::
               ghx, ghu, ghxx, ghxu, ghuu, cst2, c2, ghxs, ghus, SigS, aC, aB, aA, aJ, a0, Mf, ext.Mb, Gq,
               zeros(N), zeros(N, n), zeros(N, n), zeros(N, ns^2), zeros(N, n),
               cubature, Int(periods_of_uncertainty), Int(qmc_level), Int(regions), taper,
-              pruning_cutoff === nothing ? nothing : Float64(pruning_cutoff), Int(max_cubature_dimension), zeros(N, 0), zeros(0, 0), Float64(tol),
+              pruning_cutoff === nothing ? nothing : Float64(pruning_cutoff), Int(max_cubature_dimension), zeros(N, 0), zeros(0, 0),
+              zeros(0, 0), zeros(0, 0), Float64[], Float64[], zeros(0, 0), Float64(tol),
               Dict(:lcp => 0, :cubature_points => 0, :relevant_points => 0))
     _ho_build_q_map!(h)
     if cubature
@@ -140,6 +146,18 @@ function obc_ho(ob::Occbin; order::Integer=2, horizon::Integer=40, check_ahead::
         h.xi = qmc_normal_points(size(h.R, 2), h.qmc_level)
     end
     h
+end
+
+# row i of the result is the coefficient row of ghxx[i, :] on kron(x, x) after substituting x -> Phi x: vec(Phi' G_i Phi) (G_i the ns x ns
+# matrix of the row), i.e. ghxx * kron(Phi, Phi) without forming the ns^2 x ns^2 matrix.
+function _quad_transform(ghxx::AbstractMatrix, Phi::AbstractMatrix)
+    ns = size(Phi, 1)
+    out = similar(ghxx)
+    for i in axes(ghxx, 1)
+        G = reshape(view(ghxx, i, :), ns, ns)
+        out[i, :] = vec(Phi' * G * Phi)
+    end
+    out
 end
 
 # The affine map of q. X_k, the expected total at period k, is  A1_k y1 + A2_k y2 + Aw_k kron(y1s, y1s) + P^k o_pre + d_k  (all in
@@ -179,7 +197,7 @@ function _ho_build_q_map!(h::ObcHO)
         k == N && break
         # advance X_k -> X_{k+1}
         if order == 2
-            Vw = h.ghx * Vw[sv, :] .+ 0.5 .* h.ghxx * kron(Phi, Phi)
+            Vw = h.ghx * Vw[sv, :] .+ 0.5 .* _quad_transform(h.ghxx, Phi)
             e = h.ghx * e[sv] .+ 0.5 .* (h.ghxx * vec(Wc)) .+ h.c2
             U = h.ghx * U[sv, :]
             Wc = h.ghxs * Wc * h.ghxs' .+ h.SigS
@@ -278,23 +296,62 @@ function _ho_lcp(h::ObcHO, q::AbstractVector, period::Int)
     y
 end
 
-"The news shocks at gap path `q`: the LCP solution, or with cubature its average over the perturbed paths (one region)."
+function _ho_prepare_points!(h::ObcHO)
+    h.xs_src === h.xi && length(h.Rnorm) == size(h.R, 1) && return
+    ord = sortperm(vec(sqrt.(sum(abs2, h.xi; dims=1))))
+    h.xs = h.xi[:, ord]
+    h.xnorm = vec(sqrt.(sum(abs2, h.xs; dims=1)))
+    h.Rnorm = vec(sqrt.(sum(abs2, h.R; dims=2)))
+    h.pbuf = zeros(h.N, size(h.xi, 2))
+    h.xs_src = h.xi
+    nothing
+end
+
+"""
+    ho_news_shocks(h, q, period=0) -> Vector
+
+The news shocks at gap path `q`: the LCP solution, or with cubature its average over the perturbed paths `q + R xi` (one region: the
+solution at the mean of the relevant paths, times their share). A path is relevant if it goes negative (below `-1e-8 max(1, max|p|)`).
+Exact skipping: `p_h >= q_h - |R_h| |xi|` (Cauchy-Schwarz), so when `q >= 0` every point with `|xi| < min_h q_h / |R_h|` is irrelevant
+(points are sorted by norm: a prefix); and a path with `min p >= -1e-8` is irrelevant whatever its maximum.
+"""
 function ho_news_shocks(h::ObcHO, q::AbstractVector, period::Int=0)
     (!h.cubature || size(h.R, 2) == 0) && return _ho_lcp(h, q, period)
-    N = h.N
-    npts = size(h.xi, 2)
-    pts = q .+ h.R * h.xi                                   # N x npts
+    _ho_prepare_points!(h)
+    N, npts = h.N, size(h.xs, 2)
+    first = 1                                               # points before `first` are irrelevant
+    if minimum(q) >= 0
+        thr = Inf
+        for i in 1:N
+            h.Rnorm[i] > 0 && (thr = min(thr, q[i] / h.Rnorm[i]))
+        end
+        thr *= 1 - 1e-9
+        first = searchsortedfirst(h.xnorm, thr)             # first point with |xi| >= thr
+        if first > npts
+            h.stats[:cubature_points] += npts
+            return zeros(h.T)
+        end
+    end
+    nc = npts - first + 1
+    P = view(h.pbuf, :, 1:nc)
+    mul!(P, h.R, view(h.xs, :, first:npts))
     nrel = 0
     xsum = zeros(size(h.R, 2))
-    for j in 1:npts
-        pmax, pmin = 1.0, Inf
+    @inbounds for j in 1:nc
+        pmin = Inf
         for i in 1:N
-            v = pts[i, j]
-            pmax = max(pmax, abs(v)); pmin = min(pmin, v)
+            pmin = min(pmin, q[i] + P[i, j])
         end
-        if !(pmin >= -1e-8 * pmax)                           # the path goes negative somewhere: relevant
+        pmin >= -1e-8 && continue
+        pmax = 1.0
+        for i in 1:N
+            pmax = max(pmax, abs(q[i] + P[i, j]))
+        end
+        if pmin < -1e-8 * pmax
             nrel += 1
-            @views xsum .+= h.xi[:, j]
+            for k in eachindex(xsum)
+                xsum[k] += h.xs[k, first+j-1]
+            end
         end
     end
     h.stats[:cubature_points] += npts
@@ -330,6 +387,7 @@ shocks `wedges` (`S x horizon`) and `stats` (LCP solves, cubature points and rel
 """
 function obc_ho_simulate(h::ObcHO, shocks::AbstractMatrix; init=nothing)
     n, nx, ns, T, sv, ys = h.n, h.nx, h.ns, h.T, h.sv, h.ys
+    foreach(k -> h.stats[k] = 0, keys(h.stats))
     S = size(shocks, 1)
     size(shocks, 2) == nx || throw(ArgumentError("shocks need $nx columns (got $(size(shocks, 2)))"))
     y1, y2, o = zeros(n), zeros(n), zeros(n)

@@ -173,4 +173,15 @@ ho_ref(name) = matread(joinpath(HO_DIR, name))
         short = JDyn.simulate(ob, S[1:50, :]; obc_order=2, obc_method=:news, obc_horizon=32, check_ahead_periods=32, periods=60)
         @test size(short.piecewise) == (60, 5) && maximum(abs, short.piecewise[1:50, :] .- E2[1:50, :]) < 1e-12
     end
+
+    @testset "numerically singular active-set blocks are rejected (Simple1, shock -0.02)" begin
+        ms = load_copy(joinpath(HO_DIR, "simple1_occ.mod"))
+        obs = JDyn.Occbin(ms)
+        sys = JDyn.obc_system(obs; horizon=40, method=:news)
+        q = JDyn.obc_q(sys, zeros(3), [-0.02])
+        y, st, _ = JDyn.solve_active_set(sys.M, q)
+        @test !(st == :ok && maximum(abs, y) > 1e6)                  # was :ok with wedges of 1.8e14
+        err = try; JDyn.simulate(obs, reshape([-0.02], 1, 1); obc_method=:news, obc_horizon=40, periods=20, check_ahead_periods=40); nothing; catch e; e; end
+        @test err isa JDyn.ObcError && err.status == :no_solution
+    end
 end

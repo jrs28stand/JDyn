@@ -128,12 +128,19 @@ function lemke(M::AbstractMatrix, q::AbstractVector; maxpivots::Integer=20 * len
     (z, :ok, pivots)
 end
 
-"The complementary solution for the index set `alpha` (y_alpha solves the gap equations, the rest is zero), or nothing."
-function _complementary_solution(M, q, alpha::Vector{Int})
+const OBC_PIVOT_RTOL = 1e-10
+
+"""
+The complementary solution for the index set `alpha` (y_alpha solves the gap equations, the rest is zero), or nothing. A block whose LU
+has a pivot of at most `OBC_PIVOT_RTOL * scale` (`scale`: the largest entry of the whole M) is treated as singular: its "solution" is
+rounding noise divided by a pivot (wedges of 1e14 that satisfy the complementarity conditions to rounding and so pass `obc_verify`).
+"""
+function _complementary_solution(M, q, alpha::Vector{Int}; scale::Real=maximum(abs, M))
     y = zeros(length(q))
     isempty(alpha) && return y
     F = lu(M[alpha, alpha]; check=false)
     issuccess(F) || return nothing
+    minimum(abs, diag(F.U)) <= OBC_PIVOT_RTOL * scale && return nothing
     y[alpha] = -(F \ q[alpha])
     all(isfinite, y) ? y : nothing
 end
@@ -214,12 +221,13 @@ function solve_active_set(M::AbstractMatrix, q::AbstractVector; tol::Real=1e-10,
     n = length(q)
     all(>=(0), q) && return (zeros(n), :ok, (pivots=0, iterations=0, solver=:none, max_violation=0.0, message="q >= 0: constraints slack"))
     S = q .< -tol
+    scale = maximum(abs, M)
     seen = Set{BitVector}()
     for it in 1:maxit
         S in seen && break
         push!(seen, copy(S))
         alpha = findall(S)
-        y = _complementary_solution(M, q, alpha)
+        y = _complementary_solution(M, q, alpha; scale=scale)
         y === nothing && break
         g = q .+ M * y
         drop = S .& (y .< -tol)
@@ -311,7 +319,7 @@ function solve_news(M::AbstractMatrix, q::AbstractVector; tol::Real=1e-10, Mb=no
         polished = false
         if any(z)                                    # polish: with the binding set known, the wedges solve a square system exactly
             F = lu(M[z, z]; check=false)
-            if issuccess(F)
+            if issuccess(F) && minimum(abs, diag(F.U)) > OBC_PIVOT_RTOL * maximum(abs, M)
                 yp = zeros(n)
                 yp[z] = -(F \ q[z])
                 ok, _ = obc_verify(M, q, yp; tol=tol)

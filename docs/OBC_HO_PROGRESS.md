@@ -5,7 +5,10 @@ Branch `obc-ho` (pushed to `origin wip/obc-ho`), based on `wip/obc` at 5f0d3a0. 
 
 ## State / next step
 
-State: H1 (order 2), H2 (tests) and C1 (cubature) are implemented; see the results below. Next: see "Open" at the end.
+State: H1 (order 2), H2 (tests) and C1 (cubature) done and passing (test_obc_ho.jl, test_obc_news.jl, test_obc.jl all pass).
+Perf items from pydyn docs/OBC_HO_PERF.md adopted (affine state-to-gap map, Cauchy-Schwarz skipping with norm-sorted points, mean-point
+identity, Sobol cache). Active-set singular-block guard added (src/obc_solvers.jl, `OBC_PIVOT_RTOL`).
+Next (optional): wire obc_order & co into mod-file options / results.jl; several regions; tied-wedge class; order 3.
 To resume cold: `source /root/jl/jdyn_env.sh; julia --project=. test/runtests.jl test_obc_ho.jl` (first run precompiles JDyn: ~4 minutes).
 Quick iteration without precompiling: load JDyn, then `Base.include(JDyn, "src/obc_qmc.jl"); Base.include(JDyn, "src/obc_ho.jl")`.
 
@@ -30,3 +33,13 @@ Quick iteration without precompiling: load JDyn, then `Base.include(JDyn, "src/o
 - `simulate(...)` through the new loop solves every period (zero shock rows are real zero draws); `piecewise` = with bound, `linear` = the
   pruned simulation without bound. `obc_raise = false` is not supported there (an `ObcError` is always raised).
 - Not done: order 3, several regions, CATCH, mod-file / results.jl wiring of the new options.
+
+## Results (nk model, horizon 32, check ahead 32, 300 shocks)
+- order 1 / order 2 vs DynareOBC: 4.4e-16; M: 8e-17; R R' vs Rcc Rcc': 3.7e-19 (R columns are in the same order as Rcc, signs differ).
+- cubature, DynareOBC's root and points injected: 6.7e-16. Own root with signs aligned to Rcc and own Dynare-Sobol points: ~1e-15.
+- Sobol: `qmc_normal_points(12, 9)` equals `sob_o2cub.mat` to 1.8e-15 (Dynare's own generator ported, not SciPy's).
+- Own root, unaligned eigenvector signs: 1e-5 to 1.4e-4 (QMC error of the one-region rule: depends on the arbitrary signs). pydyn's 1.49e-6 is
+  reproduced exactly (1.4878498e-6) with pydyn's sign pattern and SciPy points: the pydyn "< 5e-6" is luck of the signs, not a property of the rule.
+- us per period (min of 5, 300 periods): order 1 1.3, order 2 1.5, cubature level 9 80, level 10 200; pydyn same machine: 26, 39, 372, 677.
+- Singular active-set block (simple1_occ.mod, shock -0.02): the old solver returned :ok with wedges of 1.8e14 (and `simulate` then died with
+  SingularException); now :no_solution (ObcError), as pydyn.

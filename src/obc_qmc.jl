@@ -97,6 +97,12 @@ end
     qmc_normal_points(dim, level) -> Matrix{Float64}
 
 DynareOBC's cubature points: the first `2^(level+1) - 1` points of the unscrambled Sobol sequence after the origin, mapped to
-standard normals (`dim x (2^(level+1) - 1)`). The set is symmetric, so its mean is exactly zero.
+standard normals (`dim x (2^(level+1) - 1)`); cached per `(dim, level)`, so the matrix is shared and must not be modified. The set is symmetric, so its mean is exactly zero.
 """
-qmc_normal_points(dim::Integer, level::Integer) = qmc_icdf.(sobol_sequence(dim, 2^(Int(level) + 1) - 1))
+function qmc_normal_points(dim::Integer, level::Integer)
+    lock(_QMC_LOCK) do
+        get!(() -> qmc_icdf.(sobol_sequence(dim, 2^(Int(level) + 1) - 1)), _QMC_CACHE, (Int(dim), Int(level)))
+    end
+end
+const _QMC_CACHE = Dict{Tuple{Int,Int},Matrix{Float64}}()
+const _QMC_LOCK = ReentrantLock()
