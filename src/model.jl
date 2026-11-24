@@ -732,7 +732,10 @@ function _exec_statement!(m::Model, st)
         o = get_or(st, "options", Dict{String,Any}())
         m.options[kind] = merge(get(m.options, kind, Dict{String,Any}()), o)
         kind in ("discretionary_policy", "osr") && _accumulate_options!(m, o)
-    elseif kind in ("native", "verbatim") || kind in _LATEX_KINDS || kind in _SEMI_KINDS
+    elseif kind == "initval_file" && any(k -> haskey(get_or(st, "options", Dict{String,Any}()), k), ("series", "first_obs", "last_obs", "first_simulation_period", "last_simulation_period"))
+        throw(ModelError("initval_file with the options series, first_obs, last_obs, first_simulation_period or last_simulation_period is not implemented " *
+                         "(only datafile/filename and nobs are)"))
+    elseif kind in ("native", "verbatim", "perfect_foresight_controlled_paths", "initval_file") || kind in _LATEX_KINDS || kind in _SEMI_KINDS
         # native lines are run by the MATLAB session
     else
         push!(m.unhandled_statements, kind)
