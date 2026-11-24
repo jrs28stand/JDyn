@@ -52,8 +52,12 @@ include("results.jl")
 include("results_estimation.jl")
 include("seeds.jl")
 include("forecast.jl")
+include("mcmc_diagnostics.jl")
+include("posterior.jl")
+include("posterior_forecast.jl")
 
-export run_preprocessor, load, Model, ModelError, steady_state, SteadyStateError, first_order, FirstOrderSolution,
+export mcmc_diagnostics, posterior_irf, posterior_forecast, posterior_subsample,
+       run_preprocessor, load, Model, ModelError, steady_state, SteadyStateError, first_order, FirstOrderSolution,
        BlanchardKahnError, ghx, ghu, irf, simulate, set_param!, set_params!, get_param, set_shock_stderr!,
        stoch_simul_moments, theoretical_moments, k_order, KOrderError, korder_library, plot_irfs, irf_figures, irf_table, write_csv, pltorg, IRFResult, IRFFigure,
        Occbin, OccbinResult, OccbinIRF, OccbinError, OccbinPeriodicError, OccbinMaxitError, OccbinHorizonError, OccbinLoopError,
