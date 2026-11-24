@@ -661,7 +661,7 @@ function _endval_learnt_in!(ws, st)
         oo.initial_steady_state = copy(oo.steady_state)
         oo.initial_exo_steady_state = copy(oo.exo_steady_state)
     end
-    ss, xss = _pfo_vec(oo, "steady_state"), _pfo_vec(oo, "exo_steady_state")
+    ss, xss = _pfo_vec(oo, "steady_state"), something(_pfo_vec(oo, "exo_steady_state"), Float64[])
     for d in get_or(st, "vals", [])
         name = d["name"]
         get(d, "type", "level") == "level" || throw(ModelError("endval(learnt_in=1) with add or multiply is not supported"))
