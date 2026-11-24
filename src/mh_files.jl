@@ -19,7 +19,7 @@ function resolve_mat_file(m::Model, name::AbstractString)
 end
 
 _matvec(x) = x isa AbstractArray ? vec(Float64.(x)) : Float64[x]
-_matstr(x) = x isa AbstractString ? String[String(x)] : x isa AbstractArray ? String[strip(String(s)) for s in x] : String[]
+_matstr(x) = x isa AbstractString ? String[String(x)] : x isa AbstractArray ? String[strip(String(s)) for s in vec(x)] : String[]
 
 """
     read_mode_file(m, name) -> (; xparam1, hh, parameter_names, fval)
@@ -140,6 +140,7 @@ _seedstruct(x, nb) = begin
     out
 end
 
+_vecf(x) = x isa AbstractArray ? vec(Float64.(x)) : Float64[x]
 _matmat(x) = x isa AbstractMatrix ? Matrix{Float64}(x) : x isa Number ? fill(Float64(x), 1, 1) : x isa AbstractVector ? reshape(Float64.(x), :, 1) : zeros(0, 0)
 
 "The history files `<fname>_mh_history_<id>.mat` of the directory, by id."
@@ -162,12 +163,12 @@ function load_last_mh_history(m::Model; dir=mh_directory(m))
     r = d["record"]
     nb = Int(only(r["Nblck"]))
     getv(k, default=nothing) = haskey(r, k) ? r[k] : default
-    MHRecord(String(getv("Sampler", "")), nb, _matmat(r["MhDraws"]), vec(Float64.(r["MAX_nruns"])),
-             _matmat(r["LastParameters"]), vec(Float64.(r["LastLogPost"])),
-             _matmat(getv("InitialParameters", zeros(0, 0))), vec(Float64.(getv("InitialLogPost", Float64[]))),
+    MHRecord(String(getv("Sampler", "")), nb, _matmat(r["MhDraws"]), _vecf((r["MAX_nruns"])),
+             _matmat(r["LastParameters"]), _vecf((r["LastLogPost"])),
+             _matmat(getv("InitialParameters", zeros(0, 0))), _vecf((getv("InitialLogPost", Float64[]))),
              _seedstruct(getv("LastSeeds"), nb), _seedstruct(getv("InitialSeeds"), nb),
-             _matmat(getv("ProposalCovariance", zeros(0, 0))), vec(Float64.(getv("ProposalScaleVec", Float64[]))),
-             vec(Float64.(getv("AcceptanceRatio", Float64[]))), vec(Float64.(getv("FunctionEvalPerIteration", Float64[]))),
+             _matmat(getv("ProposalCovariance", zeros(0, 0))), _vecf((getv("ProposalScaleVec", Float64[]))),
+             _vecf((getv("AcceptanceRatio", Float64[]))), _vecf((getv("FunctionEvalPerIteration", Float64[]))),
              Float64(only(getv("MCMCConcludedSuccessfully", NaN))), Int(only(r["LastFileNumber"])), Int(only(r["LastLineNumber"])), id)
 end
 
@@ -258,17 +259,18 @@ function write_mh_files(m::Model, mc, info; dir=mh_directory(m), previous::Union
     id = previous === nothing ? 0 : previous.id + 1
     rec = Dict{String,Any}(
         "Sampler" => String(get(info, :method, "random_walk_metropolis_hastings")),
-        "Nblck" => Float64(nb), "MhDraws" => mhdraws, "MAX_nruns" => vcat(maxv, max_nruns),
+        "Nblck" => Float64(nb), "MhDraws" => mhdraws, "MAX_nruns" => reshape(vcat(maxv, max_nruns), :, 1),
         "AcceptanceRatio" => reshape(Float64.(mc.acceptance_rate), 1, :),
         "FunctionEvalPerIteration" => reshape(feval, 1, :),
-        "InitialParameters" => Matrix{Float64}(mc.x0), "InitialLogPost" => Float64.(get(info, :initial_logpost, zeros(nb))),
-        "LastParameters" => Matrix{Float64}(mc.draws[:, end, :]), "LastLogPost" => Float64.(mc.log_posterior[:, end]),
+        "InitialParameters" => Matrix{Float64}(previous === nothing ? mc.x0 : previous.initial_parameters),
+        "InitialLogPost" => reshape(Float64.(previous === nothing ? get(info, :initial_logpost, zeros(nb)) : previous.initial_logpost), :, 1),
+        "LastParameters" => Matrix{Float64}(mc.draws[:, end, :]), "LastLogPost" => reshape(Float64.(mc.log_posterior[:, end]), :, 1),
         "LastFileNumber" => Float64(lastfile), "LastLineNumber" => Float64(lastline),
         "MCMCConcludedSuccessfully" => 1.0,
-        "ProposalScaleVec" => Float64.(get(info, :jscale_vector, Float64[])),
+        "ProposalScaleVec" => reshape(Float64.(get(info, :jscale_vector, Float64[])), :, 1),
         "ProposalCovariance" => Matrix{Float64}(get(info, :proposal_chol, zeros(0, 0))))
-    haskey(info, :last_seeds) && (rec["LastSeeds"] = [_seed_dict(s) for s in info[:last_seeds]])
-    haskey(info, :initial_seeds) && (rec["InitialSeeds"] = [_seed_dict(s) for s in info[:initial_seeds]])
+    haskey(info, :last_seeds) && (rec["LastSeeds"] = reshape([_seed_dict(s) for s in info[:last_seeds]], 1, :))
+    haskey(info, :initial_seeds) && (rec["InitialSeeds"] = reshape([_seed_dict(s) for s in (previous !== nothing && previous.initial_seeds !== nothing ? previous.initial_seeds : info[:initial_seeds])], 1, :))
     MAT.matwrite(joinpath(dir, "$(m.name)_mh_history_$(id).mat"), Dict{String,Any}("record" => rec))
     nothing
 end

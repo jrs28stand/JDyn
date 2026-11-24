@@ -67,7 +67,7 @@ corr yobs, piobs, 0.2, uniform_pdf, , , -0.9, 0.9;
 beta, beta_pdf, 0.99, 0.002;
 kappa, gamma_pdf, 0.1, 0.05;
 phipi, 1.6, 1.01, 4, normal_pdf, 1.5, 0.25;
-@#if CASE == 8
+@#if CASE == 8 || CASE == 20
 // tight estimated_params bounds on rhoa (posterior mode 0.857): Dynare's samplers reject proposals above 0.86
 rhoa, 0.85, 0.5, 0.86, beta_pdf, 0.7, 0.1;
 @#else
@@ -104,7 +104,7 @@ estimation(datafile=est_nk_data, mode_compute=0, mode_file=post_nk_mode0, mh_rep
            posterior_sampling_method='independent_metropolis_hastings', sub_draws=0, nodisplay, nograph);
 @#endif
 // RWMH with the estimated_params bounds of CASE 8 (rhoa <= 0.86)
-@#if CASE == 8
+@#if CASE == 8 || CASE == 20
 estimation(datafile=est_nk_data, mode_compute=0, mode_file=post_nk_mode0, mh_replic=600, mh_nblocks=1, mh_jscale=0.5,
            sub_draws=0, nodisplay, nograph);
 @#endif
@@ -112,4 +112,29 @@ estimation(datafile=est_nk_data, mode_compute=0, mode_file=post_nk_mode0, mh_rep
 @#if CASE == 13
 estimation(datafile=est_nk_data, mode_compute=0, mode_file=post_nk_mode0, mh_replic=4, mh_nblocks=1, mh_jscale=0.6,
            posterior_sampling_method='tailored_random_block_metropolis_hastings', sub_draws=0, nodisplay, nograph);
+@#endif
+@#if CASE == 20
+estimation(datafile=est_nk_data, mode_compute=0, mode_file=post_nk_mode0, mh_replic=300, mh_nblocks=2, mh_jscale=0.5, mh_drop=0.3, sub_draws=0, nodisplay, nograph);
+@#endif
+@#if CASE == 21
+estimation(datafile=est_nk_data, mode_compute=0, mode_file=post_nk_mode0, mh_replic=200, mh_nblocks=2, mh_jscale=0.5, mh_drop=0.3, load_mh_file, sub_draws=0, nodisplay, nograph);
+@#endif
+// mh_tune_jscale (default target), the global stream untouched with the mode file
+@#if CASE == 22
+estimation(datafile=est_nk_data, mode_compute=0, mode_file=post_nk_mode0, mh_replic=200, mh_nblocks=2, mh_tune_jscale, sub_draws=0, nodisplay, nograph);
+@#endif
+// identity jumping covariance with a prior-variance variant in CASE 24
+@#if CASE == 23
+estimation(datafile=est_nk_data, mode_compute=0, mode_file=post_nk_mode0, mh_replic=150, mh_nblocks=2, mh_jscale=0.05, mh_init_scale_factor=0.5,
+           mcmc_jumping_covariance=identity_matrix, sub_draws=0, nodisplay, nograph);
+@#endif
+@#if CASE == 24
+estimation(datafile=est_nk_data, mode_compute=0, mode_file=post_nk_mode0, mh_replic=150, mh_nblocks=2, mh_jscale=0.05,
+           mcmc_jumping_covariance=prior_variance, sub_draws=0, nodisplay, nograph);
+@#endif
+// slice sampler end to end (rotated, started at the mode)
+@#if CASE == 25
+estimation(datafile=est_nk_data, mode_compute=0, mode_file=post_nk_mode0, mh_replic=10, mh_nblocks=2, mh_jscale=0.5,
+           posterior_sampling_method='slice', posterior_sampler_options=('rotated',1,'slice_initialize_with_mode',1),
+           sub_draws=0, nodisplay, nograph);
 @#endif

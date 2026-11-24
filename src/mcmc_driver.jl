@@ -157,8 +157,9 @@ function sample_mcmc(est::Estimation; method=nothing, replic=nothing, nblocks=no
             elseif V === nothing
                 throw(EstimationError("check_posterior_sampler_options:: Rotated slice cannot start: there is no previous MCMC to load (with use_mh_covariance_matrix) or the Hessian at the mode is not computed (use slice_initialize_with_mode)"))
             else
-                ev = eigen(Symmetric(V))
-                V1 = ev.vectors; WR = 3 .* sqrt.(ev.values)
+                # Octave's eig of a symmetric matrix is LAPACK dsyev (upper triangle): the eigenvector signs are dsyev's (eigen(Symmetric) uses dsyevr)
+                w, V1 = LinearAlgebra.LAPACK.syev!('V', 'U', Matrix{Float64}((V .+ V') ./ 2))
+                WR = 3 .* sqrt.(w)
             end
         end
         (!_est_flag(opts["rotated"]) && !with_mode && previous === nothing) && (V = nothing)

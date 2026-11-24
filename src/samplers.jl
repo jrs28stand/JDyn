@@ -303,40 +303,6 @@ function chol_SE(A0::AbstractMatrix)
 end
 
 # ---------------------------------------------------------------------------------------------------- prior mode and draws
-"`bayestopt_.p5` (set_prior.m / compute_prior_mode.m): NaN for uniform priors; the first mode of a beta prior with two modes."
-function prior_mode(p::Prior)
-    out = fill(NaN, length(p.shape))
-    for i in eachindex(p.shape)
-        sh = p.shape[i]; a, b = p.p6[i], p.p7[i]; p3, p4 = p.p3[i], p.p4[i]
-        m = NaN
-        if sh == 1
-            if a > 1 && b > 1
-                m = (a - 1) / (a + b - 2)
-            elseif a < 1 && b < 1
-                m = 0.0
-            elseif (a < 1 && b > 1 - eps()) || (abs(a - 1) < 2eps() && b > 1)
-                m = 0.0
-            elseif (a > 1 && b < 1 + eps()) || (abs(a - 1) < 2eps() && b < 1)
-                m = 1.0
-            elseif abs(a - 1) < 2eps() && abs(b - 1) < 2eps()
-                m = 0.5
-            end
-            m = m * (p4 - p3) + p3
-        elseif sh == 2
-            m = (a < 1 ? 0.0 : (a - 1) * b) + p3
-        elseif sh == 3
-            m = p.p1[i]
-        elseif sh == 4
-            m = 1 / sqrt((b + 1) / a) + p3
-        elseif sh == 6
-            m = a / (b + 2) + p3
-        elseif sh == 8
-            m = (a <= 1 ? 0.0 : b * ((a - 1) / a)^(1 / a)) + p3
-        end
-        out[i] = m
-    end
-    out
-end
 
 """
     prior_draw(prior, lb, ub, r) -> Vector
