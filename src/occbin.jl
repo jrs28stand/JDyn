@@ -431,8 +431,21 @@ function simulate(ob::Occbin, shocks_in::AbstractMatrix; periods::Integer=100, c
                   max_check_ahead_periods::Real=Inf, reset_check_ahead_periods_in_new_period::Bool=false,
                   reset_regime_in_new_period::Bool=false, exo_pos=nothing, algo_truncation::Integer=1,
                   replicate_dynare_bugs::Bool=false, obc_method=:occbin, obc_horizon=40, obc_tol::Real=1e-10,
-                  obc_raise::Bool=true, obc_solver_options=NamedTuple(), obc_fast_path::Bool=true)
+                  obc_raise::Bool=true, obc_solver_options=NamedTuple(), obc_fast_path::Bool=true,
+                  obc_order=1, obc_cubature::Bool=false, obc_periods_of_uncertainty=16, obc_qmc_level=10, obc_cubature_regions=1)
     method = _obc_method(obc_method)
+    if _obc_order(obc_order) != 1 || obc_cubature       # src/obc_ho.jl: order 2 and / or cubature (news only)
+        method == :news || throw(ArgumentError("obc_order = 2 and obc_cubature need obc_method = news"))
+        return _simulate_obc_ho(ob, shocks_in; horizon=_obc_horizon(obc_horizon), tol=obc_tol, periods=periods, check_ahead_periods=check_ahead_periods,
+                                max_check_ahead_periods=max_check_ahead_periods, init=init, exo_pos=exo_pos, order=_obc_order(obc_order),
+                                cubature=obc_cubature, periods_of_uncertainty=_obc_int_option(obc_periods_of_uncertainty, "obc_periods_of_uncertainty"),
+                                qmc_level=_obc_int_option(obc_qmc_level, "obc_qmc_level"; min=0), regions=_obc_int_option(obc_cubature_regions, "obc_cubature_regions"),
+                                ignored=(maxit=maxit, curb_retrench=curb_retrench, periodic_solution=periodic_solution,
+                                         periodic_solution_threshold=periodic_solution_threshold, periodic_solution_strict=periodic_solution_strict,
+                                         init_regime=init_regime, init_binding_indicator=init_binding_indicator,
+                                         reset_check_ahead_periods_in_new_period=reset_check_ahead_periods_in_new_period,
+                                         reset_regime_in_new_period=reset_regime_in_new_period, algo_truncation=algo_truncation))
+    end
     if method != :occbin                            # src/obc.jl: the same loop with an LCP solver instead of the regime iteration
         return _simulate_obc(ob, shocks_in; method=method, horizon=_obc_horizon(obc_horizon), tol=obc_tol, raise=obc_raise,
                              periods=periods, check_ahead_periods=check_ahead_periods, max_check_ahead_periods=max_check_ahead_periods,
