@@ -246,22 +246,37 @@ binds and where it can be relaxed, and the errors `err.binding_constraint_j` / `
 the bind / relax condition).
 """
 function check_constraints(ob::Occbin, z::AbstractMatrix)
+    # the compiled conditions live in a newer world than this method: run the whole loop in the latest world once, instead of
+    # one Base.invokelatest per evaluation
+    Base.invokelatest(_check_constraints_loop, ob, z)
+end
+
+@inline function _call_now(f, args...)
+    try
+        f(args...)
+    catch e
+        e isa DomainError || rethrow()
+        NaN
+    end
+end
+
+function _check_constraints_loop(ob::Occbin, z::AbstractMatrix)
     T, k = size(z, 1), ob.k
     binding, relax = falses(T, k), falses(T, k)
     eb, er = zeros(T, k), zeros(T, k)
     for t in 1:T
         zt = view(z, t, :)
         for (j, c) in enumerate(ob.cons)
-            b = _call(c.bind, zt, ob.params, ob.ys)
+            b = _call_now(c.bind, zt, ob.params, ob.ys)
             binding[t, j] = b === true || (b isa Number && !isnan(b) && b != 0)
             if c.relax === nothing
                 relax[t, j] = !binding[t, j]
             else
-                r = _call(c.relax, zt, ob.params, ob.ys)
+                r = _call_now(c.relax, zt, ob.params, ob.ys)
                 relax[t, j] = r === true || (r isa Number && !isnan(r) && r != 0)
             end
-            eb[t, j] = _call(c.ebind, zt, ob.params, ob.ys)
-            er[t, j] = _call(c.erelax, zt, ob.params, ob.ys)
+            eb[t, j] = _call_now(c.ebind, zt, ob.params, ob.ys)
+            er[t, j] = _call_now(c.erelax, zt, ob.params, ob.ys)
         end
     end
     binding, relax, eb, er
@@ -328,14 +343,17 @@ function _path_rules(ob::Occbin, ind::AbstractMatrix, init::AbstractVector, shoc
     N = size(ind, 1)
     z = Matrix{Float64}(undef, N, ob.n)
     y = Vector{Float64}(init)
+    tmp = similar(y)
     for t in 1:N
         if t <= length(rules)
             T, R, C = rules[t]
-            y = T * y + C
-            t == 1 && (y += R * shock)
+            mul!(tmp, T, y); tmp .+= C                 # = T * y + C, without the temporaries
+            y, tmp = tmp, y
+            t == 1 && (y .+= R * shock)
         else
-            y = ob.P * y
-            t == 1 && (y += ob.Q * shock)
+            mul!(tmp, ob.P, y)
+            y, tmp = tmp, y
+            t == 1 && (y .+= ob.Q * shock)
         end
         z[t, :] = y
     end
