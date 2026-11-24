@@ -46,11 +46,25 @@ mutable struct CubState
     acc::Vector{Float64}
     pt::Vector{Float64}
     Mscale::Float64
+    Sg::Matrix{Bool}                   # lockstep work space (mode :group)
+    Hg::Matrix{UInt64}
+    act::Vector{Int}
+    act2::Vector{Int}
+    k1::Vector{UInt64}
+    k2::Vector{UInt64}
+    Gbuf::Matrix{Float64}
+    Bbuf::Matrix{Float64}
+    Mabuf::Matrix{Float64}
+    Pm::Matrix{Float64}
+    Y::Matrix{Float64}
+    ok::Vector{Bool}
 end
 function CubState(M::AbstractMatrix, N::Integer)
     nws = size(M, 1)
     CubState(:cache, CubCache(), zeros(Bool, nws), zeros(nws), zeros(nws), zeros(nws), zeros(UInt64, cld(nws, 64)),
-               UInt64[], Int[], zeros(nws), zeros(N), maximum(abs, M))
+               UInt64[], Int[], zeros(nws), zeros(N), maximum(abs, M),
+               zeros(Bool, nws, 0), zeros(UInt64, 120, 0), Int[], Int[], UInt64[], UInt64[], zeros(nws, 0), zeros(nws, 0), zeros(nws, nws),
+               zeros(N, 0), zeros(nws, 0), Bool[])
 end
 
 @inline function _pack!(key::Vector{UInt64}, S::Vector{Bool})
@@ -61,7 +75,7 @@ end
     key
 end
 
-function _cub_entry!(c::CubCache, key::Vector{UInt64}, S::Vector{Bool}, M::Matrix{Float64}, scale::Float64)
+function _cub_entry!(c::CubCache, key::Vector{UInt64}, S::AbstractVector{Bool}, M::Matrix{Float64}, scale::Float64)
     e = get(c.d, key, nothing)
     if e !== nothing
         c.hits += 1
@@ -157,4 +171,146 @@ function _cub_point!(st::CubState, Mh::Matrix{Float64}, scale::Float64, p::Abstr
         end
     end
     false
+end
+
+# ------------------------------------------------------------------------------------------------ lockstep over the points of a period
+"""
+    _cub_group!(st, Mh, scale, Pm, ns, tol, Y, ok, maxit=60)
+
+The iteration of `_cub_point!` for all columns of `Pm` (`N x m`, head rows `1:ns`) in lockstep: in every pass the active columns are sorted by their set
+(the first two words of the packed key; sets of more than 128 periods are not grouped by this routine), the columns that share a set are solved with one
+multi-right-hand-side solve against the cached factorisation, and each column then drops / adds periods exactly as in the scalar iteration. A column's
+sequence of sets is the scalar one, hence its solution. `Y` (`ns x m`) receives the wedges, `ok[j]` says whether column `j` settled on a verified solution.
+"""
+function _cub_group!(st::CubState, Mh::Matrix{Float64}, scale::Float64, Pm::AbstractMatrix, ns::Int, tol::Float64,
+                     Y::Matrix{Float64}, ok::Vector{Bool}, maxit::Int=60)
+    m = size(Pm, 2)
+    nw = cld(ns, 64)
+    nw <= 2 || throw(ArgumentError("cub_mode = :group handles at most 128 wedge periods"))
+    S = st.Sg
+    size(S, 2) < m && (st.Sg = S = zeros(Bool, ns, m))
+    size(st.Gbuf, 2) < m && (st.Gbuf = zeros(ns, m); st.Bbuf = zeros(ns, m))
+    H = st.Hg
+    size(H, 2) < m && (st.Hg = H = zeros(UInt64, 2 * maxit, m))
+    fill!(ok, false)
+    act = st.act; empty!(act)
+    fill!(Y, 0.0)
+    @inbounds for c in 1:m
+        allnn = true
+        for i in 1:ns
+            Pm[i, c] < 0 && (allnn = false; break)
+        end
+        if allnn
+            ok[c] = true
+        else
+            for i in 1:ns
+                S[i, c] = Pm[i, c] < -tol
+            end
+            push!(act, c)
+        end
+    end
+    keys1, keys2 = st.k1, st.k2
+    length(keys1) < m && (resize!(keys1, m); resize!(keys2, m))
+    key = st.key
+    for pass in 1:maxit
+        isempty(act) && break
+        # keys and the cycle test
+        nxt = 0
+        @inbounds for c in act
+            fill!(key, 0)
+            for i in 1:ns
+                S[i, c] && (key[(i-1)>>6+1] |= UInt64(1) << ((i - 1) & 63))
+            end
+            k1 = key[1]; k2 = nw > 1 ? key[2] : UInt64(0)
+            cyc = false
+            for r in 1:pass-1
+                if H[(r-1)*nw+1, c] == k1 && (nw == 1 || H[(r-1)*nw+2, c] == k2)
+                    cyc = true; break
+                end
+            end
+            if !cyc
+                H[(pass-1)*nw+1, c] = k1
+                nw > 1 && (H[(pass-1)*nw+2, c] = k2)
+                keys1[c] = k1; keys2[c] = k2
+                nxt += 1
+                act[nxt] = c
+            end
+        end
+        resize!(act, nxt)
+        isempty(act) && break
+        sort!(act; by=c -> (keys1[c], keys2[c]))
+        newact = st.act2; empty!(newact)
+        a0 = 1
+        while a0 <= length(act)
+            c0 = act[a0]
+            a1 = a0
+            while a1 < length(act) && keys1[act[a1+1]] == keys1[c0] && keys2[act[a1+1]] == keys2[c0]
+                a1 += 1
+            end
+            cols = view(act, a0:a1)
+            gsz = a1 - a0 + 1
+            fill!(key, 0)
+            key[1] = keys1[c0]; nw > 1 && (key[2] = keys2[c0])
+            Sc = view(S, :, c0)
+            e = _cub_entry!(st.cache, key, Sc, Mh, scale)       # failed block: the columns fail
+            if e.ok
+                alpha = e.alpha
+                k = length(alpha)
+                G = view(st.Gbuf, 1:ns, 1:gsz)
+                @inbounds for (jj, c) in enumerate(cols), i in 1:ns
+                    G[i, jj] = Pm[i, c]
+                end
+                if k > 0
+                    B = view(st.Bbuf, 1:k, 1:gsz)
+                    @inbounds for (jj, c) in enumerate(cols), a in 1:k
+                        B[a, jj] = Pm[alpha[a], c]
+                    end
+                    ldiv!(e.F, B)
+                    @inbounds for jj in 1:gsz, a in 1:k
+                        B[a, jj] = -B[a, jj]
+                    end
+                    Ma = view(st.Mabuf, 1:ns, 1:k)
+                    @inbounds for a in 1:k, i in 1:ns
+                        Ma[i, a] = Mh[i, alpha[a]]
+                    end
+                    mul!(G, Ma, B, 1.0, 1.0)                  # g = p + M[:, A] y_A
+                end
+                @inbounds for (jj, c) in enumerate(cols)
+                    fin = true
+                    for a in 1:k
+                        isfinite(st.Bbuf[a, jj]) || (fin = false; break)
+                    end
+                    fin || continue                           # singular-like: the column fails
+                    for i in 1:ns
+                        Y[i, c] = 0.0
+                    end
+                    for a in 1:k
+                        Y[alpha[a], c] = st.Bbuf[a, jj]
+                    end
+                    changed = false
+                    for i in 1:ns
+                        if S[i, c]
+                            if Y[i, c] < -tol
+                                S[i, c] = false; changed = true
+                            end
+                        elseif G[i, jj] < -tol
+                            S[i, c] = true; changed = true
+                        end
+                    end
+                    if changed
+                        push!(newact, c)
+                    else
+                        v = 0.0
+                        for i in 1:ns
+                            v = max(v, -Y[i, c], -G[i, jj], abs(Y[i, c] * G[i, jj]))
+                        end
+                        ok[c] = v <= tol
+                    end
+                end
+            end
+            a0 = a1 + 1
+        end
+        empty!(act); append!(act, newact)
+    end
+    nothing
 end

@@ -49,3 +49,37 @@ Quick iteration without precompiling: load JDyn, then `Base.include(JDyn, "src/o
 - us per period (min of 5, 300 periods): order 1 1.3, order 2 1.5, cubature level 9 80, level 10 200; pydyn same machine: 26, 39, 372, 677.
 - Singular active-set block (simple1_occ.mod, shock -0.02): the old solver returned :ok with wedges of 1.8e14 (and `simulate` then died with
   SingularException); now :no_solution (ObcError), as pydyn.
+
+
+## Cubature port, step 1: the full average (`obc_cubature_regions = all`)
+
+Option: `obc_cubature_regions = all` (also `:all`, `"all"`, `0`; mod file `options_.occbin.obc_cubature_regions = 'all';`), internally `regions = 0`; `1` keeps working; k > 1 is refused
+until step 6. The result is `(sum over relevant points of y) / (number of points)`; points that need no wedge contribute zero. Code: `src/obc_cubature.jl` (point solver, cache, lockstep
+solver), `_cub_all!` and `ho_news_shocks` in `src/obc_ho.jl`. `h.cub.mode` selects the solver: `:scalar` (the existing `solve_active_set` per point), `:cache` (default), `:group`.
+
+* `:cache`: the same scalar guess-and-verify iteration (same sequence of sets per point, hence the same solution when there are several), but the linear solve uses an LU of
+  M[A, A] cached by the set A (packed key), memory-capped at 256 MB (cleared when exceeded), with the pivot guard of `_complementary_solution` applied once when the entry is made (a block
+  that fails the guard fails the iteration at that point, as in the scalar code). LU instead of a stored inverse: in Julia a solve with a stored LU is O(k^2) and has the accuracy of the scalar
+  solve, so no conditioning threshold is needed (pydyn applies its inverse only when cond_1 <= 1e4).
+* `:group`: the points of a period in lockstep; points with the same set are solved with one multi-right-hand-side `ldiv!` against the cached LU. Sets up to 128 wedge periods.
+* Verified column by column (test_obc_ho.jl, 4,400 assertions): 1,500 gap paths, ok flag and wedges equal `solve_active_set` (cached iteration and lockstep, <= 1e-12); a 20 kB cache that is cleared
+  repeatedly changes nothing; the three modes give the same simulation (<= 1e-12); the average equals a hand-written loop over the relevant points; vanishing variance gives the solution at q.
+
+Timing (microseconds per period of `obc_ho_simulate`, order 2, horizon 40 + check-ahead 40, 100 periods, minimum of 5 repeats, one BLAS thread, `cache` figures are cold start
+including building the cache over the 100 periods; shared 2-core machine with a soak test running at nice 19, load average 1.6-1.9 during the run; script /tmp/ho/bench1.jl, not in the repository).
+nk = test/obc/ho/nk_occ.mod with the DynareOBC shock sequence (100 periods: all bind); NKM = test/ref_occbin/occest_nkm.mod (Dynare's tests/occbin/filter) with shocks 5 sd, seed 3
+(93% of the periods have wedges at level 11). "relevant" = average relevant points per period.
+
+| model | level | points | relevant | loop only (existing scalar solver) | + cache | + grouping | pydyn (full average, level 11; its figures: nk ~14 ms, NKM ~3.5 ms) |
+|---|---|---|---|---|---|---|---|
+| nk | 9 | 1,023 | 735 | 4,950 | 1,455 | 1,651 | 4,270 (L9, regions all, nk) |
+| nk | 11 | 4,095 | 2,943 | 20,217 | 5,820 | 6,199 | ~14,000 |
+| nk | 13 | 16,383 | 11,744 | 79,748 | 23,359 | 25,163 | - |
+| NKM | 9 | 1,023 | 370 | 2,569 | 589 | 563 | 1,958 (L9) |
+| NKM | 11 | 4,095 | 1,484 | 9,728 | 2,261 | 2,285 | ~3,500 (65% relevant there; here 36%) |
+| NKM | 13 | 16,383 | 5,939 | 38,137 | 9,459 | 9,948 | - |
+
+Per relevant point: nk 6.9 us (loop), 2.0 us (cache); NKM 6.6 us (loop), 1.5 us (cache). The cache buys 3.4-4.2x over the loop; grouping buys nothing in Julia (it is 0-10% slower on nk, equal on NKM)
+because the per-point solve is already a few microseconds; the default is `:cache`. Sets in the cache after 100 periods: nk 2,931 / 6,418 / 12,362 (levels 9/11/13), NKM 655 / 1,129 / 1,806.
+Maximum difference of the simulated wedges between the three modes: 1.7e-16.
+Note: the NKM rows are not at pydyn's shock scale (pydyn has 65% of points relevant): per relevant point the NKM cost is ~1.5 us against pydyn's ~2.4 us (3.5 ms / ~2,660 points).

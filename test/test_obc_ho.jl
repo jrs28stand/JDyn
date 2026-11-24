@@ -267,3 +267,101 @@ end
         @test_throws ArgumentError JDyn.mod_options(JDyn.Occbin(mb))
     end
 end
+
+@testset "full average over the cubature points (obc_cubature_regions = all, src/obc_cubature.jl)" begin
+    m = load_copy(joinpath(HO_DIR, "nk_occ.mod"))
+    ob = JDyn.Occbin(m)
+    S = reshape(vec(ho_ref("shocks.mat")["ShockSequence"]), :, 1)
+    @test JDyn._obc_regions("all") == 0 && JDyn._obc_regions(:all) == 0 && JDyn._obc_regions(0) == 0 && JDyn._obc_regions(1) == 1 && JDyn._obc_regions(["all"]) == 0
+    @test_throws ArgumentError JDyn._obc_regions(2)
+    @test_throws ArgumentError JDyn._obc_regions("some")
+    @test_throws ArgumentError JDyn._obc_regions(-1)
+    h = JDyn.obc_ho(ob; order=2, horizon=32, check_ahead=32, cubature=true, qmc_level=9, regions=0)
+    T, N = h.T, h.N
+    @testset "point solver and lockstep solver equal solve_active_set, point by point" begin
+        rng = MersenneTwister(11)
+        st = h.cub
+        # gap paths that start below zero and recover (a decaying dip, some noise, an occasional second dip): plausible shapes with solutions and failures
+        P = map(1:1500) do _
+            s, ρ = 10.0^(-3 + 1.5 * rand(rng)), 0.7 + 0.25 * rand(rng)
+            p = s .* (0.1 .- 1.1 .* ρ .^ (0:N-1)) .+ 0.05 * s .* randn(rng, N)
+            rand(rng) < 0.3 && (p .+= -0.5 * s .* ρ .^ abs.((0:N-1) .- rand(rng, 5:20)))
+            p
+        end
+        # scalar reference: the iteration of solve_active_set on the head rows and the check of the rows beyond the horizon
+        ref = map(P) do p
+            y, s, _ = JDyn.solve_active_set(view(h.Mf, 1:T, :), p[1:T]; tol=h.tol)
+            ok = s == :ok && (N == T || minimum(p[T+1:N] .+ h.Mb * y) >= -h.tol)
+            (ok, y)
+        end
+        # cached scalar iteration
+        for (p, (ok, y)) in zip(P, ref)
+            ok1 = JDyn._cub_point!(st, h.sys.M, st.Mscale, p, T, h.tol)
+            ok1 && N > T && minimum(p[T+1:N] .+ h.Mb * st.y[1:T]) < -h.tol && (ok1 = false)
+            @test ok1 == ok
+            ok && @test maximum(abs, st.y[1:T] .- y) < 1e-12
+        end
+        @test length(st.cache.d) > 10 && st.cache.hits > 0
+        # lockstep
+        Pm = reduce(hcat, P)
+        Y = zeros(T, length(P)); okv = zeros(Bool, length(P))
+        JDyn._cub_group!(st, h.sys.M, st.Mscale, view(Pm, 1:T, :), T, h.tol, Y, okv)
+        nsolved = 0
+        for (j, (ok, y)) in enumerate(ref)
+            gok = okv[j] && (N == T || minimum(Pm[T+1:N, j] .+ h.Mb * Y[:, j]) >= -h.tol)
+            @test gok == ok
+            ok && (nsolved += 1; @test maximum(abs, Y[:, j] .- y) < 1e-12)
+        end
+        @test nsolved > 300
+        # a tiny cache: the answers do not change
+        small = JDyn.CubCache(20_000)
+        st2 = JDyn.CubState(h.sys.M, N); st2.cache = small
+        for (p, (ok, y)) in zip(P[1:300], ref[1:300])
+            ok1 = JDyn._cub_point!(st2, h.sys.M, st2.Mscale, p, T, h.tol)
+            ok1 && N > T && minimum(p[T+1:N] .+ h.Mb * st2.y[1:T]) < -h.tol && (ok1 = false)
+            @test ok1 == ok
+        end
+        @test small.clears > 0 && small.bytes <= small.cap
+    end
+    @testset "the three modes give the same simulation; the average equals the hand-written loop" begin
+        sims = Dict{Symbol,Any}()
+        for md in (:scalar, :cache, :group)
+            hh = JDyn.obc_ho(ob; order=2, horizon=32, check_ahead=32, cubature=true, qmc_level=9, regions=0)
+            hh.cub.mode = md
+            sims[md] = JDyn.obc_ho_simulate(hh, S[1:60, :])
+        end
+        @test count(>(1e-9), vec(maximum(sims[:cache].wedges; dims=2))) > 20
+        @test maximum(abs, sims[:cache].wedges .- sims[:scalar].wedges) < 1e-12 && maximum(abs, sims[:group].wedges .- sims[:scalar].wedges) < 1e-12
+        @test maximum(abs, sims[:cache].with_bound .- sims[:scalar].with_bound) < 1e-12
+        # hand-written: relevant points, a solve each, the sum over all points
+        rng = MersenneTwister(5)
+        ncmp = 0
+        for _ in 1:60
+            ncmp >= 4 && break
+            y1 = 0.01 .* randn(rng, h.n)                    # a gap path of the model near the bound (some draws have no solution at some points: skipped)
+            q = h.qc .+ h.Q1 * (y1 .* (0.5 + 4 * rand(rng)))
+            minimum(q) < 0 || continue
+            h.cub.mode = :cache
+            y = try; JDyn.ho_news_shocks(h, q); catch e; e isa JDyn.ObcError || rethrow(); continue; end
+            acc = zeros(T); np = size(h.xi, 2); nrel = 0
+            for j in 1:np
+                p = q .+ h.R * h.xi[:, j]
+                pmax = max(1.0, maximum(abs, p))
+                minimum(p) < -1e-8 * pmax || continue
+                nrel += 1
+                acc .+= JDyn._ho_lcp(h, p, 0)
+            end
+            nrel > 20 || continue
+            @test maximum(abs, y .- acc ./ np) < 1e-12
+            ncmp += 1
+        end
+        @test ncmp >= 3
+        # vanishing variance: the average over identical points is the solution at q
+        hv = JDyn.obc_ho(ob; order=2, horizon=32, check_ahead=32, cubature=true, qmc_level=5, regions=0)
+        hv.R = 1e-9 .* hv.R
+        q = 0.004 .* (0.1 .- 1.1 .* 0.8 .^ (0:N-1))
+        qv = hv.qc .+ hv.Q1 * (0.03 .* ones(hv.n))
+        minimum(qv) < 0 || (qv = hv.qc .+ hv.Q1 * (-0.03 .* ones(hv.n)))
+        @test maximum(abs, JDyn.ho_news_shocks(hv, qv) .- JDyn._ho_lcp(hv, qv, 0)) < 1e-6
+    end
+end

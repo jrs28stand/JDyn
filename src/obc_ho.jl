@@ -396,6 +396,37 @@ function _cub_all!(h::ObcHO, q::AbstractVector, P::AbstractMatrix, rel::Vector{I
     scale = st.Mscale
     tol = h.tol
     nb = N - T
+    if st.mode == :group
+        m = length(rel)
+        size(st.Pm, 2) < m && (st.Pm = zeros(N, m); st.Y = zeros(T, m); resize!(st.ok, m))
+        Pm = view(st.Pm, :, 1:m)
+        @inbounds for (jj, j) in enumerate(rel), i in 1:N
+            Pm[i, jj] = q[i] + P[i, j]
+        end
+        Y = view(st.Y, :, 1:m); okv = view(st.ok, 1:m)
+        _cub_group!(st, Mh, scale, view(Pm, 1:T, :), T, tol, st.Y, st.ok)
+        h.stats[:lcp] += m
+        for jj in 1:m
+            good = okv[jj]
+            if good && nb > 0
+                @inbounds for i in 1:nb
+                    v = Pm[T+i, jj]
+                    for a in 1:T
+                        v += h.Mb[i, a] * Y[a, jj]
+                    end
+                    v < -tol && (good = false; break)
+                end
+            end
+            if good
+                @inbounds for a in 1:T
+                    acc[a] += Y[a, jj]
+                end
+            else
+                acc .+= _ho_lcp(h, Vector(Pm[:, jj]), period)
+            end
+        end
+        return acc ./ npts
+    end
     for j in rel
         @inbounds for i in 1:N
             pt[i] = q[i] + P[i, j]
