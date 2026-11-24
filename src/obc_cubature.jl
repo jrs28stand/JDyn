@@ -61,13 +61,18 @@ mutable struct CubState
     m_diag::Any                        # up-front diagnostic of M (`cub_m_diagnostic`), nothing when skipped
     milp_time_limit::Float64           # s per failed point (obc_cubature_milp_time_limit)
     tolerance::Float64                 # share of failed relevant points that is dropped instead of raised (obc_cubature_failure_tolerance)
+    lp_head::Any                       # CubLP on the head rows / on all rows (built on first use)
+    lp_full::Any
+    dropped_last::Int
+    relevant_last::Int
+    qlog::Union{Nothing,Vector{Vector{Float64}}}      # when a vector: every gap path `q` passed to `ho_news_shocks` is appended (tests, cross-checks)
 end
 function CubState(M::AbstractMatrix, N::Integer)
     nws = size(M, 1)
     CubState(:cache, CubCache(), zeros(Bool, nws), zeros(nws), zeros(nws), zeros(nws), zeros(UInt64, cld(nws, 64)),
                UInt64[], Int[], zeros(nws), zeros(N), maximum(abs, M),
                zeros(Bool, nws, 0), zeros(UInt64, 120, 0), Int[], Int[], UInt64[], UInt64[], zeros(nws, 0), zeros(nws, 0), zeros(nws, nws),
-               zeros(N, 0), zeros(nws, 0), Bool[], nothing, 1.0, 0.0)
+               zeros(N, 0), zeros(nws, 0), Bool[], nothing, 1.0, 0.0, nothing, nothing, 0, 0, nothing)
 end
 
 @inline function _pack!(key::Vector{UInt64}, S::Vector{Bool})
@@ -88,7 +93,7 @@ function _cub_entry!(c::CubCache, key::Vector{UInt64}, S::AbstractVector{Bool}, 
     alpha = findall(S)
     k = length(alpha)
     F = lu(M[alpha, alpha]; check=false)
-    ok = issuccess(F) && minimum(abs, diag(F.U)) > OBC_PIVOT_RTOL * scale
+    ok = k == 0 || (issuccess(F) && minimum(abs, diag(F.U)) > OBC_PIVOT_RTOL * scale)
     e = CubEntry(alpha, F, ok)
     sz = 8 * k * k + 8 * k + 160 + 8 * length(key)
     if c.bytes + sz > c.cap
@@ -363,4 +368,96 @@ function cub_m_diagnostic(M::AbstractMatrix, n_c::Integer; level=:s)
         d = level == :full ? d : merge(d, (is_p=nothing,))
         merge(d, (seconds=t, level=level))
     end
+end
+
+# ------------------------------------------------------------------------------------------------ a native LP kept per parameter set
+"""
+    CubLP(M)
+
+`min s  s.t.  y >= 0, s >= 0, M y + s 1 >= -p` as one native HiGHS model, built once from the fixed `M` (`m x k`); a point only changes the row lower bounds
+(`-p`), and HiGHS keeps the basis from the previous point (warm start). `s* = 0` iff some `y >= 0` has `p + M y >= 0`. This is the LP of pydyn's `_lp_gap`, without
+rebuilding it per point (pydyn's tolerance mode spends 2.3-5 ms per failed point on the call overhead of a freshly built `linprog`).
+"""
+mutable struct CubLP
+    ptr::Ptr{Cvoid}
+    m::Int
+    k::Int
+    lo::Vector{Float64}
+    hi::Vector{Float64}
+    calls::Int
+end
+function CubLP(M::AbstractMatrix)
+    m, k = size(M)
+    ptr = ccall((:Highs_create, libhighs), Ptr{Cvoid}, ())
+    ptr == C_NULL && error("HiGHS: Highs_create failed")
+    ccall((:Highs_setBoolOptionValue, libhighs), Cint, (Ptr{Cvoid}, Cstring, Cint), ptr, "output_flag", 0)
+    ccall((:Highs_setBoolOptionValue, libhighs), Cint, (Ptr{Cvoid}, Cstring, Cint), ptr, "log_to_console", 0)
+    start, idx, val = Cint[0], Cint[], Float64[]
+    for j in 1:k+1
+        for i in 1:m
+            a = j <= k ? Float64(M[i, j]) : 1.0
+            if a != 0
+                push!(idx, i - 1); push!(val, a)
+            end
+        end
+        push!(start, length(idx))
+    end
+    cost = vcat(zeros(k), 1.0)
+    r = ccall((:Highs_passLp, libhighs), Cint,
+              (Ptr{Cvoid}, Cint, Cint, Cint, Cint, Cint, Cdouble, Ptr{Cdouble}, Ptr{Cdouble}, Ptr{Cdouble}, Ptr{Cdouble}, Ptr{Cdouble},
+               Ptr{Cint}, Ptr{Cint}, Ptr{Cdouble}),
+              ptr, k + 1, m, length(val), 1, 1, 0.0, cost, zeros(k + 1), fill(Inf, k + 1), fill(-Inf, m), fill(Inf, m), start, idx, val)
+    r < 0 && (ccall((:Highs_destroy, libhighs), Cvoid, (Ptr{Cvoid},), ptr); error("HiGHS: Highs_passLp failed"))
+    lp = CubLP(ptr, m, k, zeros(m), fill(Inf, m), 0)
+    finalizer(l -> ccall((:Highs_destroy, libhighs), Cvoid, (Ptr{Cvoid},), l.ptr), lp)
+end
+
+"`s*` of the LP at `p` (its first `m` entries), or `nothing` when HiGHS does not return an optimal status."
+function _cublp_gap(lp::CubLP, p::AbstractVector)
+    @inbounds for i in 1:lp.m
+        lp.lo[i] = -p[i]
+    end
+    ccall((:Highs_changeRowsBoundsByRange, libhighs), Cint, (Ptr{Cvoid}, Cint, Cint, Ptr{Cdouble}, Ptr{Cdouble}), lp.ptr, 0, lp.m - 1, lp.lo, lp.hi)
+    ccall((:Highs_run, libhighs), Cint, (Ptr{Cvoid},), lp.ptr)
+    lp.calls += 1
+    Int(ccall((:Highs_getModelStatus, libhighs), Cint, (Ptr{Cvoid},), lp.ptr)) == 7 || return nothing
+    Float64(ccall((:Highs_getObjectiveValue, libhighs), Cdouble, (Ptr{Cvoid},), lp.ptr))
+end
+
+# ------------------------------------------------------------------------------------------------ failure payload
+"""
+    CubatureFailure
+
+The payload of the `ObcError` raised for a cubature point without a usable solution (`e.detail`): `period`, `n_failed` (a lower bound when `lower_bound`: the search stopped
+at the first failure or when the tolerance was exceeded), `n_relevant`, `n_points`, `counts` = `(a, b, c)` of the examined points, `n_active_set_failed` (points on which the
+scalar iteration failed over the whole period: an upper bound on the failures when all were examined; `nothing` for regions modes), `tolerance`, `advice`.
+Classes: (a) proved no solution at this horizon; (b) the check-ahead rows cannot be met with wedges inside the horizon (a longer horizon is advised: this does NOT prove that one
+solves); (c) undecided at the MILP time limit.
+"""
+struct CubatureFailure
+    status::Symbol
+    period::Int
+    n_failed::Int
+    lower_bound::Bool
+    n_relevant::Int
+    n_points::Int
+    counts::NamedTuple{(:a, :b, :c),NTuple{3,Int}}
+    n_active_set_failed::Union{Nothing,Int}
+    tolerance::Float64
+    milp_time_limit::Float64
+    advice::Vector{String}
+end
+
+function _cub_failure(period, counts, nfail, unexamined, nrel, npts, n_as, tol, limit)
+    a, b, c = counts.a, counts.b, counts.c
+    advice = String[]
+    b > 0 && push!(advice, "(b): the check-ahead rows cannot be met with wedges inside the news horizon; try a longer obc_horizon (not proved to help)")
+    a > 0 && push!(advice, "(a): proved no solution at this horizon (M is not an S-matrix or the path is outside its reach): the model has reachable states without an " *
+                           "equilibrium; set obc_cubature_failure_tolerance > 0 only to drop such points knowingly")
+    c > 0 && push!(advice, "(c): undecided at the MILP time limit ($(limit) s); raise obc_cubature_milp_time_limit")
+    status = a > 0 ? :no_solution : b > 0 ? :horizon_too_short : :not_converged
+    lb = unexamined > 0
+    msg = "cubature: $(lb ? "at least " : "")$nfail of $nrel relevant perturbed points ($npts in total) have no usable solution: a=$a b=$b c=$c" *
+          (tol > 0 ? "; tolerance $tol" : "") * ". " * join(advice, " ")
+    ObcError(status, period, msg, CubatureFailure(status, period, nfail, lb, nrel, npts, counts, n_as, tol, limit, advice))
 end

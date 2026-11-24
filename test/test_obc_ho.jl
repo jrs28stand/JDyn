@@ -419,3 +419,93 @@ end
     @test_throws ArgumentError JDyn.simulate(ob, S; obc_cubature_milp_time_limit=-1, kw...)
     @test_throws ArgumentError JDyn.simulate(ob, S; obc_method=:news, obc_order=2, obc_cubature=false, obc_cubature_failure_tolerance=0.1, obc_horizon=32, check_ahead_periods=32)
 end
+
+@testset "failed cubature points: classes, raise by default, tolerance mode" begin
+    mb = load_copy(joinpath(HO_DIR, "occ_borrcon.mod"))
+    obb = JDyn.Occbin(mb)
+    Sb = randn(MersenneTwister(4), 30, 2) .* sqrt.(diag(Matrix(mb.Sigma_e)))' .* 0.1
+    mk(; kw...) = JDyn.obc_ho(obb; order=2, horizon=32, check_ahead=32, cubature=true, qmc_level=5, m_diagnostic=false, kw...)
+    # default: the first failed point raises, with the payload; class (b): the check-ahead rows
+    err = try; JDyn.obc_ho_simulate(mk(), Sb); nothing; catch e; e; end
+    @test err isa JDyn.ObcError && err.detail isa JDyn.CubatureFailure
+    d = err.detail
+    @test d.n_points == 63 && 0 < d.n_relevant <= 63 && d.lower_bound && d.n_failed >= 1 && d.period >= 1 && err.period == d.period
+    @test d.counts.a + d.counts.b + d.counts.c == d.n_failed && d.counts.b >= 1 && d.status == :horizon_too_short == err.status
+    @test d.n_active_set_failed >= d.n_failed && any(occursin("longer obc_horizon", a) for a in d.advice) && d.tolerance == 0.0
+    # the advice works here: with a longer horizon no point fails
+    @test size(JDyn.obc_ho_simulate(JDyn.obc_ho(obb; order=2, horizon=96, check_ahead=96, cubature=true, qmc_level=5, m_diagnostic=false), Sb[1:10, :]).wedges) == (10, 96)
+    # a model with points that have no solution at all (the SW-type stand-in): class (a)
+    sw = sw_cp_model()
+    Ssw = randn(MersenneTwister(4), 30, size(sw.Sigma_e, 1)) .* sqrt.(diag(Matrix(sw.Sigma_e)))' .* 0.25
+    h2 = JDyn.obc_ho(JDyn.Occbin(sw); order=2, horizon=32, check_ahead=32, cubature=true, qmc_level=5, m_diagnostic=false)
+    e2 = try; JDyn.obc_ho_simulate(h2, Ssw); nothing; catch e; e; end
+    @test e2 isa JDyn.ObcError && e2.detail.counts.a >= 1 && e2.status == :no_solution && e2.detail.period >= 1
+    # tolerance mode: failed points leave the sample; one warning per simulation; weights 1/(points - failed)
+    h = mk(cubature_failure_tolerance=0.9)
+    h.cub.qlog = Vector{Float64}[]
+    r = @test_logs (:warn, r"were dropped") JDyn.obc_ho_simulate(h, Sb[1:12, :])
+    @test sum(r.dropped) > 0 && sum(r.dropped) == r.stats[:dropped_points] && all(r.dropped .<= 0.9 .* r.relevant) && maximum(r.relevant) <= 63
+    qs = h.cub.qlog; h.cub.qlog = nothing
+    checked = 0
+    for q in qs
+        h.cub.tolerance = 0.9
+        y = with_logger(NullLogger()) do; JDyn.ho_news_shocks(h, q, 0); end
+        nf = h.cub.dropped_last
+        nf > 0 || continue
+        # by hand: the relevant points, each classified or solved
+        N, T = h.N, h.T
+        _ho_prepare = JDyn._ho_prepare_points!(h)
+        acc = zeros(T); nfh = 0
+        for j in 1:size(h.xs, 2)
+            p = q .+ h.R * h.xs[:, j]
+            minimum(p) < -1e-8 * max(1.0, maximum(abs, p)) || continue
+            yy, s, _ = JDyn.solve_active_set(view(h.Mf, 1:T, :), p[1:T]; tol=h.tol)
+            if s == :ok && minimum(p[T+1:N] .+ h.Mb * yy) >= -h.tol
+                acc .+= yy
+            else
+                y2, cls = JDyn._cub_classify(h, p)
+                cls === nothing ? (acc .+= y2) : (nfh += 1)
+            end
+        end
+        @test nfh == nf
+        @test maximum(abs, y .- acc ./ (63 - nf)) < 1e-11
+        checked += 1
+    end
+    @test checked >= 2
+    # more failures than the tolerance: raise, with the exceeded count as a lower bound
+    e4 = try; with_logger(NullLogger()) do; JDyn.obc_ho_simulate(mk(cubature_failure_tolerance=0.02), Sb); end; nothing; catch e; e; end
+    @test e4 isa JDyn.ObcError && e4.detail.tolerance == 0.02 && e4.detail.n_failed > 0.02 * e4.detail.n_relevant
+    @test_throws ArgumentError mk(cubature_failure_tolerance=1.0)
+    @test_throws ArgumentError mk(cubature_milp_time_limit=-1)
+    # the MILP step: with LPs that cannot prove anything the integer programme decides; a time limit gives the undecided class (c)
+    hc = mk()
+    h.cub.qlog = nothing
+    hc.cub.qlog = Vector{Float64}[]
+    try; with_logger(NullLogger()) do; JDyn.obc_ho_simulate(hc, Sb[1:3, :]); end; catch; end
+    q = hc.cub.qlog[1]; hc.cub.qlog = nothing
+    JDyn._ho_prepare_points!(hc)
+    T, N = hc.T, hc.N
+    pbad = nothing
+    for j in 1:size(hc.xs, 2)
+        p = q .+ hc.R * hc.xs[:, j]
+        minimum(p) < -1e-8 * max(1.0, maximum(abs, p)) || continue
+        yy, s, _ = JDyn.solve_active_set(view(hc.Mf, 1:T, :), p[1:T]; tol=hc.tol)
+        (s == :ok && minimum(p[T+1:N] .+ hc.Mb * yy) >= -hc.tol) || (pbad = p; break)
+    end
+    @test pbad !== nothing
+    @test JDyn._cub_classify(hc, pbad) == (nothing, :b)                      # the LP proof
+    hc.cub.lp_head = JDyn.CubLP(fill(1e3, T, T)); hc.cub.lp_full = JDyn.CubLP(fill(1e3, N, T))     # LPs that are always feasible: reach the MILP
+    hc.cub.milp_time_limit = 1e-6
+    t = @elapsed cls = JDyn._cub_classify(hc, pbad)
+    @test cls == (nothing, :c) && t < 0.5
+    hc.cub.milp_time_limit = 30.0
+    @test JDyn._cub_classify(hc, pbad) == (nothing, :b)                      # the MILP on the head rows alone finds a solution: (b)
+    hc.cub.milp_time_limit = 1e-6
+    @test_throws JDyn.ObcError JDyn.ho_news_shocks(hc, q, 1)
+    e5 = try; JDyn.ho_news_shocks(hc, q, 1); nothing; catch e; e; end
+    @test e5.detail.counts.c >= 1 && e5.status == :not_converged
+    # one region: the unit is the region's mean point; a failed region counts all its points (a failing mean point is rare, so call the unit solver on a failing point)
+    h1 = mk(regions=1)
+    e6 = try; JDyn._cub_one!(h1, pbad, 10, 63, 3); nothing; catch e; e; end
+    @test e6 isa JDyn.ObcError && e6.detail.n_failed == 10 == e6.detail.n_relevant && !e6.detail.lower_bound && e6.detail.n_active_set_failed === nothing && e6.detail.period == 3
+end

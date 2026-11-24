@@ -341,6 +341,8 @@ Exact skipping: `p_h >= q_h - |R_h| |xi|` (Cauchy-Schwarz), so when `q >= 0` eve
 (points are sorted by norm: a prefix); and a path with `min p >= -1e-8` is irrelevant whatever its maximum.
 """
 function ho_news_shocks(h::ObcHO, q::AbstractVector, period::Int=0)
+    h.cub.dropped_last = 0; h.cub.relevant_last = 0
+    h.cub.qlog === nothing || push!(h.cub.qlog, Vector{Float64}(q))
     (!h.cubature || size(h.R, 2) == 0) && return _ho_lcp(h, q, period)
     _ho_prepare_points!(h)
     N, npts = h.N, size(h.xs, 2)
@@ -386,16 +388,54 @@ function ho_news_shocks(h::ObcHO, q::AbstractVector, period::Int=0)
     end
     h.stats[:cubature_points] += npts
     h.stats[:relevant_points] += nrel
+    h.cub.relevant_last = nrel
     nrel == 0 && return zeros(h.T)
     h.regions == 0 && return _cub_all!(h, q, P, rel, npts, period)
     qm = q .+ h.R * (xsum ./ nrel)
-    (nrel / npts) .* _ho_lcp(h, qm, period)
+    _cub_one!(h, qm, nrel, npts, period)
+end
+
+"""
+    _cub_classify(h, p) -> (y | nothing, class | nothing)
+
+A point on which the scalar iteration failed (pydyn's `_classify`): the linear programme on the head rows (`s* > 1e-6 max(1, |p|)`: class `a`, proved no solution), then on all rows
+(class `b`: the check-ahead rows cannot be met), then the MILP (`solve_news` at horizons T/4, T/2, T in turn; one time budget `cubature_milp_time_limit` shared by all MILP calls of the
+point): a solution returns `y`; time out: `c` (undecided); no solution at any horizon: `b` if the MILP on the head rows alone (horizon T) finds one, else `a`. A point whose LP is feasible by less
+than the tolerance goes to the MILP, not to `a`. Both LPs are native HiGHS models built once from `M` (`CubLP`), only the right-hand side changes per point.
+"""
+function _cub_classify(h::ObcHO, p::AbstractVector)
+    st, T, N = h.cub, size(h.sys.M, 1), h.N
+    st.lp_head === nothing && (st.lp_head = CubLP(h.sys.M); st.lp_full = CubLP(h.Mf))
+    h.stats[:classified] = get(h.stats, :classified, 0) + 1
+    tol = 1e-6 * max(1.0, maximum(abs, p))
+    s_head = _cublp_gap(st.lp_head, p)
+    s_head !== nothing && s_head > tol && return nothing, :a
+    s_full = s_head === nothing ? nothing : _cublp_gap(st.lp_full, p)
+    s_full !== nothing && s_full > tol && return nothing, :b
+    t_end = time() + st.milp_time_limit
+    ph = Vector{Float64}(view(p, 1:T)); pb = Vector{Float64}(view(p, T+1:N))
+    undecided = false
+    for hz in sort(unique([max(1, T ÷ 4), max(1, T ÷ 2), T]))
+        left = t_end - time()
+        left <= 0 && (undecided = true; break)
+        h.stats[:milp] = get(h.stats, :milp, 0) + 1
+        y, stt, _ = solve_news(h.sys.M, ph; tol=h.tol, Mb=h.Mb, qb=pb, horizons=[hz], time_limit=left, diagnose=false)
+        stt == :ok && return y, nothing
+        stt == :not_converged && (undecided = true)
+    end
+    undecided && return nothing, :c
+    left = max(t_end - time(), 1e-3)
+    y2, s2, _ = solve_news(h.sys.M, ph; tol=h.tol, horizons=[T], time_limit=left, diagnose=false)
+    nothing, s2 == :ok ? :b : :a
 end
 
 """
     _cub_all!(h, q, P, rel, npts, period) -> Vector
 
 The full average: the solution at `q + P[:, j]` for every relevant column `j` in `rel`, summed and divided by the number of points `npts`.
+A point on which the scalar iteration (or the rows beyond the horizon) fails is classified (`_cub_classify`) and solved by the MILP if it can be. With `F` points without a usable
+solution the result is `(sum over the solved relevant points) / (npts - F)`; `F > tolerance * (relevant points)` raises an `ObcError` with a `CubatureFailure` payload (`e.detail`),
+by default (tolerance 0) at the first failed point. Non-relevant points are legitimate zeros; failed points are the only ones about which nothing is known, so they leave the sample.
 """
 function _cub_all!(h::ObcHO, q::AbstractVector, P::AbstractMatrix, rel::Vector{Int}, npts::Int, period::Int)
     st, T, N = h.cub, size(h.sys.M, 1), h.N
@@ -405,6 +445,7 @@ function _cub_all!(h::ObcHO, q::AbstractVector, P::AbstractMatrix, rel::Vector{I
     scale = st.Mscale
     tol = h.tol
     nb = N - T
+    bad = Int[]                                              # columns (of P) on which the scalar iteration failed
     if st.mode == :group
         m = length(rel)
         size(st.Pm, 2) < m && (st.Pm = zeros(N, m); st.Y = zeros(T, m); resize!(st.ok, m))
@@ -431,42 +472,99 @@ function _cub_all!(h::ObcHO, q::AbstractVector, P::AbstractMatrix, rel::Vector{I
                     acc[a] += Y[a, jj]
                 end
             else
-                acc .+= _ho_lcp(h, Vector(Pm[:, jj]), period)
+                push!(bad, rel[jj])
             end
         end
-        return acc ./ npts
-    end
-    for j in rel
-        @inbounds for i in 1:N
-            pt[i] = q[i] + P[i, j]
-        end
-        h.stats[:lcp] += 1
-        ok = false
-        if st.mode == :scalar
-            y, s, _ = solve_active_set(Mh, view(pt, 1:T); tol=tol)
-            if s == :ok
-                ok = true
-                copyto!(st.y, y)
+    else
+        for j in rel
+            @inbounds for i in 1:N
+                pt[i] = q[i] + P[i, j]
             end
-        else
-            ok = _cub_point!(st, Mh, scale, pt, T, tol)
-        end
-        if ok && nb > 0                                      # the check-ahead rows beyond the horizon
-            @inbounds for i in 1:nb
-                v = pt[T+i]
-                for a in 1:T
-                    v += h.Mb[i, a] * st.y[a]
+            h.stats[:lcp] += 1
+            ok = false
+            if st.mode == :scalar
+                y, s, _ = solve_active_set(Mh, view(pt, 1:T); tol=tol)
+                s == :ok && (ok = true; copyto!(st.y, y))
+            else
+                ok = _cub_point!(st, Mh, scale, pt, T, tol)
+            end
+            if ok && nb > 0                                  # the check-ahead rows beyond the horizon
+                @inbounds for i in 1:nb
+                    v = pt[T+i]
+                    for a in 1:T
+                        v += h.Mb[i, a] * st.y[a]
+                    end
+                    v < -tol && (ok = false; break)
                 end
-                v < -tol && (ok = false; break)
+            end
+            if ok
+                @inbounds for a in 1:T
+                    acc[a] += st.y[a]
+                end
+            else
+                push!(bad, j)
             end
         end
-        if ok
-            acc .+= st.y
-        else
-            acc .+= _ho_lcp(h, copy(pt), period)               # MILP route (raises on failure; src/obc_cubature.jl, failure handling)
+    end
+    nfail = 0
+    if !isempty(bad)
+        h.stats[:batch_fail] = get(h.stats, :batch_fail, 0) + length(bad)
+        nrel = length(rel)
+        limit = st.tolerance * nrel
+        counts = (a=0, b=0, c=0)
+        for (i, j) in enumerate(bad)
+            p = [q[r] + P[r, j] for r in 1:N]
+            y, cls = _cub_classify(h, p)
+            if cls === nothing
+                acc .+= y
+            else
+                counts = merge(counts, NamedTuple{(cls,)}((getfield(counts, cls) + 1,)))
+                nfail += 1
+                if nfail > limit
+                    h.stats[:no_solution] = get(h.stats, :no_solution, 0) + 1
+                    for c in (:a, :b, :c)
+                        h.stats[Symbol("failed_", c)] = get(h.stats, Symbol("failed_", c), 0) + getfield(counts, c)
+                    end
+                    throw(_cub_failure(period, counts, nfail, length(bad) - i, nrel, npts, length(bad), st.tolerance, st.milp_time_limit))
+                end
+            end
+        end
+        for c in (:a, :b, :c)
+            h.stats[Symbol("failed_", c)] = get(h.stats, Symbol("failed_", c), 0) + getfield(counts, c)
+        end
+        if nfail > 0
+            h.stats[:dropped_points] = get(h.stats, :dropped_points, 0) + nfail
+            h.stats[:dropped_periods] = get(h.stats, :dropped_periods, 0) + 1
         end
     end
-    acc ./ npts
+    st.dropped_last = nfail
+    acc ./ (npts - nfail)
+end
+
+"""
+    _cub_one!(h, qm, nrel, npts, period) -> Vector
+
+One region: the solution at the mean point `qm` of the relevant paths, times `nrel / npts`. The unit is the region (all its `nrel` points count as failed if it fails); a failure is
+classified and raised like the points of the full average (the tolerance is below 1, so a failed region always raises).
+"""
+function _cub_one!(h::ObcHO, qm::AbstractVector, nrel::Int, npts::Int, period::Int)
+    st, T, N = h.cub, size(h.sys.M, 1), h.N
+    h.stats[:lcp] += 1
+    qmax = max(1.0, maximum(abs, qm))
+    all(>=(-1e-8 * qmax), qm) && return zeros(T)
+    y, s, _ = solve_active_set(view(h.Mf, 1:T, :), view(qm, 1:T); tol=h.tol)
+    if s == :ok && N > T && minimum(view(qm, T+1:N) .+ h.Mb * y) < -h.tol
+        s = :not_converged
+    end
+    if s != :ok
+        y, cls = _cub_classify(h, qm)
+        if cls !== nothing
+            counts = merge((a=0, b=0, c=0), NamedTuple{(cls,)}((1,)))
+            h.stats[:no_solution] = get(h.stats, :no_solution, 0) + 1
+            throw(_cub_failure(period, counts, nrel, 0, nrel, npts, nothing, st.tolerance, st.milp_time_limit))
+        end
+    end
+    (nrel / npts) .* y
 end
 
 # ----------------------------------------------------------------------------------------------------- simulation
@@ -502,6 +600,7 @@ function obc_ho_simulate(h::ObcHO, shocks::AbstractMatrix; init=nothing)
     init === nothing || (y1 .= init)
     prev = y1 .+ y2 .+ o
     with_b, without_b, wedges = Matrix{Float64}(undef, S, n), Matrix{Float64}(undef, S, n), zeros(S, T)
+    dropped, relevant = zeros(Int, S), zeros(Int, S)
     y1n, y2n, opre = zeros(n), zeros(n), zeros(n)
     x1, x2, x1n = zeros(ns), zeros(ns), zeros(ns)
     kxx, kuu, kxu = zeros(ns^2), zeros(nx^2), zeros(ns * nx)
@@ -549,8 +648,13 @@ function obc_ho_simulate(h::ObcHO, shocks::AbstractMatrix; init=nothing)
             prev[i] = b + o[i]
         end
         wedges[t, :] = w
+        dropped[t], relevant[t] = h.cub.dropped_last, h.cub.relevant_last
     end
-    (with_bound=with_b, without_bound=without_b, wedges=wedges, stats=copy(h.stats))
+    if any(>(0), dropped)
+        @warn "obc_cubature_failure_tolerance = $(h.cub.tolerance): $(sum(dropped)) of $(sum(relevant)) relevant perturbed points ($(round(100 * sum(dropped) / sum(relevant); digits=1))%) were dropped in " *
+              "$(count(>(0), dropped)) of $S periods; the remaining points are reweighted by 1/(points - dropped)"
+    end
+    (with_bound=with_b, without_bound=without_b, wedges=wedges, dropped=dropped, relevant=relevant, stats=copy(h.stats))
 end
 
 # ------------------------------------------------------------------------------------ entry point (simulate with obc_order / obc_cubature)
@@ -606,7 +710,7 @@ function _simulate_obc_ho(ob::Occbin, shocks_in::AbstractMatrix; horizon::Intege
     T = h.T
     status = fill(:ok, n_periods)
     infos = Any[(solver=:ho, cubature=cubature, order=order, lcp=h.stats[:lcp], cubature_points=h.stats[:cubature_points],
-                 relevant_points=h.stats[:relevant_points]) for _ in 1:n_periods]
+                 relevant_points=h.stats[:relevant_points], relevant=sim.relevant[t], dropped=sim.dropped[t]) for t in 1:n_periods]
     history = Vector{Vector{Tuple{Vector{Int},Vector{Int}}}}()
     diag = _Diag[]
     for t in 1:n_periods

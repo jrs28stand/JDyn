@@ -271,10 +271,12 @@ extra rows) before `:ok` is returned. Failure: `:horizon_too_short` when the pro
 `:no_solution` otherwise (`info.proof` is true when even the linear relaxation `y >= 0, q + M y >= 0` is infeasible),
 `:not_converged` when HiGHS ran out of time (`time_limit`) without an answer.
 
+`diagnose = false` skips the analysis of a failure (rows beyond the horizon, linear-programme proof): the status is then `:no_solution` or `:not_converged`.
+
 `info`: `solver = :milp`, `horizon` (periods allowed), `polished`, `max_violation`, `milp_calls`, `message`.
 """
 function solve_news(M::AbstractMatrix, q::AbstractVector; tol::Real=1e-10, Mb=nothing, qb=nothing, horizons=nothing, n_c::Integer=1,
-                    omega::Real=1000.0, time_limit=nothing, kw...)
+                    omega::Real=1000.0, time_limit=nothing, diagnose::Bool=true, kw...)
     n = length(q)
     size(M) == (n, n) || throw(DimensionMismatch("M is $(size(M)) but q has $n entries"))
     nb = Mb === nothing ? 0 : size(Mb, 1)
@@ -333,6 +335,7 @@ function solve_news(M::AbstractMatrix, q::AbstractVector; tol::Real=1e-10, Mb=no
             return (y, :ok, (solver=:milp, horizon=Tss, polished=polished, max_violation=viol, milp_calls=calls, proof=false, message=""))
     end
     timed_out && return mk(:not_converged, zeros(n), "HiGHS reached the time limit ($(time_limit) s) without a verified solution"; milp_calls=calls)
+    diagnose || return mk(:no_solution, zeros(n), "no solution found by the integer programme"; milp_calls=calls)      # callers that classify failures themselves
     if nb > 0                                         # is it the rows beyond the horizon that fail?
         y2, st2, _ = solve_news(M, q; tol=tol, horizons=hz, n_c=n_c, omega=omega, time_limit=time_limit)
         st2 == :ok && return mk(:horizon_too_short, y2, "a constraint still binds after the news horizon: increase obc_horizon"; milp_calls=calls)

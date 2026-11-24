@@ -37,7 +37,9 @@ struct ObcError <: Exception
     status::Symbol
     period::Int
     msg::String
+    detail::Any                 # nothing, or a `CubatureFailure` (src/obc_cubature.jl): the payload of a failed cubature point
 end
+ObcError(status::Symbol, period::Integer, msg::AbstractString) = ObcError(status, Int(period), String(msg), nothing)
 Base.showerror(io::IO, e::ObcError) = print(io, "ObcError (", e.status, ", period ", e.period, "): ", e.msg)
 
 const OBC_METHODS = (:occbin, :minnorm, :news)
