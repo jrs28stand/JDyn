@@ -297,3 +297,76 @@ Shock scale s = 1.0, horizon 40, 1000 shock periods. Binding in the current peri
 
 ### P2 per parameter set (H = 40)
 
+| backend | steady_state | first_order | Occbin() total | regime matrices (all 2^k) | obc_constraints (post-processor) | obc_system (M, q; fresh Occbin, includes its constraints) | ready: occbin | ready: minnorm |
+|---|---|---|---|---|---|---|---|---|
+| before | 0.27 / 0.34 | 0.50 / 0.56 | 2.76 / 4.00 | 0.06 / 0.07 | - | - | 2.83 / 4.07 | - |
+| after | 0.27 / 0.29 | 0.51 / 0.56 | 2.78 / 3.18 | 0.06 / 0.06 | - | - | 2.84 / 3.23 | - |
+
+Milliseconds, min / median over 5 interleaved repeats, a different perturbed parameter vector in each (two parameters: crpi, cry); horizon 40.
+
+### P3 likelihood-like loop (50 iterations: perturb two parameters, redo P2, simulate 200 periods; H = 40)
+
+| method | backend | seconds per loop min / median | ms per iteration (min) | failed iterations |
+|---|---|---|---|---|
+| occbin | before | 3.801 / 3.880 | 76.0 | 0 |
+| occbin | after | 3.684 / 3.840 | 73.7 | 0 |
+
+Correctness over the 50 parameter sets: ; OccBin before vs after identical (paths bit for bit, regime histories): true.
+
+### P4 scaling with the horizon (s = 1.0)
+
+#### H = 20
+
+Failing draws replaced at this horizon: 50 of 1000.
+| method | backend | µs/period min / median | µs/period, nothing binds | µs/period, something binds | KiB allocated/period | max path diff vs OccBin (after) | regimes equal |
+|---|---|---|---|---|---|---|---|
+| occbin | before | 149.4 / 160.6 | 45.6 / 49.5 | 503.3 / 538.3 | 213.6 | 0.0e+00 | true |
+| occbin | after | 152.5 / 160.3 | 46.8 / 49.9 | 514.0 / 534.9 | 213.6 | 0.0e+00 | true |
+
+Shock scale s = 1.0, horizon 20, 1000 shock periods. Binding in the current period in 20.8% of periods; something binds somewhere on the path in 22.0% (the split above is by that second indicator). Timings: 5 repeats, interleaved, min / median.
+
+| backend | steady_state | first_order | Occbin() total | regime matrices (all 2^k) | obc_constraints (post-processor) | obc_system (M, q; fresh Occbin, includes its constraints) | ready: occbin | ready: minnorm |
+|---|---|---|---|---|---|---|---|---|
+| before | 0.27 / 0.31 | 0.50 / 0.57 | 2.70 / 2.89 | 0.05 / 0.06 | - | - | 2.76 / 2.95 | - |
+| after | 0.30 / 0.32 | 0.53 / 0.64 | 2.88 / 4.13 | 0.06 / 0.07 | - | - | 2.94 / 4.20 | - |
+
+Milliseconds, min / median over 5 interleaved repeats, a different perturbed parameter vector in each (two parameters: crpi, cry); horizon 20.
+
+#### H = 40
+
+Failing draws replaced at this horizon: 50 of 1000.
+| method | backend | µs/period min / median | µs/period, nothing binds | µs/period, something binds | KiB allocated/period | max path diff vs OccBin (after) | regimes equal |
+|---|---|---|---|---|---|---|---|
+| occbin | before | 190.6 / 207.3 | 76.8 / 84.8 | 585.5 / 628.5 | 252.8 | 0.0e+00 | true |
+| occbin | after | 191.8 / 204.5 | 75.5 / 81.3 | 589.8 / 628.7 | 252.8 | 0.0e+00 | true |
+
+Shock scale s = 1.0, horizon 40, 1000 shock periods. Binding in the current period in 20.8% of periods; something binds somewhere on the path in 22.0% (the split above is by that second indicator). Timings: 5 repeats, interleaved, min / median.
+
+| backend | steady_state | first_order | Occbin() total | regime matrices (all 2^k) | obc_constraints (post-processor) | obc_system (M, q; fresh Occbin, includes its constraints) | ready: occbin | ready: minnorm |
+|---|---|---|---|---|---|---|---|---|
+| before | 0.26 / 0.33 | 0.53 / 0.56 | 2.76 / 3.57 | 0.06 / 0.06 | - | - | 2.83 / 3.64 | - |
+| after | 0.27 / 0.30 | 0.54 / 0.56 | 2.80 / 2.97 | 0.05 / 0.06 | - | - | 2.86 / 3.03 | - |
+
+Milliseconds, min / median over 5 interleaved repeats, a different perturbed parameter vector in each (two parameters: crpi, cry); horizon 40.
+
+#### H = 80
+
+Failing draws replaced at this horizon: 50 of 1000.
+| method | backend | µs/period min / median | µs/period, nothing binds | µs/period, something binds | KiB allocated/period | max path diff vs OccBin (after) | regimes equal |
+|---|---|---|---|---|---|---|---|
+| occbin | before | 270.5 / 281.6 | 139.3 / 145.4 | 723.5 / 751.7 | 331.3 | 0.0e+00 | true |
+| occbin | after | 280.9 / 302.9 | 143.3 / 156.2 | 756.0 / 808.8 | 331.3 | 0.0e+00 | true |
+
+Shock scale s = 1.0, horizon 80, 1000 shock periods. Binding in the current period in 20.8% of periods; something binds somewhere on the path in 22.0% (the split above is by that second indicator). Timings: 5 repeats, interleaved, min / median.
+
+| backend | steady_state | first_order | Occbin() total | regime matrices (all 2^k) | obc_constraints (post-processor) | obc_system (M, q; fresh Occbin, includes its constraints) | ready: occbin | ready: minnorm |
+|---|---|---|---|---|---|---|---|---|
+| before | 0.25 / 0.33 | 0.54 / 0.56 | 2.78 / 2.97 | 0.06 / 0.07 | - | - | 2.83 / 3.04 | - |
+| after | 0.29 / 0.34 | 0.51 / 0.53 | 2.76 / 3.13 | 0.05 / 0.07 | - | - | 2.81 / 3.22 | - |
+
+Milliseconds, min / median over 5 interleaved repeats, a different perturbed parameter vector in each (two parameters: crpi, cry); horizon 80.
+
+### R1 reliability (2000 states from a long unconstrained simulation, one period solved from each, H = 40)
+
+No method has a time limit; OccBin's own limit is maxit = 30 iterations (counted as its error 311). Different regime sequences are counted among the states both methods solve.
+
