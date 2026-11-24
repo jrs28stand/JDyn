@@ -242,7 +242,7 @@ end
     @test length(oo.PosteriorIRF.dsge.Mean["y_ea"]) == 8
     @test haskey(oo, "PosteriorTheoreticalMoments")
     @test haskey(oo.PosteriorTheoreticalMoments.dsge, "ConditionalVarianceDecomposition")
-    @test size(oo.SmoothedVariables.y, 1) == 120
+    @test size(oo.SmoothedVariables.Mean["y"], 1) == 120
     @test haskey(oo, "Filtered_Variables_2_step_ahead")
     @test length(oo.MeanForecast.Mean["y"]) == 4 && length(oo.PointForecast.Var["y"]) == 4
     @test all(oo.PointForecast.Var["y"] .>= oo.MeanForecast.Var["y"] .- 1e-12)
@@ -257,8 +257,8 @@ end
     @test_throws JDyn.EstimationError JDyn.number_of_subdraws(mc; sub_draws=kept * nb * nb + 1)
     x, lp = JDyn.posterior_subsample(mc, 60; rng=Random.Xoshiro(3))
     @test size(x) == (60, n) && length(lp) == 60
-    first = floor(Int, mc.drop * T)
-    pool = reshape(permutedims(mc.draws[:, first+1:end, :], (2, 1, 3)), :, n)
+    f0 = floor(Int, mc.drop * T)
+    pool = reshape(permutedims(mc.draws[:, f0+1:end, :], (2, 1, 3)), :, n)
     @test all(i -> any(j -> pool[j, :] == x[i, :], 1:size(pool, 1)), 1:60)
     # reproducible from the stream
     x2, _ = JDyn.posterior_subsample(mc, 60; rng=Random.Xoshiro(3))
