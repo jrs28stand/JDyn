@@ -30,7 +30,16 @@ Validation reference: Dynare 7.2 under Octave 8.4. Nothing pushed or merged.
 - Still open: the blk1 differs, the rng differs (73, 75, 81-84), struct-valued `rng` (76-80), a test file for the sets, an `addpath` helper check, and date helpers.
 - Still to validate: `random=:octave` draws against an Octave run.
 
-## Items 3-6: not started
+## Item 2 update
+Final case-set status: matlab_extra 318/58/0, pydyn_extra 258/16/0, pydyn_nd 484/4/0, pydyn_blk1 218/23/3 (the 3 are the `d.freq()` member-call error and 2 harness cases now handled), pydyn_rng (`random=:octave`) 99/5/0 (match/refused/differ). Test: `test/test_gaps_interp.jl` (cases in `test/ref_gaps/cases`). `addpath` (function and command syntax) works. pydyn has no datenum/weekday helpers, so none were added. Not yet done: `random=:octave` simulation draws against an Octave run.
+
+## Item 5 done: ramsey_constraints
+`solve_algo=10` in the file now turns on lmmcp on the perfect foresight problem. The Ramsey steady state falls back to algorithm 4 when solve_algo is 10 or 11. Octave 8.4 test1.mod: max difference 3.6e-10. Test: `test/test_gaps_ramsey_constraints.jl`.
+
+## Item 6 partly done
+`data(file, first_obs, last_obs, nobs)` with dates (start date from INIT__/csv or `set_time`). Octave fs2000_data (nobs=40): alp 0.3570877 vs JDyn 0.3571060 (optimizer-level). `data(series=...)` is refused. trend_var and the log version: steady state, ghs2 and parameters equal the store; IRFs and means at order 2 are simulation-based in Dynare, so they cannot match exactly. Test: `test/test_gaps_data.jl`.
+
+## Items 3-4: not started
 3. Backward models (simul_backward_model, irf, forecast, set_historical_values, simul_static_model, model_inversion). Spec: pydyn `backward.py` and `results_bwd.py`.
 4. Extended path order 0 and stochastic EP.
 5. `ramsey_constraints` (still refused in `src/model.jl`).
