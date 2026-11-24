@@ -196,10 +196,21 @@ end
 
 _parse_constraint(s::AbstractString) = Meta.parse(replace(String(s), "~=" => "!=", "~" => "!"))
 
+# Compiled constraint conditions are a function of the model's text only: memoise them per model (Core.eval costs milliseconds,
+# and a new Occbin is built for every parameter set of an estimation).
+const _CONDITION_CACHE = WeakKeyDict{Model,Dict{Expr,Function}}()
+function _compiled_condition(m::Model, mod, body)
+    cache = get!(() -> Dict{Expr,Function}(), _CONDITION_CACHE, m)
+    ex = _translate(body, m)
+    get!(cache, ex) do
+        Base.invokelatest(Core.eval, mod, :((z, p, ss) -> $ex))
+    end
+end
+
 function _compile_constraints!(ob::Occbin)
     m = ob.model
     mod = m.fns.mod
-    mk(body) = Base.invokelatest(Core.eval, mod, :((z, p, ss) -> $(_translate(body, m))))
+    mk(body) = _compiled_condition(m, mod, body)
     function absdiff(ex)
         (ex isa Expr && ex.head == :call && length(ex.args) == 3 && ex.args[1] in _COMPARISONS) ||
             throw(ModelError("occbin bind/relax condition must be a comparison: $ex"))
@@ -266,11 +277,21 @@ end
 "Dynare's `Tmax = max(regime_start(end)) - 1`: last period of the last binding regime."
 _tmax(ind::AbstractMatrix) = maximum(_last_regime_start(view(ind, :, j)) for j in 1:size(ind, 2)) - 1
 
+# The rule of period i depends only on the regimes of periods i..Tmax (backward recursion from the reference rule), so rules are
+# memoised per Occbin object in a trie keyed from the end: node (parent, regime code) -> rule. Every rule is computed by exactly
+# the arithmetic of the uncached recursion, so results are bit for bit the same.
+struct _RuleTrie
+    child::Dict{Tuple{Int,Int},Int}
+    rules::Vector{Tuple{Matrix{Float64},Matrix{Float64},Vector{Float64}}}
+end
+const _RULE_TRIES = WeakKeyDict{Occbin,_RuleTrie}()
+
 "Time-varying rules `y_t = T_t y_{t-1} + R_t u_t + C_t` for t = 1..Tmax (vector of tuples)."
 function _rules(ob::Occbin, ind::AbstractMatrix, Tmax::Int)
     n, k = ob.n, ob.k
+    trie = get!(() -> _RuleTrie(Dict{Tuple{Int,Int},Int}(), Tuple{Matrix{Float64},Matrix{Float64},Vector{Float64}}[]), _RULE_TRIES, ob)
     out = Vector{Tuple{Matrix{Float64},Matrix{Float64},Vector{Float64}}}(undef, Tmax)
-    Tn, Cn = ob.P, zeros(n)
+    node = 0
     for i in Tmax:-1:1
         reg = ntuple(j -> Bool(ind[i, j]), k)
         if i == Tmax
@@ -278,10 +299,22 @@ function _rules(ob::Occbin, ind::AbstractMatrix, Tmax::Int)
             # (10, 11, else 01) and as "binding" for one constraint
             reg = k == 1 ? (true,) : (any(reg) ? reg : (false, true))
         end
-        C, B, A, J, D = regime_matrices(ob, reg)
-        sol = -((B + A * Tn) \ hcat(C, J, A * Cn + D))
-        Tn = sol[:, 1:n]; R = sol[:, n+1:n+ob.n_exo]; Cn = sol[:, end]
-        out[i] = (Tn, R, Cn)
+        code = 0
+        for (j, r) in enumerate(reg)
+            r && (code |= 1 << (j - 1))
+        end
+        key = (node, code)
+        id = get(trie.child, key, 0)
+        if id == 0
+            Tn, Cn = node == 0 ? (ob.P, zeros(n)) : (trie.rules[node][1], trie.rules[node][3])
+            C, B, A, J, D = regime_matrices(ob, reg)
+            sol = -((B + A * Tn) \ hcat(C, J, A * Cn + D))
+            push!(trie.rules, (sol[:, 1:n], sol[:, n+1:n+ob.n_exo], sol[:, end]))
+            id = length(trie.rules)
+            trie.child[key] = id
+        end
+        out[i] = trie.rules[id]
+        node = id
     end
     out
 end

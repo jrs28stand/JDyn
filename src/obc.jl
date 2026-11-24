@@ -112,7 +112,7 @@ end
 # value and gradient (over the current-period variables, levels) of an expression of the constraints block at the
 # steady state: complex step (exact to rounding for analytic expressions), central differences otherwise
 function _linearise_condition(m::Model, ex, ys, p)
-    f = Base.invokelatest(Core.eval, m.fns.mod, :((z, p, ss) -> $(_translate(ex, m))))
+    f = _compiled_condition(m, m.fns.mod, ex)
     val = Float64(real(Base.invokelatest(f, ys, p, ys)))
     n = length(ys)
     grad = zeros(n)
@@ -358,6 +358,15 @@ struct ObcSystem
     M::Matrix{Float64}
     q0::Vector{Float64}
     Qx::Matrix{Float64}
+    Wn::Matrix{Float64}         # n x N: response of the next state (period 1) to the wedges
+    ext::Dict{Int,Any}          # lazily built ObcExt per number of checked periods Lg
+end
+"Gaps beyond the horizon (periods T+1..Lg) as affine functions of the wedges and of [state; shocks]: g_b = q0b + Qxb [init; u] + Mb y."
+struct ObcExt
+    Lg::Int
+    Mb::Matrix{Float64}
+    Qxb::Matrix{Float64}
+    q0b::Vector{Float64}
 end
 Base.show(io::IO, s::ObcSystem) = print(io, "ObcSystem(T = ", s.T, ", ", length(s.cons), " constraint(s), M ", size(s.M, 1), "x", size(s.M, 2), ")")
 
@@ -394,40 +403,97 @@ function obc_system(ob::Occbin; horizon::Integer=40, method::Symbol=:minnorm)
         G[j, :] = cons[j].s_g .* cons[j].alt_resid[1].g
         g0[j] = cons[j].s_g * cons[j].alt_resid[1].c
     end
-    sys0 = ObcSystem(T, cons, eq, n, nx, ob.P, ob.Q, F, V, G, g0, zeros(0, 0), zeros(0), zeros(0, 0))
-    N = nc * T
-    M = zeros(N, N)
-    y = zeros(N)
-    z0, u0 = zeros(n), zeros(nx)
-    for col in 1:N
-        y[col] = 1.0
-        _, g = obc_gaps(sys0, y, z0, u0, T; homogeneous=true)
-        M[:, col] = vec(permutedims(g))                     # (nc, T) -> stacked by constraint, then period
-        y[col] = 0.0
-    end
-    Qx = zeros(N, n + nx)
-    for k in 1:n+nx
-        zk, uk = zeros(n), zeros(nx)
-        k <= n ? (zk[k] = 1.0) : (uk[k-n] = 1.0)
-        _, g = obc_gaps(sys0, y, zk, uk, T; homogeneous=true)
-        Qx[:, k] = vec(permutedims(g))
-    end
     q0 = repeat(g0; inner=T)
-    sys = ObcSystem(T, cons, eq, n, nx, ob.P, ob.Q, F, V, G, g0, M, q0, Qx)
+    N = nc * T
+    Wn = zeros(n, N)
+    # C_r = F^r V (n x nc): the anticipation of a wedge r periods ahead; the next state responds to wedge s with C_{s-1}
+    Cr = Matrix{Float64}(V)
+    for r in 0:T-1
+        for j in 1:nc
+            Wn[:, (j-1)*T+r+1] = view(Cr, :, j)
+        end
+        r < T - 1 && (Cr = F * Cr)
+    end
+    sys0 = ObcSystem(T, cons, eq, n, nx, ob.P, ob.Q, F, V, G, g0, zeros(0, 0), q0, zeros(0, 0), Wn, Dict{Int,Any}())
+    M, Qx = _obc_blocks(sys0, 1, T)
+    sys = ObcSystem(T, cons, eq, n, nx, ob.P, ob.Q, F, V, G, g0, M, q0, Qx, Wn, sys0.ext)
     cache[horizon] = sys
+end
+
+"""
+Rows for periods `t0..t1` of the gaps' response to the wedges (`M`-like, stacked by constraint then period) and to `[state; shocks]`.
+With `a_m = Gf P^(m+1) + Gc P^m + Gl P^(m-1)` (terms with a negative power dropped) and `c_r = F^r V`, the response of gap `i` in
+period `t` to a unit wedge `j` in period `s` is `sum_{r=0}^{s-1} a_(t-s+r) c_r`: one matrix product for all the terms and a running sum
+along each diagonal, O(T^2 n) instead of one path per column.
+"""
+function _obc_blocks(sys::ObcSystem, t0::Int, t1::Int)
+    n, nx, T, nc = sys.n, sys.n_exo, sys.T, length(sys.cons)
+    P, G = sys.P, sys.G
+    Gl, Gc, Gf, Gu = view(G, :, 1:n), view(G, :, n+1:2n), view(G, :, 2n+1:3n), view(G, :, 3n+1:3n+nx)
+    mmax = t1                                   # a_m for m = -1 .. mmax
+    # a[m+2] is nc x n
+    A = Vector{Matrix{Float64}}(undef, mmax + 2)
+    Pm = Matrix{Float64}(I, n, n)               # P^m
+    Pm1 = Matrix{Float64}(I, n, n)              # P^(m-1) (valid for m >= 1)
+    GfP = Gf * P                                # Gf P^(m+1)
+    A[1] = Matrix(Gf)                           # m = -1
+    GfPm = Matrix(GfP)
+    GcPm = Matrix(Gc)
+    GlPm1 = zeros(nc, n)
+    for m in 0:mmax
+        A[m+2] = GfPm .+ GcPm .+ (m >= 1 ? GlPm1 : 0.0)
+        # advance to m + 1
+        GfPm = GfPm * P
+        GcPm = GcPm * P
+        GlPm1 = m == 0 ? Matrix(Gl) : GlPm1 * P
+    end
+    # c_r = F^r V
+    Cs = Vector{Matrix{Float64}}(undef, T)
+    Cs[1] = Matrix(sys.V)
+    for r in 2:T
+        Cs[r] = sys.F * Cs[r-1]
+    end
+    Cmat = reduce(hcat, Cs)                     # n x (nc*T), column (r, j) at (r-1)*nc + j
+    Lr = t1 - t0 + 1
+    M = zeros(nc * Lr, nc * T)
+    # all the terms a_m c_r in one product: E[(m+1)*nc + i, r*nc + j]
+    Amat = reduce(vcat, A)                      # (mmax+2)*nc x n, row block m+2
+    E = Amat * Cmat
+    # response of gap i in period t to wedge j in period s: sum_{r=0}^{s-1} a_(t-s+r) c_r, accumulated along the diagonal d = t - s
+    for i in 1:nc, j in 1:nc, d in (t0-T):(t1-1)
+        acc = 0.0
+        for s in 1:min(T, t1 - d)
+            m = d + s - 1                       # term r = s - 1
+            m >= -1 && (acc += E[(m+1)*nc+i, (s-1)*nc+j])
+            t = s + d
+            t >= t0 && (M[(i-1)*Lr+(t-t0+1), (j-1)*T+s] = acc)
+        end
+    end
+    Qx = zeros(nc * Lr, n + nx)
+    for i in 1:nc, t in t0:t1
+        row = (i-1)*Lr + (t - t0 + 1)
+        Qx[row, 1:n] = view(A[t+2], i, :)                        # init: a_t
+        Qx[row, n+1:n+nx] = view(A[t+1], i, :)' * sys.Q          # shocks: a_(t-1) Q
+        t == 1 && (Qx[row, n+1:n+nx] .+= view(Gu, i, :))
+    end
+    M, Qx
+end
+
+"The gaps beyond the horizon, periods T+1..Lg (cached per Lg)."
+function _obc_ext(sys::ObcSystem, Lg::Int)
+    get!(sys.ext, Lg) do
+        nc, T = length(sys.cons), sys.T
+        Lg > T || return ObcExt(Lg, zeros(0, nc * T), zeros(0, sys.n + sys.n_exo), zeros(0))
+        Mb, Qb = _obc_blocks(sys, T + 1, Lg)
+        ObcExt(Lg, Mb, Qb, repeat(sys.g0; inner=Lg - T))
+    end::ObcExt
 end
 
 "`q` of the problem for state `init` (deviations) and shocks `u`."
 obc_q(sys::ObcSystem, init::AbstractVector, u::AbstractVector) = sys.q0 .+ sys.Qx * vcat(init, u)
 
-"""
-    obc_gaps(sys, y, init, u, L; homogeneous=false) -> (Z, g)
-
-The path `Z` (`L x n`, deviations, periods 0..L-1) under wedges `y` (stacked, `T` per constraint, zero afterwards)
-from state `init` with shocks `u` in period 0, and the gaps `g` (`nc x L`) along it. `homogeneous` drops the gaps'
-constant (the response to `y`, `init` and `u` alone).
-"""
-function obc_gaps(sys::ObcSystem, y::AbstractVector, init::AbstractVector, u::AbstractVector, L::Integer; homogeneous::Bool=false)
+# the path (max(L, T) + 1 rows, deviations, periods 0..) under wedges y from state init with shocks u in period 0
+function _obc_path_full(sys::ObcSystem, y::AbstractVector, init::AbstractVector, u::AbstractVector, L::Integer)
     n, T, nc = sys.n, sys.T, length(sys.cons)
     Lp = max(L, T) + 1
     h = zeros(n, T)
@@ -448,6 +514,19 @@ function obc_gaps(sys::ObcSystem, y::AbstractVector, init::AbstractVector, u::Ab
         t == 1 && (x .+= sys.Q * u)
         Z[t, :] = x
     end
+    Z
+end
+
+"""
+    obc_gaps(sys, y, init, u, L; homogeneous=false) -> (Z, g)
+
+The path `Z` (`L x n`, deviations, periods 0..L-1) under wedges `y` (stacked, `T` per constraint, zero afterwards)
+from state `init` with shocks `u` in period 0, and the gaps `g` (`nc x L`) along it. `homogeneous` drops the gaps'
+constant (the response to `y`, `init` and `u` alone).
+"""
+function obc_gaps(sys::ObcSystem, y::AbstractVector, init::AbstractVector, u::AbstractVector, L::Integer; homogeneous::Bool=false)
+    n, T, nc = sys.n, sys.T, length(sys.cons)
+    Z = _obc_path_full(sys, y, init, u, L)
     g = zeros(nc, L)
     Gl, Gc, Gf, Gu = (view(sys.G, :, 1:n), view(sys.G, :, n+1:2n), view(sys.G, :, 2n+1:3n), view(sys.G, :, 3n+1:3n+sys.n_exo))
     for t in 1:L
@@ -523,12 +602,17 @@ function _simulate_obc(ob::Occbin, shocks_in::AbstractMatrix; method::Symbol, ho
     status = Symbol[]
     infos = Any[]
     y = zeros(nc * T)
-    Z = zeros(Lg, n)
+    Z = zeros(0, n)                               # the full path of the last solve: built only when needed (shift periods, the tail)
+    Zvalid = false
+    init_last, u_last = zeros(n), zeros(n_exo)
+    ext = _obc_ext(sys, Lg)
+    xin = zeros(n + n_exo)
     for sp in 1:S
         _obc_tick()
         u = shocks[sp, :]
         if sp == 1 || any(!iszero, u)
-            q = obc_q(sys, y0, u)
+            xin[1:n] = y0; xin[n+1:end] = u
+            q = sys.q0 .+ sys.Qx * xin
             st = :not_converged
             if fast_path                           # contract section 5: the shared active-set fast path first
                 y, st, info = solve_active_set(sys.M, q; tol=tol)
@@ -536,20 +620,25 @@ function _simulate_obc(ob::Occbin, shocks_in::AbstractMatrix; method::Symbol, ho
             st == :ok || ((y, st, info) = solve(sys.M, q; tol=tol, solver_options...))
             st in OBC_STATUSES || error("OBC solver returned an unknown status $st")
             piv = hasproperty(info, :pivots) ? info.pivots : 0
-            Z, g = obc_gaps(sys, y, y0, u, Lg)
             if st == :ok
-                okT, vT = obc_verify(sys.M, q, y; tol=tol)          # the solver's claim, checked here once more
-                okT || (st = :not_converged)
-                beyond = T < Lg ? minimum(view(g, :, T+1:Lg)) : 0.0
-                if beyond < -tol
-                    st = :horizon_too_short
-                    info = merge(info, (message="the gap is negative beyond the horizon (min $(beyond) in periods $(T)..$(Lg-1)); increase obc_horizon",))
+                hasproperty(info, :max_violation) || (okT = obc_verify(sys.M, q, y; tol=tol)[1]; okT || (st = :not_converged))
+                if st == :ok && size(ext.Mb, 1) > 0
+                    gb = ext.q0b .+ ext.Qxb * xin .+ ext.Mb * y        # gaps beyond the horizon, periods T+1..Lg
+                    beyond = minimum(gb)
+                    if beyond < -tol
+                        st = :horizon_too_short
+                        info = merge(info, (message="the gap is negative beyond the horizon (min $(beyond) in periods $(T)..$(Lg-1)); increase obc_horizon",))
+                    end
                 end
             end
+            init_last, u_last, Zvalid = copy(y0), copy(u), false
+            ynext = ob.P * y0 .+ ob.Q * u .+ sys.Wn * y     # only the next state; the full path is built when it is needed
         else                                       # no new shock: the path solved last continues (OccBin's shift)
+            Zvalid || (Z = _obc_path_full(sys, y, init_last, u_last, Lg)[1:Lg, :]; Zvalid = true)
             y = vcat([vcat(y[(j-1)*T+2:j*T], 0.0) for j in 1:nc]...)
             Z = vcat(Z[2:end, :], (ob.P * Z[end, :])')
             st, info, piv = :ok, (pivots=0, message="no shock: previous path continued"), 0
+            ynext = Z[1, :]
         end
         if st != :ok && raise
             msg = hasproperty(info, :message) ? info.message : ""
@@ -567,11 +656,14 @@ function _simulate_obc(ob::Occbin, shocks_in::AbstractMatrix; method::Symbol, ho
         Tmax = _tmax(bi)
         push!(ss_out, Tmax >= 1 ? _rules(ob, bi, Tmax)[1] : (ob.P, ob.Q, zeros(n)))
         push!(diag, (max_err=[hasproperty(info, :max_violation) ? Float64(info.max_violation) : 0.0], violates=[false], n_viol=[0.0], selected=nothing))
-        y0 = Z[1, :]
+        y0 = ynext
         piecewise[sp, :] = y0
     end
     _obc_tick()
-    n_periods > S && (piecewise[S+1:end, :] = Z[2:n_periods-S+1, :])
+    if n_periods > S
+        Zvalid || (Z = _obc_path_full(sys, y, init_last, u_last, Lg)[1:Lg, :])
+        piecewise[S+1:end, :] = Z[2:n_periods-S+1, :]
+    end
     linear = Matrix{Float64}(undef, n_periods, n)
     yl = init_orig
     for t in 1:n_periods

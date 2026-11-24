@@ -339,7 +339,11 @@ function p2(backs, loaded::Dict{Symbol,Loaded}, H; reps=REPS)
             t4 = tick()
             nc = L.spec.news ? J.obc_constraints(ob) : nothing; t5 = tick()
             ob2 = J.Occbin(m; params=p); t6 = tick()
-            L.spec.news && J.obc_system(ob2; horizon=H); t7 = tick()
+            if L.spec.news
+                sys = J.obc_system(ob2; horizon=H)
+                isdefined(J, :_obc_ext) && J._obc_ext(sys, 2H)      # the gaps beyond the horizon (check_ahead = H): part of the set-up in the new code
+            end
+            t7 = tick()
             if wr
                 push!(parts[(b, :steady_state)], (t1 - t0) / 1e6); push!(parts[(b, :first_order)], (t2 - t1) / 1e6)
                 push!(parts[(b, :Occbin)], (t3 - t2) / 1e6); push!(parts[(b, :regimes)], (t4 - t3) / 1e6)
