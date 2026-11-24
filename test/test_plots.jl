@@ -267,8 +267,8 @@ end
 end
 
 # ------------------------------------------------------------------ PNG / PDF / EPS through the Plots.jl extension
-# Plots is a weak dependency: it is loaded from a separate environment (JDYN_PLOTS_ENV, default /tmp/plotsenv, any environment with Plots installed) stacked on LOAD_PATH.
-const _PLOTS_ENV = get(ENV, "JDYN_PLOTS_ENV", "/tmp/plotsenv")
+# Plots is a weak dependency: it is loaded from a separate environment (JDYN_PLOTS_ENV, default test/plotsenv; instantiate it once with `julia --project=test/plotsenv -e "using Pkg; Pkg.instantiate()"`, any environment with Plots installed) stacked on LOAD_PATH.
+const _PLOTS_ENV = get(ENV, "JDYN_PLOTS_ENV", joinpath(@__DIR__, "plotsenv"))
 @testset "Plots.jl extension: png, pdf, eps (all curve kinds, grids, legends)" begin
     if !isfile(joinpath(_PLOTS_ENV, "Project.toml"))
         @test_skip false

@@ -52,7 +52,7 @@ end
 end
 
 @testset "graph_format pdf / eps through Plots.jl from the commands" begin
-    penv = get(ENV, "JDYN_PLOTS_ENV", "/tmp/plotsenv")
+    penv = get(ENV, "JDYN_PLOTS_ENV", joinpath(@__DIR__, "plotsenv"))
     if !isfile(joinpath(penv, "Project.toml"))
         @test_skip false
     else
