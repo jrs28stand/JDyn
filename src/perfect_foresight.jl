@@ -1440,7 +1440,11 @@ function _pf_steady_at(s::PFSim, guess, x)
     try
         tol = o["simul.steady_tolf"] === nothing ? DYNARE_TOLF : _pf_float(o["simul.steady_tolf"])
         ys, _ = _pf_steady(s.m, s.params, guess, x; tol=tol, check=!o["simul.endval_steady_nocheck"])
-        return all(isfinite, ys) ? ys : nothing
+        all(isfinite, ys) || return nothing
+        # a "solution" many orders of magnitude away from the guess is a runaway of the search (the equations are satisfied to the
+        # absolute tolerance by diverging values, e.g. 1/C -> 0): treat it as a failure, so the caller retries from the initial steady state
+        maximum(abs, ys) > 1e8 * max(1.0, maximum(abs, filter(isfinite, guess); init=0.0)) && return nothing
+        return ys
     catch e
         e isa InterruptException && rethrow()
         return nothing
