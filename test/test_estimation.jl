@@ -405,7 +405,10 @@ end
     @test mc.acceptance_rate ≈ vec(sum(mc.accepted; dims=2)) ./ replic
 end
 
-@testset "sampler uses the prior support, not the bounds of estimated_params" begin
+@testset "kernel uses the prior support; the sampler's proposals respect the estimated_params bounds" begin
+    # (Dynare: posterior_sampler_core.m checks candidates against the estimated_params bounds, the kernel evaluates with the prior's
+    # support; the Octave run smp_case8 of test_samplers.jl shows draws never above rhoa's bound. Earlier JDyn accepted proposals
+    # outside the bounds, which this test then asserted.)
     # est_nk: phipi has a normal prior and bounds [1.01, 4] in the block
     est = Estimation(estload("est_nk"))
     i = findfirst(==("phipi"), est.names)
@@ -420,8 +423,8 @@ end
     V = Diagonal((0.01 .* abs.(est.x0)) .^ 2)
     eps = reshape((cholesky(Matrix(V)).L \ (below - x)), 1, 1, :)
     mc = JDyn.sample_posterior(est; replic=1, nblocks=1, mode=x, cov=Matrix(V), jscale=1.0, x0=reshape(x, 1, :), innovations=eps, uniforms=fill(1e-300, 1, 1))
-    @test mc.accepted[1, 1] && abs(mc.draws[1, 1, i] - 1.007) < 1e-12
-    @test mc.log_posterior[1, 1] ≈ lp atol = 1e-9
+    @test !mc.accepted[1, 1] && mc.draws[1, 1, i] == x[i]                  # 1.007 is below the bound 1.01: rejected, the chain stays
+    @test mc.log_posterior[1, 1] ≈ JDyn.log_posterior(est, x; bounds=(plb, pub)) atol = 1e-9
 end
 
 @testset "sampler smoke test and posterior statistics" begin
@@ -511,7 +514,8 @@ end
     @test_throws JDyn.EstimationError Estimation(estload("est_nk"); lik_init=4)
     @test_throws JDyn.EstimationError Estimation(m; first_obs=[1, 2])                  # recursive estimation
     @test Estimation(m; smoother=true).unsupported == String[]
-    @test_throws JDyn.EstimationError Estimation(m; mode_file="abc")
+    @test Estimation(m; mode_file="abc").unsupported == String[]                      # honoured since the samplers (read when the mode is needed)
+    @test_throws JDyn.EstimationError JDyn.mode_from_file(Estimation(m), "abc")       # a missing file is an error
     @test Estimation(m; smoother=false).unsupported == String[]
     # nodisplay and nograph are cosmetic
     @test Estimation(m; nodisplay=true, nograph=true).unsupported == String[]
