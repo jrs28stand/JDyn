@@ -20,7 +20,10 @@ Persistent state mirrors Dynare's: `lyapunov_symm` method 3 keeps its fixed-poin
 engine keeps `Hold` (m.cache[:dp_Hold]); a second call in the same session therefore differs from a cold call by the iteration
 tolerance (about 1e-8), as it does in Dynare. The `dynare()` path solves discretionary models from a cold start.
 
-Acceptance (test/acceptance, the 49 optimal-policy, discretionary, osr and ramsey-named entries): REFUSED 39 -> 10, OK 0 -> 17,
-OK_WARN 8 -> 17; see the run summary in the final report. Known remaining: osr_obj_corr_algo_9 (CMA-ES is random: its two runs agree
+Acceptance (test/acceptance, whole manifest, before -> after): REFUSED 376 -> 345, OK 117 -> 138, OK_WARN 283 -> 292, CHECK_FAILED 12 -> 13
+(osr_obj_corr_algo_9, was REFUSED), the 38 optimal-policy, discretionary, osr and ramsey-named entries that changed: 36 improve (31 were
+REFUSED), osr_example goes OK_WARN -> REFUSED (it asks for analytic_derivation, which was silently skipped before). Full test suite: all
+files pass (test_examples.jl's expectation for nk_ramsey_osr changed from "load failed" to "not supported": the example loads and runs now).
+Known remaining: osr_obj_corr_algo_9 (CMA-ES is random: its two runs agree
 to 2e-4, Dynare's own check asks for 1e-4), `osr(analytic_derivation)`, opt_algo 1 and 3, ramsey_constraints, the k_order Ramsey
 test (preprocessor JSON), estimation of Ramsey/discretionary models (outside this work).
