@@ -79,7 +79,7 @@ Classification: `refused` = JDyn's clear refusals (`ModelError`, `Unsupported`, 
 or an error whose text says not supported/implemented). A `MatlabError` (the file's own `error()`/`assert()` or an interpreter error,
 also when wrapped in a `ModelError`) is `error`. `timeout`: no result after `--timeout` seconds (900, Octave's); the worker is
 killed (process group, preprocessor included) and restarted. A worker that dies is recorded as `error` ("worker process died") and
-restarted; workers are also restarted after 60 files or above 3.5 GB resident size.
+restarted; workers are also restarted after 60 files or above 2.5 GB resident size.
 
 ## Random numbers
 

@@ -37,7 +37,7 @@ from accept_octave import cost, prepare_scratch, relid  # noqa: E402
 SRC = Path(os.environ.get("DYNARE_SRC", "/root/ref/dynare-7.2"))
 WORKER = HERE / "accept_worker.jl"
 SKIP_FOLDERS = ("heterogeneity/",)          # heterogeneous-agent models: out of both correctness and timing until a port supports them
-MAX_RSS_GB = 3.5                              # restart a worker above this resident size (Julia keeps memory)
+MAX_RSS_GB = 2.5                              # restart a worker above this resident size (Julia keeps memory)
 MAX_TESTS_PER_WORKER = 60
 _stop = threading.Event()
 _workers: list = []
