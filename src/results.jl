@@ -720,6 +720,14 @@ function _run_in_place!(ws, st, nss, shocks, rng)
     m = ws.model
     kind = st["statementName"]
     _apply_matlab_options!(ws)
+    if kind == "set_time"
+        ws.state[:set_time] = string(get(st, "period", ""))
+        return
+    elseif kind == "estimation_data"                     # the `data` command: read by the next estimation (results_estimation.jl)
+        o = get_or(st, "options", nothing)
+        ws.state[:dataset] = o isa AbstractDict ? Dict{String,Any}(String(k) => v for (k, v) in o) : Dict{String,Any}()
+        return
+    end
     _apply_options!(ws.options_, st)
     if kind == "endval"                                # (learnt_in=p > 1 is news for the expectation-errors commands, M_.learnt_endval: oo_ is not touched)
         haskey(st, "learnt_in") && _pf_period(st["learnt_in"], "learnt_in") != 1 || _endval_learnt_in!(ws, st)

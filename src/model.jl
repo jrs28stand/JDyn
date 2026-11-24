@@ -735,6 +735,8 @@ function _exec_statement!(m::Model, st)
     elseif kind == "initval_file" && any(k -> haskey(get_or(st, "options", Dict{String,Any}()), k), ("series", "first_obs", "last_obs", "first_simulation_period", "last_simulation_period"))
         throw(ModelError("initval_file with the options series, first_obs, last_obs, first_simulation_period or last_simulation_period is not implemented " *
                          "(only datafile/filename and nobs are)"))
+    elseif kind in ("estimation_data", "set_time")
+        # the `data` command and set_time are read by dynare() where they stand (src/results.jl, src/results_estimation.jl)
     elseif kind in ("native", "verbatim", "perfect_foresight_controlled_paths", "initval_file") || kind in _LATEX_KINDS || kind in _SEMI_KINDS
         # native lines are run by the MATLAB session
     else

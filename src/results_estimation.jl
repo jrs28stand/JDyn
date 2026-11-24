@@ -37,6 +37,80 @@ function _fsa(ws)
     sort(unique(Int.(round.(vec(Float64.(v))))))
 end
 
+# ---- the `data` command (Dynare's options_.dataset): file, first_obs, last_obs, nobs, dates
+const _DATE_EXPR = r"^\s*(?:dates\(\s*'([^']+)'\s*\)|'?([0-9]+[A-Za-z][0-9]*|-?[0-9]+-[0-9]+-[0-9]+)'?)\s*$"
+
+function _date_of(v)
+    v isa AbstractVector && length(v) == 1 && (v = v[1])
+    v isa AbstractString || return nothing
+    mt = match(_DATE_EXPR, v)
+    mt === nothing && return nothing
+    string2date(String(something(mt.captures[1], mt.captures[2])))
+end
+
+"First date (freq, time) of a data file: INIT__ of a .m or .mat file, the first column of a .csv file; else `nothing`."
+function _data_start_date(path::AbstractString)
+    isfile(path) || return nothing
+    ext = lowercase(splitext(path)[2])
+    if ext == ".m"
+        mt = match(r"^\s*INIT__\s*=\s*['\"]([^'\"]+)['\"]"m, read(path, String))
+        return mt === nothing ? nothing : string2date(String(mt.captures[1]))
+    elseif ext == ".mat"
+        t = try MAT.matread(path) catch; return nothing end
+        v = get(t, "INIT__", nothing)
+        return v isa AbstractString ? string2date(v) : nothing
+    elseif ext == ".csv"
+        rows = filter(!isempty, strip.(readlines(path)))
+        length(rows) > 1 || return nothing
+        return string2date(String(strip(split(rows[2], ',')[1])))
+    end
+    nothing
+end
+
+"Rewrite the datafile, first_obs and nobs keywords as the `data` command says (observation numbers counted from 1)."
+function _apply_dataset!(ws, kw)
+    d = get(ws.state, :dataset, nothing)
+    d === nothing && return
+    for k in ("series", "xls_sheet", "xls_range")
+        haskey(d, k) && throw(EstimationError("data($k=...) is not supported: use a .m, .mat or .csv file"))
+    end
+    haskey(d, "file") || throw(EstimationError("the data command needs a file"))
+    haskey(kw, :datafile) && String(kw[:datafile]) != String(d["file"]) &&
+        throw(EstimationError("You cannot simultaneously use the data command and the datafile option"))
+    file = String(d["file"])
+    kw[:datafile] = file
+    p = isabspath(file) ? file : joinpath(ws.model.mod_dir, file)
+    if !(lowercase(splitext(p)[2]) in (".m", ".mat", ".csv"))
+        found = [p * e for e in (".m", ".mat", ".csv") if isfile(p * e)]
+        length(found) == 1 && (p = found[1])
+    end
+    start = _data_start_date(p)
+    if start === nothing && haskey(ws.state, :set_time)
+        start = _date_of(String(ws.state[:set_time]))        # set_time: the first date of the sample
+    end
+    function index(v, what)
+        dt = _date_of(v)
+        if dt === nothing
+            v isa AbstractVector && length(v) == 1 && (v = v[1])
+            return Int(round(Float64(v isa AbstractString ? parse(Float64, v) : v)))
+        end
+        start === nothing && throw(EstimationError("data($what=...): the data file has no dates (INIT__ in a .m/.mat file, a first column of dates in a .csv file) and set_time was not used"))
+        dt[1] == start[1] || throw(EstimationError("data($what=...): the date is at another frequency than the data"))
+        Int(round(dt[2] - start[2])) + 1
+    end
+    first = haskey(d, "first_obs") ? index(d["first_obs"], "first_obs") : 1
+    first < 1 && throw(EstimationError("makedataset: first_obs cannot be less than the first date in the dataset"))
+    nobs = haskey(d, "nobs") ? index(d["nobs"], "nobs") : nothing
+    if haskey(d, "last_obs")
+        last = index(d["last_obs"], "last_obs")
+        nobs !== nothing && last != first + nobs - 1 && throw(EstimationError("makedataset: Options last_obs, first_obs and nobs are not consistent!"))
+        nobs = last - first + 1
+    end
+    kw[:first_obs] = first
+    nobs === nothing ? delete!(kw, :nobs) : (kw[:nobs] = nobs)
+    nothing
+end
+
 """
 Keywords of `Estimation` from options_: the options estimation reads (the ones it acts on or ignores on purpose, those of
 the file's `estimation` statements, and `user`), in the form `_flat_options` gives them. The smoother options, which this
@@ -58,6 +132,7 @@ function _estimation_kwargs(ws, user)
         _isnan_scalar(v) && continue                          # first_obs = NaN is Dynare's "not set"
         kw[Symbol(k)] = v
     end
+    _apply_dataset!(ws, kw)
     # options_.order is always read (Dynare's estimation resets it to 1; the table of defaults would hide a 2)
     kw[:order] = _opti(ws, "order", 1)
     (occ = _occbin_overrides(ws)) === nothing || (kw[:occbin] = occ)
