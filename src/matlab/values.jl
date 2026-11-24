@@ -644,7 +644,7 @@ function assign_index(v, args, rhs)
     # is double
     a = v === nothing ? (rhs isa Bool || rhs isa AbstractMatrix{Bool} ? zeros(Bool, 0, 0) : zeros(0, 0)) : arr(v)
     r = arr(rhs)
-    deleting = isempty(r) && rhs isa AbstractMatrix
+    deleting = size(r) == (0, 0) && rhs isa AbstractMatrix
     if !deleting
         if eltype(a) == Bool && eltype(r) != Bool
             # the right-hand side is converted to the class of the left one: logical stays logical (NaN is an error)

@@ -950,8 +950,14 @@ function _noop(I, argnodes, sc, nout)
     Any[]
 end
 lazy!(_noop, "disp", "display", "fprintf", "printf", "fdisp", "dprintf", "skipline", "warning", "more", "beep", "fflush",
-      "rng", "format", "clc", "diary", "echo", "commandwindow", "dbstop", "profile",
+      "format", "clc", "diary", "echo", "commandwindow", "dbstop", "profile",
       "close", "hold", "drawnow", "pause", "fclose", "print_info")
+
+# rng: Octave's generator is driven by rng_hook (Octave mode); otherwise it only draws attention and does nothing
+BUILTINS["rng"] = function (I, a, nout)
+    nout > 0 && throw(Unsupported("output of a display or timing function", "display"))
+    Any[]
+end
 
 const PLOT_FUNCS = split("figure plot subplot title legend xlabel ylabel zlabel axis print saveas line bar histogram hist grid box " *
     "plot3 surf mesh colorbar suptitle sgtitle xlim ylim annotation text orient hgsave savefig fill area " *

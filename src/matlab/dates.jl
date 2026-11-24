@@ -315,6 +315,7 @@ dm!("dates", "plus") do I, a, nout
     elseif o isa MDates || p isa MDates
         d, x = o isa MDates ? (o, p) : (p, o)
         (x isa Real || x isa AbstractMatrix{<:Real}) && !(x isa AbstractString) || perr()
+        (x isa Bool || x isa AbstractArray{Bool}) && perr()
         xv = vec(farr(x))
         ok = (length(xv) > 0 && min(size(farr(x))...) == 1 && length(xv) == length(d.time) && all(_isint, xv)) ||
              (length(d.time) == 1 && length(xv) > 0 && min(size(farr(x))...) == 1 && all(_isint, xv)) ||
@@ -585,8 +586,8 @@ function dates_index(o::MDates, args)
     if ix isa AbstractMatrix && isempty(ix)
         return MDates(o.freq, Float64[])
     end
-    ix === COLON && return MDates(o.freq, copy(o.time))
-    ix isa AbstractString && merr("dates::subsref: indices has to be a vector of positive integers less than or equal to $n!")
+    ix === COLON && merr("dates::subsref: indices has to be a vector of positive integers less than or equal to $(n)!")
+    ix isa AbstractString && merr("dates::subsref: indices has to be a vector of positive integers less than or equal to $(n)!")
     a = arr(ix)
     isvec = min(size(a)...) == 1
     if isvec && length(a) == n && eltype(a) == Bool
@@ -598,5 +599,5 @@ function dates_index(o::MDates, args)
     if isvec && length(a) == n
         return MDates(o.freq, o.time[Int.(vec(a))])
     end
-    merr("dates::subsref: indices has to be a vector of positive integers less than or equal to $n!")
+    merr("dates::subsref: indices has to be a vector of positive integers less than or equal to $(n)!")
 end

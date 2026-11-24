@@ -797,6 +797,7 @@ function command(I::Interp, s, sc)
             pop!(I.scope_stack)
         end
     end
+    if name == "rng"; mcall(I, "rng", Any[a for a in args], 0, sc); return nothing; end
     (name == "disp" || (haskey(LAZY, name) && LAZY[name] === _noop)) && return nothing
     haskey(LAZY, name) && return LAZY[name](I, Any[], sc, 0)
     throw(Unsupported("command '$name'", "function"))
