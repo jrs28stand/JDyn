@@ -568,3 +568,27 @@ end
     h1r = JDyn.obc_ho(ob; order=2, horizon=24, check_ahead=24, cubature=true, qmc_level=6, regions=1, m_diagnostic=false)
     @test size(JDyn.obc_ho_simulate(h1r, S[1:30, :]).wedges) == (30, 48)
 end
+
+@testset "mod-file and workspace routes of the full-average and failure options" begin
+    d = mktempdir()
+    txt = read(joinpath(HO_DIR, "nk_occ.mod"), String)
+    lines = "options_.occbin.obc_method = 'news';\noptions_.occbin.obc_order = 2;\noptions_.occbin.obc_horizon = 32;\noptions_.occbin.obc_check_ahead = 32;\n" *
+            "options_.occbin.obc_cubature = true;\noptions_.occbin.obc_qmc_level = 5;\noptions_.occbin.obc_cubature_regions = 'all';\n" *
+            "options_.occbin.obc_m_diagnostic = 'false';\noptions_.occbin.obc_cubature_milp_time_limit = 0.5;\noptions_.occbin.obc_cubature_failure_tolerance = 0.1;\n"
+    write(joinpath(d, "nk_all.mod"), replace(txt, "steady; check;" => "shocks(surprise); var e; periods 1; values 10; end;\nsteady; check;") |> t -> replace(t, "occbin_setup;" => lines * "occbin_setup;"))
+    m = with_logger(NullLogger()) do; JDyn.load(joinpath(d, "nk_all.mod")); end
+    ob = JDyn.Occbin(m)
+    mo = JDyn.mod_options(ob)
+    @test mo.obc_cubature_regions == 0 && mo.obc_m_diagnostic === false && mo.obc_cubature_milp_time_limit == 0.5 && mo.obc_cubature_failure_tolerance == 0.1
+    S = reshape(vec(ho_ref("shocks.mat")["ShockSequence"]), :, 1)[1:30, :]
+    r = JDyn.simulate(ob, S; mo..., periods=30)
+    rk = JDyn.simulate(ob, S; obc_method=:news, obc_order=2, obc_horizon=32, obc_check_ahead=32, obc_cubature=true, obc_qmc_level=5, obc_cubature_regions="all",
+                       obc_m_diagnostic=false, obc_cubature_milp_time_limit=0.5, obc_cubature_failure_tolerance=0.1, periods=30)
+    @test r.piecewise == rk.piecewise
+    @test all(i -> hasproperty(i, :relevant) && hasproperty(i, :dropped), r.news.info) && sum(i.relevant for i in r.news.info) > 0
+    ws = with_logger(NullLogger()) do; dynare(joinpath(d, "nk_all.mod")); end
+    occbin_solver!(ws)
+    @test size(ws.oo_.occbin.news.wedges, 2) == 32
+    @test_throws ArgumentError occbin_solver!(ws; obc_cubature_failure_tolerance=1.5)
+    @test_throws ArgumentError occbin_solver!(ws; obc_cubature_regions=3)
+end
