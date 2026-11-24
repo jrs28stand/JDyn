@@ -283,8 +283,8 @@ function obc_constraints(m::Model; params=nothing, ys=nothing)
         if abs(ref[1].c) > 1e-8 * max(1.0, norm(ref[1].g, Inf))
             push!(reasons, "the reference residual is not zero at the steady state ($(ref[1].c))")
         end
-        approx = max(rb, rr) > OBC_FIT_TOL ? max(rb, rr) : 0.0
         cls = !isempty(others) ? :shared_equation : isempty(reasons) ? :complementarity : :inconsistent
+        approx = cls == :complementarity && max(rb, rr) > OBC_FIT_TOL ? max(rb, rr) : 0.0
         why = !isempty(others) ? "equation '$(_eq_name(m, e))' is also switched by constraint " * join(others, ", ") *
                                  (isempty(reasons) ? " (alone it would pass the entry and exit tests)" : "; also " * join(reasons, "; ")) :
               join(reasons, "; ")
@@ -498,6 +498,7 @@ function _simulate_obc(ob::Occbin, shocks_in::AbstractMatrix; method::Symbol, ho
     solve = OBC_SOLVERS[method]
     sys = obc_system(ob; horizon=horizon, method=method)
     nc, T = length(sys.cons), sys.T
+    solve(sys.M, sys.q0; tol=tol)                 # probe: q0 > 0, so a solver returns at once; a placeholder throws here
     exo_idx = exo_pos === nothing ? collect(1:n_exo) : Int[_exo_index(m, p) for p in (exo_pos isa Union{AbstractString,Integer} ? [exo_pos] : exo_pos)]
     size(shocks_in, 2) == length(exo_idx) ||
         throw(ArgumentError("shocks have $(size(shocks_in, 2)) columns but exo_pos selects $(length(exo_idx)) shocks"))

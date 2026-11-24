@@ -30,6 +30,8 @@ see Dynare's `license.txt`):
 | `src/matlab/session.jl` (option defaults) | `matlab/default_option_values.m` | GPL-3.0-or-later, Dynare Team |
 | `test/*.jl` | the models and checks of Dynare's examples and test suite, read from a Dynare source tree at test time (not copied) | GPL-3.0-or-later, Dynare Team |
 | `test/matlab_extra.mat` | numerical output of GNU Octave 8.4 | not program code |
+| `src/obc_solvers.jl` (`solve_minnorm`) | the formulation of occasionally binding constraints of MacroModelling.jl (https://github.com/thorek1/MacroModelling.jl, `src/occasionally_binding_constraints.jl`, read at commit e8d444a, 2026-11-21): smallest squared anticipated shocks subject to the constraint and its complementarity over a horizon. The formulation is reproduced; no code is copied (MacroModelling.jl solves it with NLopt's SLSQP, JDyn by complementary pivoting) | MIT, Copyright (c) 2022 Thore Kockerols |
+| `test/obc/obc_zlb*.mod`, `obc_zlb.mat`, `r_obc_zlb.m` | pydyn's `reference/` (branch `obc`, same owner); `.mat`: numerical output of Dynare 7.2 under Octave | GPL-3.0-or-later; not program code (.mat) |
 
 All of these were written or modified in 2026. Everything else was written for this project.
 

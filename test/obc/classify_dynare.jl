@@ -67,6 +67,20 @@ function classification_markdown(src)
         end
     end
     println(io, "\nTotals: ", join(["$k: $v" for (k, v) in sort(collect(counts))], ", "), " (", length(files), " files).")
+    println(io, """
+
+Notes
+- Models runnable with `minnorm` (every constraint `complementarity`): `borrcon.mod`, `borrcon_0_std_shocks.mod`,
+  `NKM_0_std_shocks.mod`, `NKM_calib_smoother.mod`. `rbc_occbin.mod` and `dynrbc*.mod` are refused because of `INEG`.
+- NKM (approximate, 0.57%): the alternative equation is `inom = inomlb*exp(mp)` while the condition is `inomnot <= inomlb`;
+  the linearised residuals carry a term in `mp` (times the steady-state gap) that the condition lacks. OccBin switches on
+  the condition, `minnorm` on the linearised residual; they agree in every run made (test/test_obc.jl).
+- "Equations" are those whose linearisation at the steady state changes with `occbin_<name>_bind` (what any first-order
+  method switches). `INEG` is named in three tagged equations of rbc_occbin but changes only the Euler equation at order 1
+  (`inert_equations` lists the others); its condition (on investment) is not a multiple of that equation's residual.
+- `bf.mod`, `bf_ppf.mod`, `swpkfppf.mod`: the rule's lagged/auxiliary rate also switches with the constraint (two equations).
+- `dynrbc_token_xfail.mod` is rejected by the preprocessor by design (an exogenous variable in the constraints block).
+""")
     String(take!(io)), files, counts
 end
 
