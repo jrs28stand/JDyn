@@ -127,7 +127,11 @@ At Dynare's steady state the decision rules agree to 1e-12 (test_korder.jl).
 | forecast | forecast.{Mean, HPDinf, HPDsup, HPDinf_ME, HPDsup_ME} | yes (`forecast!`; after stoch_simul, orders 1-3; after estimation the `EstimationResult.forecast` field, copied into oo_ by `estimation`) |
 | conditional_forecast_paths, conditional_forecast | conditional_forecast.{cond, uncond, controlled_exo_variables, controlled_variables, instruments, graph}; options_cond_fcst_ | yes (`conditional_forecast!`; estimated parameter sets read oo_.posterior_mode / _mean / _median / mle_mode) |
 | plot_conditional_forecast | (figures) | the plotted numbers as a table (`conditional_forecast_table`) |
-| osr, identification, ... | | not supported by JDyn |
+| ramsey_model, ramsey_policy | M_.ramsey_orig_endo_nbr/ramsey_orig_eq_nbr, aux_vars of type 6 (multipliers MULT_i), options_.instruments, options_.ramsey_policy, oo_.dr (steady state with multipliers), oo_.steady_state, then the stoch_simul fields and planner_objective_value | yes (`ramsey_policy!`) |
+| evaluate_planner_objective | planner_objective_value.{unconditional, conditional} (a number, or under Ramsey `conditional.zero_initial_multiplier` and `.steady_initial_multiplier`) | yes (`evaluate_planner_objective!`) |
+| discretionary_policy | oo_.dr (order 1, `order_var` ... `ghu`), the stoch_simul fields, planner_objective_value | yes (`discretionary_policy!`) |
+| osr | M_.params (optimum), M_.osr.{param_names, param_indices}, oo_.osr.{objective_function, optim_params, error_indicator, optimization_info.{exitflag, iterations, funcCount, message}}, then stoch_simul at the optimum | yes (`osr!`) |
+| identification, ... | | not supported by JDyn |
 
 ## estimation and calib_smoother (what Dynare 7.2 writes, and what JDyn writes)
 
