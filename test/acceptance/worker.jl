@@ -102,6 +102,24 @@ end
 
 function run_one(e::Entry, t::String, base::String)
     JD = JDyn
+    if endswith(t, "_data.m") && isfile(joinpath(base, t))
+        # a data-generating script that later tests of the chain read (Dynare's test order runs it first, in the same directory)
+        cd(dirname(joinpath(base, t)))
+        t0 = time()
+        try
+            body, funcs = JDyn.mparse(read(joinpath(base, t), String))
+            I = JDyn.Interp(dirname(joinpath(base, t)), nothing)
+            I.jlfuncs["ispc"] = () -> 0.0           # the xlswrite part of the script is for Windows only
+            sc = JDyn.Scope(; vars=Dict{String,Any}())
+            push!(I.scope_stack, sc)
+            allow0 = JDyn.ALLOW_RANDOM[]; JDyn.ALLOW_RANDOM[] = true
+            try; JDyn.run_script(I, JDyn.Unit(joinpath(base, t), body, funcs), sc); finally; JDyn.ALLOW_RANDOM[] = allow0; end
+            return (cat="OK", secs=time() - t0, warn=0, etype="", msg="", warns="")
+        catch ex
+            ex isa InterruptException && rethrow()
+            return (cat="ERROR", secs=time() - t0, warn=0, etype=string(nameof(typeof(ex))), msg=clean(sprint(showerror, ex)), warns="")
+        end
+    end
     if !endswith(t, ".mod")
         return (cat="SKIPPED", secs=0.0, warn=0, etype="", msg=".m script: not a model run", warns="")
     end

@@ -232,8 +232,9 @@ mutable struct PFWorkspace
     pfwee::Bool
     has_setup::Bool
     cpaths::Vector{Any}                       # M_.perfect_foresight_controlled_paths / shock_paths+exogenize: Dicts exogenize_id, endogenize_id, periods, value, learnt_in
+    iseries::Any                              # oo_.initval_series: nothing or (data = rows x variables, names, p = periods the selection gives)
 end
-PFWorkspace(a, b, c, d, e, f, g, h, i, j, k, l, mm) = PFWorkspace(a, b, c, d, e, f, g, h, i, j, k, l, mm, Any[])
+PFWorkspace(a, b, c, d, e, f, g, h, i, j, k, l, mm) = PFWorkspace(a, b, c, d, e, f, g, h, i, j, k, l, mm, Any[], nothing)
 
 """
 Controlled path of one period (controlled_paths_by_period.m): the endogenous variables held at `values`
@@ -308,6 +309,93 @@ function _pf_steady(m::Model, params, guess, x; tol=nothing, check=nothing)
     finally
         m.initval = saved
     end
+end
+
+"""
+histvalf_initvalf.m for initval_file (numeric first_obs/last_obs/nobs/first_simulation_period/last_simulation_period):
+the data of `datafile` (.m, .mat or .csv, read as dseries does) and the number of simulation periods it gives.
+"""
+function _pf_initval_series(m::Model, caller, opts)
+    for k in ("series", "first_obs", "last_obs", "first_simulation_period", "last_simulation_period")
+        v = get(opts, k, nothing)
+        if k == "series" ? v !== nothing : (v !== nothing && !(v isa Real))
+            throw(ModelError("initval_file option $k = $(repr(v)) is not implemented in JDyn's perfect foresight " *
+                             "(the data file and numeric observation numbers are)"))
+        end
+    end
+    (haskey(opts, "filename") && haskey(opts, "datafile")) && throw(ModelError("INITVAL_FILE: you can't use option DATAFILE and option FILENAME at the same time"))
+    file = get(opts, "datafile", get(opts, "filename", nothing))
+    file === nothing && throw(ModelError("INITVAL_FILE: no data file given"))
+    file = String(file)
+    base, ext = splitext(file)
+    if isempty(ext)
+        cand = [e for e in (".m", ".mat", ".xls", ".xlsx") if isfile(joinpath(m.mod_dir, base * e))]
+        isempty(cand) && throw(ModelError("INITVAL_FILE: Can't find datafile: $base.{m,mat,xls,xlsx}"))
+        file = base * first(cand)
+    end
+    allow0 = ALLOW_RANDOM[]; ALLOW_RANDOM[] = true         # reading a file is allowed: the .mod file asks for it
+    ds = try
+        ds_ctor(Interp(m.mod_dir, nothing), Any[file])
+    catch e
+        e isa Unsupported && throw(ModelError("INITVAL_FILE: " * e.msg))
+        e isa MatlabError && throw(ModelError("INITVAL_FILE: " * e.msg))
+        rethrow()
+    finally
+        ALLOW_RANDOM[] = allow0
+    end
+    miss = [v for v in vcat(orig_endo_names(m), m.exo_names) if !(v in ds.name)]
+    isempty(miss) || throw(ModelError("INITVAL_FILE: some variables are missing: $(join(miss, ", "))"))
+    # dynamic_set_auxiliary_series: the auxiliary variable of an exogenous variable with a lead (AUX = x) equals that variable;
+    # the other kinds (shifted variables, multipliers) are not rebuilt
+    names, data = copy(ds.name), Matrix{Float64}(ds.data)
+    for a in get_or(m.raw, "aux_vars", [])
+        nm = m.endo_names[Int(a["endo_index"])]
+        nm in names && continue
+        src = get(a, "type", -1) == 2 ? strip(string(get(a, "orig_expr", ""))) : ""
+        src in names || throw(ModelError("initval_file with the auxiliary variable $nm (type $(get(a, "type", "?"))) is not implemented (dynamic_set_auxiliary_series)"))
+        push!(names, nm)
+        data = hcat(data, data[:, findfirst(==(src), names)])
+    end
+    ds = (data = data, name = names)
+    ol, oe = Int(get(m.info, "orig_maximum_lag", m.info["maximum_lag"])), Int(get(m.info, "orig_maximum_lead", m.info["maximum_lead"]))
+    nobs0 = size(ds.data, 1)
+    nobs = Int(get(opts, "nobs", 0))
+    first_obs, fobs_given = 1, false
+    if get(opts, "first_obs", nothing) !== nothing
+        f = Int(opts["first_obs"])
+        f < 1 && throw(ModelError("INITVAL_FILE: first_obs must be a positive number"))
+        f > nobs0 && throw(ModelError("INITVAL_FILE: first_obs = $f is larger than the number of observations in the data file ($nobs0)"))
+        first_obs, fobs_given = f, true
+        if get(opts, "first_simulation_period", nothing) !== nothing && first_obs != Int(opts["first_simulation_period"]) - ol
+            throw(ModelError("INITVAL_FILE: first_obs = $f and first_simulation_period = $(opts["first_simulation_period"]) have values inconsistent with a maximum lag of $ol periods"))
+        end
+    end
+    if !fobs_given && get(opts, "first_simulation_period", nothing) !== nothing
+        f = Int(opts["first_simulation_period"])
+        f < ol && throw(ModelError("INITVAL_FILE: first_simulation_period = $f must be larger than the maximum lag ($ol)"))
+        f > nobs0 && throw(ModelError("INITVAL_FILE: first_simulations_period = $f is larger than the number of observations in the data file ($nobs0)"))
+        first_obs, fobs_given = f - ol, true
+    end
+    last_obs = nobs0
+    if get(opts, "last_obs", nothing) !== nothing
+        last_obs = Int(opts["last_obs"])
+        last_obs > nobs0 && throw(ModelError("INITVAL_FILE: last_obs = $last_obs is larger than the number of observations in the dataset ($nobs0)"))
+        fobs_given && nobs > 0 && last_obs != first_obs + nobs - 1 &&
+            throw(ModelError("INITVAL_FILE: FIRST_OBS, LAST_OBS and NOBS contain inconsistent information. Use only two of these options."))
+        !fobs_given && nobs > 0 && (first_obs = last_obs - nobs + 1)
+    elseif nobs > 0
+        last_obs = first_obs + nobs - 1
+    end
+    if get(opts, "last_simulation_period", nothing) !== nothing
+        lsp = Int(opts["last_simulation_period"])
+        lsp <= last_obs - oe || throw(ModelError("INITVAL_FILE: LAST_SIMULATION_PERIOD is too large compared to the available data."))
+        last_obs = lsp + oe
+        p = lsp - (first_obs + ol) + 1
+    else
+        p = (last_obs - oe) - (first_obs + ol) + 1
+    end
+    (first_obs >= 1 && last_obs <= nobs0 && last_obs >= first_obs) || throw(ModelError("INITVAL_FILE: the selected observations are outside the data"))
+    (data = Matrix{Float64}(ds.data[first_obs:last_obs, :]), names = copy(ds.name), p = p)
 end
 
 "Replay the statements of the .mod file up to the last perfect_foresight_setup."
@@ -406,10 +494,16 @@ function _pf_replay(m::Model, params=nothing, steady=nothing, extra_learnt_shock
                           "periods" => collect(p1:p2), "value" => Float64(_value(m, v["value"])), "learnt_in" => lin))
                 end
             end
-        elseif kind in ("initval_file", "histval_file", "shock_paths", "smoother2histval")
+        elseif kind == "initval_file"
+            ws.iseries = _pf_initval_series(m, "INITVALF", get_or(st, "options", Dict{String,Any}()))
+        elseif kind in ("histval_file", "shock_paths", "smoother2histval")
             throw(ModelError("$kind is not implemented in JDyn's perfect foresight"))
         elseif _pf_is_setup(st)
             ws.pfwee = kind != "perfect_foresight_setup"
+            # perfect_foresight_setup(datafile=...) is initval_file(datafile=...) (the preprocessor's driver calls histvalf_initvalf)
+            if kind == "perfect_foresight_setup" && haskey(get_or(st, "options", Dict{String,Any}()), "datafile")
+                ws.iseries = _pf_initval_series(m, "INITVALF", Dict{String,Any}("datafile" => st["options"]["datafile"]))
+            end
         end
     end
     force && ws.dirty && run_steady!()
@@ -523,6 +617,26 @@ function _pf_make_paths(m::Model, ws::PFWorkspace, periods::Int)
     (ws.endo_histval !== nothing && ws.ss0 !== nothing) && throw(PerfectForesightError("histval and endval cannot be used simultaneously"))
     x = repeat(ws.xss, 1, rows)
     y = repeat(ws.ss, 1, rows)
+    if ws.iseries !== nothing
+        # make_y_.m / make_ex_.m with oo_.initval_series
+        S = ws.iseries
+        ol = Int(get(m.info, "orig_maximum_lag", lag))
+        rr = ol-lag+1:ol+periods+lead
+        (first(rr) >= 1 && last(rr) <= size(S.data, 1)) ||
+            throw(PerfectForesightError("initval_file: the data has $(size(S.data, 1)) observations, the simulation needs $(last(rr)) (periods = $periods)"))
+        col = Dict(n => i for (i, n) in enumerate(S.names))
+        for v in vcat(m.endo_names, m.exo_names)
+            haskey(col, v) || throw(PerfectForesightError("initval_file: variable $v is missing from the data " *
+                                    "(auxiliary variables are not rebuilt from the data by JDyn)"))
+        end
+        y = Matrix{Float64}(permutedims(S.data[rr, [col[v] for v in m.endo_names]]))
+        x = Matrix{Float64}(permutedims(S.data[rr, [col[v] for v in m.exo_names]]))
+        if ws.endo_histval !== nothing && lag > 0
+            ws.ss0 !== nothing && throw(PerfectForesightError("histval and endval cannot be used simultaneously"))
+            x[:, 1:lag] .= ws.exo_histval
+            y[:, 1:lag] .= ws.endo_histval
+        end
+    else
     if ws.ss0 !== nothing
         x[:, 1:lag] .= ws.xss0
         y[:, 1:lag] .= ws.ss0
@@ -530,6 +644,7 @@ function _pf_make_paths(m::Model, ws::PFWorkspace, periods::Int)
     if ws.endo_histval !== nothing && lag > 0
         x[:, 1:lag] .= ws.exo_histval
         y[:, 1:lag] .= ws.endo_histval
+    end
     end
     late = sort(unique([m.exo_names[j] for (j, p1, p2, _, _) in ws.det_shocks if p2 > periods || p1 > periods]))
     isempty(late) || throw(PerfectForesightError("a shock is dated after the end of the simulation: at least one expected value for " *
@@ -1830,6 +1945,7 @@ function perfect_foresight(m::Model; periods=nothing, params=nothing, exo=nothin
         o["periods"] = get(_pf_statement_options(m, "perfect_foresight_setup"), "periods", nothing)
         o["periods"] === nothing && (o["periods"] = get(_pf_statement_options(m, "perfect_foresight_with_expectation_errors_setup"), "periods", nothing))
     end
+    o["periods"] === nothing && ws.iseries !== nothing && (o["periods"] = ws.iseries.p)
     if o["periods"] === nothing
         dc = _pf_date_context(m)
         dc.first !== nothing && dc.last !== nothing && (o["periods"] = dc.last[2] - dc.first[2] + 1)
@@ -1851,7 +1967,6 @@ function perfect_foresight(m::Model; periods=nothing, params=nothing, exo=nothin
                      "as in Dynare the conditions are ignored and the unconstrained path is computed (pass lmmcp=true to impose them)")
     end
     lag, lead = m.info["maximum_lag"], m.info["maximum_lead"]
-    o["datafile"] !== nothing && !pfwee && throw(ModelError("perfect_foresight_setup(datafile=...) (an initval_file) is not implemented"))
     local out, ss0, xss0
     if pfwee
         (exo !== nothing || y_init !== nothing || y_term !== nothing || guess !== nothing) &&
