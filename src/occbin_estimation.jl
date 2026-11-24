@@ -98,7 +98,18 @@ Run the OccBin filter of the estimation at `theta` (no bounds or prior): the pie
 inversion filter (`InversionFilterResult`, with `LIK` and `lik` set) under `likelihood_inversion_filter`. Throws the solver's
 errors (`SteadyStateError`, `BlanchardKahnError`).
 """
-function occbin_filter(est::Estimation, theta::AbstractVector; rng=dynare_rng(est.model))
+# Dynare's inversion filter solves each period with csolve, whose random search (when no progress is made) draws from the
+# global stream; whether an evaluation succeeds then depends on how far that stream has advanced, not only on the
+# parameters (a Dynare 7.2 defect: the same vector can give a likelihood on one call and code 304 on the next). Corrected
+# by default: each evaluation draws from a fresh generator seeded with the model's seed (set_dynare_seed), so the
+# likelihood is a function of the parameters. `replicate_dynare_bugs=true` draws from the shared stream, as Dynare does.
+function _ivf_rng(m::Model)
+    b = get(m.options, "replicate_dynare_bugs", false)
+    (b === true || (b isa Real && b != 0)) && return dynare_rng(m)
+    Random.Xoshiro(_streams(m).seed)
+end
+
+function occbin_filter(est::Estimation, theta::AbstractVector; rng=_ivf_rng(est.model))
     oc = occbin_options(est)
     oc === nothing && throw(EstimationError("the model has no occbin_constraints block"))
     theta = Float64.(theta)
@@ -206,7 +217,7 @@ function _occbin_smooth(m::Model, data=nothing; occbin=nothing, estimation=nothi
               oc["likelihood.IVF_shock_observable_mapping"] : findall(diag(lin.Sigma_e) .!= 0)
         length(err) == length(obs) || throw(SmootherError("The IVF requires exactly as many shocks as observables."))
         any(!iszero, lin.me_cov) && throw(SmootherError("IVF-filter: Measurement errors are not allowed with the inversion filter."))
-        ivf = inversion_filter(ob, lin.data .+ ob.ys[obs]', obs, err, oc; rng=dynare_rng(m))
+        ivf = inversion_filter(ob, lin.data .+ ob.ys[obs]', obs, err, oc; rng=_ivf_rng(m))
         sm = inversion_filter_smoother(ivf, ob.ys, err, ob.n_exo; endo_names=m.endo_names, exo_names=m.exo_names)
     else
         ktol = Float64(something(get(lin.options, "kalman_tol", nothing), 1e-10))

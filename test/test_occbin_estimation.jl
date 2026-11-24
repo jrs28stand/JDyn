@@ -53,6 +53,15 @@ const CASES = [("nkm", "occest_nkm", 1:4), ("rbc", "occest_rbc", 1:3), ("nkms", 
         end
         println("IVF $case: max |log posterior - Dynare| = ", worst)
     end
+    # each evaluation draws from its own generator, so the result does not depend on the shared stream's position
+    let r = oref("occest_nkm_lik"), est = oest("occest_nkm", r; occbin=Dict("likelihood_inversion_filter" => true))
+        x = opoints(r, est.n)[:, 1]
+        a = JDyn.occbin_filter(est, x)
+        rand(JDyn.dynare_rng(est.model), 1000)
+        b = JDyn.occbin_filter(est, x)
+        @test a.error_code == b.error_code && a.LIK == b.LIK && a.filtered_errs == b.filtered_errs
+        @test JDyn._ivf_rng(est.model) !== JDyn.dynare_rng(est.model)
+    end
     # the NKM data reach the zero lower bound: the inversion filter goes through binding periods
     rh = dregimes(oref("occest_nkm_lik")["ivf_regimes_1"])
     @test count(reg -> reg[1][1][1] == 1, rh) > 20
@@ -334,4 +343,8 @@ end
     lines2 = readlines(joinpath(d, "Output", "rbc_regimes.csv"))
     @test startswith(lines2[4], "50,") && lines2[4] != lines[4] || res.regime_history[3] == reg50
     @test_throws ModelError occbin_write_regimes!(ws; type="smoother")       # no smoother run: Dynare errors too
+    # loglinear with occbin_solver: refused (Dynare 7.2 mixes levels and logs there)
+    ws.options_.loglinear = true
+    @test_throws ModelError occbin_solver!(ws)
+    ws.options_.loglinear = false
 end

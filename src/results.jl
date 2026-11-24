@@ -570,6 +570,11 @@ options in `options_.occbin` (keywords use the .mod file's names: `occbin_solver
 function occbin_solver!(ws::DynareWorkspace; options...)
     _sync_model!(ws)
     _take_options!(ws, Dict(Symbol("occbin." * _occbin_path(String(k))) => v for (k, v) in options))
+    # Dynare 7.2 runs OccBin under options_.loglinear by combining the level model's derivatives at the logged steady
+    # state with log-linearised rules: neither levels nor logs. JDyn's piecewise-linear solution is in levels, so the
+    # combination is refused rather than silently answered in levels.
+    _optb(ws, "loglinear", false) && throw(ModelError("occbin_solver with loglinear is not supported: Dynare 7.2 mixes the " *
+        "level model with log-linearised rules here, and JDyn's piecewise-linear solution is in levels; drop the loglinear option"))
     ob = Occbin(ws.model)
     occ_opts = _getpath(ws.options_, "occbin", MStruct())
     flat = occ_opts isa MStruct ? _flat_options(occ_opts) : Dict{String,Any}()
