@@ -351,6 +351,15 @@ end
 _exo_index(m::Model, p::AbstractString) = (haskey(m.ix, p) ? m.ix[p] : throw(ArgumentError("unknown exogenous variable $p")))
 _exo_index(m::Model, p::Integer) = (1 <= p <= m.n_exo ? Int(p) : throw(ArgumentError("exo_pos $p out of range")))
 
+# benchmark hook (bench/obc_bench.jl): when OBC_TICKS[] is a vector, the simulation loops append time_ns() at the start of
+# every shock period and once after the loop; results are not affected
+const OBC_TICKS = Ref{Union{Nothing,Vector{UInt64}}}(nothing)
+@inline function _obc_tick()
+    t = OBC_TICKS[]
+    t === nothing || push!(t, time_ns())
+    nothing
+end
+
 # ---------------------------------------------------------------------- simulation
 """
     simulate(ob::Occbin, shocks; periods=100, check_ahead_periods=200, maxit=30, init=nothing, curb_retrench=false,
@@ -426,6 +435,7 @@ function simulate(ob::Occbin, shocks_in::AbstractMatrix; periods::Integer=100, c
     first_rule(r) = isempty(r) ? (ob.P, ob.Q, zeros(n)) : r[1]
 
     for sp in 1:S
+        _obc_tick()
         changed, it, increased = true, 0, false
         is_periodic = is_loop = false
         guess_it = init_regime !== nothing && sp <= length(init_regime)
@@ -571,6 +581,7 @@ function simulate(ob::Occbin, shocks_in::AbstractMatrix; periods::Integer=100, c
         piecewise[sp, :] = y0
         bi = vcat(bi[2:end, :], falses(1, k))
     end
+    _obc_tick()
     n_periods > S && (piecewise[S+1:end, :] = z[2:n_periods-S+1, :])
 
     linear = Matrix{Float64}(undef, n_periods, n)

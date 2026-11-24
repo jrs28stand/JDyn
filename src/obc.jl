@@ -525,6 +525,7 @@ function _simulate_obc(ob::Occbin, shocks_in::AbstractMatrix; method::Symbol, ho
     y = zeros(nc * T)
     Z = zeros(Lg, n)
     for sp in 1:S
+        _obc_tick()
         u = shocks[sp, :]
         if sp == 1 || any(!iszero, u)
             q = obc_q(sys, y0, u)
@@ -569,6 +570,7 @@ function _simulate_obc(ob::Occbin, shocks_in::AbstractMatrix; method::Symbol, ho
         y0 = Z[1, :]
         piecewise[sp, :] = y0
     end
+    _obc_tick()
     n_periods > S && (piecewise[S+1:end, :] = Z[2:n_periods-S+1, :])
     linear = Matrix{Float64}(undef, n_periods, n)
     yl = init_orig
