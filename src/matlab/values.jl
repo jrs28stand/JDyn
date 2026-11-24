@@ -531,6 +531,7 @@ end
 "`v(args)` for arrays, strings and cells (returns a cell for cells)."
 function mindex(v, args)
     v isa Tainted && arr(v)
+    v isa Array{Float64,3} && return index3(v, args)         # 3-D arrays: only produced by src/pac.jl (AR matrices)
     if v isa Cell
         items, shp = v.items, v.shape
         a = isempty(items) ? zeros(Int, shp) : reshape(collect(1:length(items)), shp)

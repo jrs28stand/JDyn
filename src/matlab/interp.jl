@@ -303,6 +303,7 @@ function _pkg_builtin(I::Interp, sc, base, argnodes, nargout)
     chain = _pkg_chain(base)
     chain === nothing && return nothing
     f = get(PKG_FUNCS, join(chain, "."), nothing)
+    f === nothing && length(chain) == 2 && (f = get(PKG_FUNCS, "*." * chain[2], nothing))     # <model name>.varmatrices, ...
     (f === nothing || getvar(I, sc, chain[1]) !== MISSING_) && return nothing
     args = Any[a isa ColonAll ? ":" : ev(I, a, sc) for a in argnodes]
     r = f(I, args, nargout)

@@ -300,6 +300,25 @@ function _tc_matrices(m::Model, name::AbstractString, params::Vector{Float64})
     AR, A0, A0s
 end
 
+"`pac_target_coefficients(model_name, params)` of the preprocessor's file."
+function _pac_target_coefficients(m::Model, name::AbstractString, params::Vector{Float64})
+    txt = get(get(m.cache, :semi_files, Dict{String,String}()), "pac_target_coefficients.m", nothing)
+    txt === nothing && merr("Unknown PAC model: $name")
+    blocks = get!(() -> _coef_blocks(txt, "pac"), m.cache, :semi_pactarget_blocks)::Dict{String,Vector{String}}
+    haskey(blocks, name) || merr("Unknown PAC model: $name")
+    c = nothing
+    for t in blocks[name]
+        t = rstrip(t, ';')
+        if (mt = match(r"^coeffs\s*=\s*NaN\((\d+),\s*(\d+)\)$", t)) !== nothing
+            c = fill(NaN, parse(Int, mt.captures[1]), parse(Int, mt.captures[2]))
+        elseif (mt = match(r"^coeffs\((\d+)\)\s*=\s*(.*)$", t)) !== nothing
+            c[parse(Int, mt.captures[1])] = _coef_fun(mt.captures[2])(params)
+        end
+    end
+    c === nothing && merr("Unknown PAC model: $name")
+    ret(c)
+end
+
 # ---------------------------------------------------------------------- access helpers
 function _need_host(I)
     h = I.host
@@ -910,6 +929,23 @@ function pac_bgp_get(h::Host, pacmodel::AbstractString, paceq, kind::AbstractStr
     _f(t, "bgp").items[Int(id)]
 end
 
+# ---------------------------------------------------------------------- 3-D arrays (AR(:,:,i))
+"Indexing of a 3-D array `A(i, j, k)` (also with two or one subscripts, as MATLAB's collapsed trailing dimensions)."
+function index3(A::Array{Float64,3}, args)
+    n1, n2, n3 = size(A)
+    ix(a, n) = a === COLON ? collect(1:n) : (v = _lin_index(a, n); v)
+    if length(args) == 3
+        r = A[ix(args[1], n1), ix(args[2], n2), ix(args[3], n3)]
+        return size(r, 3) == 1 ? ret(reshape(r, size(r, 1), size(r, 2))) : r
+    elseif length(args) == 2
+        B = reshape(A, n1, n2 * n3)
+        return ret(B[ix(args[1], n1), ix(args[2], n2 * n3)])
+    elseif length(args) == 1
+        return ret(reshape(A[ix(args[1], n1 * n2 * n3)], :, 1))
+    end
+    merr("index3: wrong number of subscripts")
+end
+
 # ---------------------------------------------------------------------- registration with the interpreter
 const _STR = (v, nm) -> (v isa AbstractString ? String(v) : merr("$nm: argument must be a character array"))
 
@@ -948,6 +984,25 @@ function _register_semi!()
         _isaux(_need_host(I).model, _STR(a[1], "isauxiliary"), length(a) > 1 ? Int.(vec(farr(a[2]))) : nothing)
     end
     reg(f, name) = (PKG_FUNCS[name] = f)
+    reg("*.varmatrices") do I, a, nout
+        _nargs(a, 2, 3, "varmatrices")
+        ar, a0, c = _varmatrices(_need_host(I).model, _STR(a[1], "varmatrices"), Float64.(vec(farr(a[2]))), length(a) > 2 && truth(a[3]))
+        Any[ar, ret(a0), ret(reshape(c, :, 1))][1:max(nout, 1)]
+    end
+    reg("*.trend_component_ar_a0") do I, a, nout
+        _nargs(a, 2, 2, "trend_component_ar_a0")
+        ar, a0, a0s = _tc_matrices(_need_host(I).model, _STR(a[1], "trend_component_ar_a0"), Float64.(vec(farr(a[2]))))
+        Any[ar, ret(a0), ret(a0s)][1:max(nout, 1)]
+    end
+    reg("*.pac_target_coefficients") do I, a, nout
+        _nargs(a, 2, 2, "pac_target_coefficients")
+        Any[_pac_target_coefficients(_need_host(I).model, _STR(a[1], "pac_target_coefficients"), Float64.(vec(farr(a[2]))))]
+    end
+    for nm in ("get_companion_matrix_legacy", "get_ar_ec_matrices")
+        bi!(nm) do I, a, nout
+            throw(Unsupported("$nm (legacy VAR / trend component matrices from the model's Jacobian) is not implemented in JDyn", "function"))
+        end
+    end
     reg("var_expectation.initialize") do I, a, nout
         var_expectation_initialize!(_need_host(I), _STR(a[1], "var_expectation.initialize")); Any[]
     end
