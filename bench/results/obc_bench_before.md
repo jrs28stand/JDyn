@@ -230,3 +230,70 @@ Milliseconds, min / median over 5 interleaved repeats, a different perturbed par
 
 #### H = 80
 
+| method | backend | µs/period min / median | µs/period, nothing binds | µs/period, something binds | KiB allocated/period | max path diff vs OccBin (after) | regimes equal |
+|---|---|---|---|---|---|---|---|
+| occbin | before | 336.9 / 433.7 | 157.8 / 208.4 | 662.2 / 844.7 | 356.5 | 0.0e+00 | true |
+| minnorm | before | 183.5 / 232.0 | 119.3 / 132.6 | 293.2 / 343.5 | 321.8 | 2.0e-05 | false |
+| minnorm_pure | before | 308.4 / 366.2 | 133.2 / 160.2 | 626.0 / 680.3 | 465.7 | 2.0e-05 | false |
+| occbin | after | 343.0 / 377.2 | 162.2 / 172.5 | 671.2 / 730.6 | 356.5 | 0.0e+00 | true |
+| minnorm | after | 214.2 / 269.2 | 136.2 / 177.6 | 349.5 / 429.7 | 321.8 | 2.0e-05 | false |
+| minnorm_pure | after | 340.9 / 385.8 | 149.3 / 158.5 | 685.0 / 825.1 | 465.7 | 2.0e-05 | false |
+
+Shock scale s = 3.0, horizon 80, 1000 shock periods. Binding in the current period in 31.4% of periods; something binds somewhere on the path in 34.8% (the split above is by that second indicator). Timings: 5 repeats, interleaved, min / median.
+
+| backend | steady_state | first_order | Occbin() total | regime matrices (all 2^k) | obc_constraints (post-processor) | obc_system (M, q; fresh Occbin, includes its constraints) | ready: occbin | ready: minnorm |
+|---|---|---|---|---|---|---|---|---|
+| before | 0.35 / 0.40 | 0.41 / 0.45 | 3.25 / 4.34 | 0.06 / 0.08 | 31.73 / 36.73 | 36.51 / 46.51 | 3.32 / 4.42 | 39.76 / 50.85 |
+| after | 0.36 / 0.40 | 0.42 / 0.43 | 3.11 / 3.36 | 0.06 / 0.08 | 32.09 / 34.93 | 39.65 / 42.75 | 3.18 / 3.42 | 42.93 / 47.02 |
+
+Milliseconds, min / median over 5 interleaved repeats, a different perturbed parameter vector in each (two parameters: phipi, phiy); horizon 80.
+
+### R1 reliability (2000 states from a long unconstrained simulation, one period solved from each, H = 40)
+
+No method has a time limit; OccBin's own limit is maxit = 30 iterations (counted as its error 311). Different regime sequences are counted among the states both methods solve.
+
+| s | method | solved | failed | failure types | solved by both it and OccBin | different regime sequences vs OccBin | max |path diff| vs OccBin (solved by both) |
+|---|---|---|---|---|---|---|---|
+| 0.5 | occbin | 2000 | 0 | - | - | - | - |
+| 0.5 | minnorm | 2000 | 0 | - | 2000 | 0 | 6.0e-15 |
+| 0.5 | minnorm_pure | 2000 | 0 | - | 2000 | 0 | 6.0e-15 |
+| 1.0 | occbin | 2000 | 0 | - | - | - | - |
+| 1.0 | minnorm | 2000 | 0 | - | 2000 | 0 | 5.1e-15 |
+| 1.0 | minnorm_pure | 2000 | 0 | - | 2000 | 0 | 5.1e-15 |
+| 1.5 | occbin | 2000 | 0 | - | - | - | - |
+| 1.5 | minnorm | 2000 | 0 | - | 2000 | 1 | 2.1e-05 |
+| 1.5 | minnorm_pure | 2000 | 0 | - | 2000 | 1 | 2.1e-05 |
+| 2.0 | occbin | 2000 | 0 | - | - | - | - |
+| 2.0 | minnorm | 2000 | 0 | - | 2000 | 1 | 1.1e-05 |
+| 2.0 | minnorm_pure | 2000 | 0 | - | 2000 | 1 | 1.1e-05 |
+
+s = 0.5: minnorm solves 0 states where OccBin fails; OccBin solves 0 states where minnorm fails.
+s = 0.5: minnorm_pure solves 0 states where OccBin fails; OccBin solves 0 states where minnorm_pure fails.
+s = 1.0: minnorm solves 0 states where OccBin fails; OccBin solves 0 states where minnorm fails.
+s = 1.0: minnorm_pure solves 0 states where OccBin fails; OccBin solves 0 states where minnorm_pure fails.
+s = 1.5: minnorm solves 0 states where OccBin fails; OccBin solves 0 states where minnorm fails.
+s = 1.5: minnorm_pure solves 0 states where OccBin fails; OccBin solves 0 states where minnorm_pure fails.
+s = 2.0: minnorm solves 0 states where OccBin fails; OccBin solves 0 states where minnorm fails.
+s = 2.0: minnorm_pure solves 0 states where OccBin fails; OccBin solves 0 states where minnorm_pure fails.
+
+load average at end of model: 2.28 2.02 1.95 2/113 2819
+
+## Model `sw` (OccBin only: multi_equation constraint, the news methods refuse it)
+
+n_endo = 32, n_exo = 7, constraints = 1.
+
+Scale search (first grid point with the constraint binding in 30-60% of periods and no method failing; if none exists without failures, the first one with failing draws replaced): s=1.0 fixed (no scale gives 30-60% binding without absurd shocks: see docs/OBC_PERF.md); share=20.8% redraws=50
+
+**Failing draws were replaced: 50 of the 1000 shock periods were redrawn (fresh normal draw, same scale) until the simulation ran through with every method; the sequence is therefore not a pure iid normal sample.**
+
+### P1 per period (1000 shock periods, H = 40)
+
+| method | backend | µs/period min / median | µs/period, nothing binds | µs/period, something binds | KiB allocated/period | max path diff vs OccBin (after) | regimes equal |
+|---|---|---|---|---|---|---|---|
+| occbin | before | 189.5 / 210.4 | 76.6 / 83.6 | 579.0 / 649.8 | 252.8 | 0.0e+00 | true |
+| occbin | after | 186.4 / 216.0 | 74.2 / 89.8 | 575.1 / 652.2 | 252.8 | 0.0e+00 | true |
+
+Shock scale s = 1.0, horizon 40, 1000 shock periods. Binding in the current period in 20.8% of periods; something binds somewhere on the path in 22.0% (the split above is by that second indicator). Timings: 5 repeats, interleaved, min / median.
+
+### P2 per parameter set (H = 40)
+
