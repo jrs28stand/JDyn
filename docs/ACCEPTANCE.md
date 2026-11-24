@@ -8,10 +8,10 @@ with its `extra` files, per-entry scratch directory, test order and `-D` options
 
 | category | before | after | meaning |
 |---|---:|---:|---|
-| OK | 87 | 117 | ran to the end, no warning |
-| OK_WARN | 299 | 284 | ran to the end, but JDyn skipped MATLAB lines or commands (its own checks may not have run) |
-| CHECK_FAILED | 14 | 12 | the file's own error()/assert() fired |
-| REFUSED | 371 | 381 | ModelError / Unsupported / EstimationError: a clearly named unsupported feature |
+| OK | 87 | 138 | ran to the end, no warning |
+| OK_WARN | 299 | 293 | ran to the end, but JDyn skipped MATLAB lines or commands (its own checks may not have run) |
+| CHECK_FAILED | 14 | 13 | the file's own error()/assert() fired |
+| REFUSED | 371 | 350 | ModelError / Unsupported / EstimationError: a clearly named unsupported feature |
 | ERROR | 42 | 19 | raw Julia exception, interpreter error or preprocessor failure |
 | TIMEOUT | 2 | 2 | over the per-test limit |
 | XFAIL | 27 | 29 | `should_fail` in meson.build and failed too (as expected) |
@@ -19,7 +19,7 @@ with its `extra` files, per-entry scratch directory, test order and `-D` options
 | SKIPPED | 13 | 13 | .m script (unit test of Dynare's MATLAB library, data script), not a model run |
 | total | 865 | 865 | |
 
-Time: 14.8 min of test time; slowest: `moments/example1_bp_test.mod` 91 s, `moments/example1_hp_test.mod` 90 s, `decision_rules/first_order/walsh.mod` 28 s, `../examples/macroprocessor/bkk_1992.mod` 26 s, `block_bytecode/lola_solve_one_boundary.mod` 19 s.
+Time: 15.8 min of test time; slowest: `moments/example1_bp_test.mod` 91 s, `moments/example1_hp_test.mod` 90 s, `decision_rules/first_order/walsh.mod` 28 s, `../examples/macroprocessor/bkk_1992.mod` 26 s, `block_bytecode/lola_solve_one_boundary.mod` 19 s.
 
 ## By directory
 
@@ -28,13 +28,13 @@ Time: 14.8 min of test time; slowest: `moments/example1_bp_test.mod` 91 s, `mome
 | estimation | 1 | 39 | 0 | 34 | 0 | 0 | 4 | 6 | 1 |
 | deterministic_simulations | 29 | 22 | 6 | 21 | 1 | 0 | 1 | 0 | 0 |
 | pac | 0 | 7 | 0 | 60 | 6 | 0 | 0 | 0 | 0 |
-| optimal_policy | 0 | 3 | 0 | 29 | 1 | 0 | 2 | 0 | 0 |
+| optimal_policy | 14 | 10 | 1 | 7 | 1 | 0 | 2 | 0 | 0 |
 | kalman_filter_smoother | 1 | 7 | 0 | 19 | 1 | 0 | 0 | 0 | 0 |
 | heterogeneity | 0 | 0 | 0 | 16 | 0 | 0 | 10 | 0 | 0 |
 | model-inversion | 0 | 25 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
 | observation_trends_and_prefiltering | 0 | 0 | 0 | 25 | 0 | 0 | 0 | 0 | 0 |
 | trend-component-and-var-models | 0 | 14 | 0 | 11 | 0 | 0 | 0 | 0 | 0 |
-| examples | 10 | 3 | 0 | 10 | 0 | 0 | 0 | 0 | 0 |
+| examples | 12 | 3 | 0 | 8 | 0 | 0 | 0 | 0 | 0 |
 | var-expectations | 0 | 0 | 1 | 17 | 4 | 0 | 1 | 0 | 0 |
 | kalman | 0 | 3 | 0 | 16 | 0 | 0 | 0 | 0 | 1 |
 | ep | 0 | 1 | 0 | 13 | 2 | 0 | 3 | 0 | 0 |
@@ -43,7 +43,7 @@ Time: 14.8 min of test time; slowest: `moments/example1_bp_test.mod` 91 s, `mome
 | particle | 0 | 9 | 0 | 5 | 0 | 0 | 2 | 0 | 0 |
 | ecb | 0 | 4 | 0 | 11 | 0 | 0 | 0 | 0 | 0 |
 | optimizers | 0 | 6 | 0 | 9 | 0 | 0 | 0 | 0 | 0 |
-| steady_state | 11 | 2 | 0 | 1 | 0 | 0 | 1 | 0 | 0 |
+| steady_state | 11 | 3 | 0 | 0 | 0 | 0 | 1 | 0 | 0 |
 | stochastic_simulations | 6 | 5 | 2 | 1 | 1 | 0 | 0 | 0 | 0 |
 | forecast | 0 | 1 | 0 | 12 | 0 | 0 | 0 | 0 | 0 |
 | solve_algo_12_14 | 3 | 7 | 0 | 2 | 0 | 0 | 0 | 0 | 0 |
@@ -55,9 +55,9 @@ Time: 14.8 min of test time; slowest: `moments/example1_bp_test.mod` 91 s, `mome
 | arima | 0 | 8 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
 | fs2000 | 1 | 7 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
 | histval_initval_file | 1 | 1 | 1 | 2 | 1 | 0 | 0 | 0 | 2 |
-| lmmcp | 4 | 3 | 0 | 1 | 0 | 0 | 0 | 0 | 0 |
+| lmmcp | 5 | 3 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
 | moments | 2 | 0 | 1 | 2 | 1 | 2 | 0 | 0 | 0 |
-| discretionary_policy | 0 | 4 | 0 | 3 | 0 | 0 | 0 | 0 | 0 |
+| discretionary_policy | 3 | 3 | 0 | 1 | 0 | 0 | 0 | 0 | 0 |
 | gsa | 0 | 5 | 0 | 2 | 0 | 0 | 0 | 0 | 0 |
 | shock_decomposition | 0 | 6 | 0 | 1 | 0 | 0 | 0 | 0 | 0 |
 | conditional_forecasts | 0 | 2 | 0 | 4 | 0 | 0 | 0 | 0 | 0 |
@@ -72,8 +72,8 @@ Time: 14.8 min of test time; slowest: `moments/example1_bp_test.mod` 91 s, `mome
 | kalman_skewed | 0 | 3 | 0 | 2 | 0 | 0 | 0 | 0 | 0 |
 | smoother2histval | 0 | 3 | 0 | 2 | 0 | 0 | 0 | 0 | 0 |
 | expectations | 3 | 0 | 0 | 0 | 1 | 0 | 0 | 0 | 0 |
-| log_transform | 3 | 0 | 0 | 1 | 0 | 0 | 0 | 0 | 0 |
-| partial_information | 0 | 3 | 0 | 1 | 0 | 0 | 0 | 0 | 0 |
+| log_transform | 4 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| partial_information | 0 | 4 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
 | recursive | 0 | 4 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
 | stat_functions | 4 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
 | steady_state_operator | 3 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
@@ -86,7 +86,7 @@ Time: 14.8 min of test time; slowest: `moments/example1_bp_test.mod` 91 s, `mome
 | bvar_a_la_sims | 0 | 1 | 0 | 1 | 0 | 0 | 0 | 0 | 0 |
 | conditional_variance_decomposition | 0 | 0 | 0 | 2 | 0 | 0 | 0 | 0 | 0 |
 | dates | 0 | 2 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| deprecated | 0 | 0 | 0 | 2 | 0 | 0 | 0 | 0 | 0 |
+| deprecated | 0 | 1 | 0 | 1 | 0 | 0 | 0 | 0 | 0 |
 | macro_processor | 2 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
 | minimal_state_space_system | 0 | 2 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
 | stochastic_purely_forward | 2 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
@@ -109,13 +109,14 @@ Time: 14.8 min of test time; slowest: `moments/example1_bp_test.mod` 91 s, `mome
 
 ## Causes
 
-#### CHECK_FAILED by cause (12 tests, 8 causes)
+#### CHECK_FAILED by cause (13 tests, 9 causes)
 
 | n | cause | examples |
 |---:|---|---|
 | 4 | check: Error in perfect_foresight_with_expectation_errors | `deterministic_simulations/pfwee_constant_sim_length.mod`, `deterministic_simulations/pfwee_learnt_in_bare_1st_period.mod`, `deterministic_simulations/pfwee.mod` |
 | 2 | check: Model did not solve | `deterministic_simulations/Irreversible_investment.mod`, `deterministic_simulations/Irreversible_investment_leadlag.mod` |
 | 1 | check: MATLAB error in the .mod file at "assert(all(all(abs(oo_.var.toto.CompanionMatri | `var-expectations/11/example1.mod` |
+| 1 | check: Parameters should be identical | `optimal_policy/OSR/osr_obj_corr_algo_9.mod` |
 | 1 | check: Simul_replic affects simulated moments | `stochastic_simulations/example2_simul_replic.mod` |
 | 1 | check: Test failure:: Problem with the seed of the random number algorithm | `stochastic_simulations/example_seeds.mod` |
 | 1 | check: Variance Decomposition wrong | `moments/example1_var_decomp.mod` |
@@ -135,13 +136,12 @@ Time: 14.8 min of test time; slowest: `moments/example1_bp_test.mod` 91 s, `mome
 | 1 | SteadyStateError: SteadyStateError: steady state not found: max \|residual\| = NaN | `stochastic_simulations/example1_noprint.mod` |
 | 1 | SteadyStateError: SteadyStateError: steady state not found: the static equations are not finite along the search (Dynare's solve | `kalman_filter_smoother/algoH3.mod` |
 
-#### REFUSED by cause (381 tests, 71 causes)
+#### REFUSED by cause (350 tests, 74 causes)
 
 | n | cause | examples |
 |---:|---|---|
-| 99 | ModelError: MATLAB error in the .mod file at "_": Reference to non-existent field '_'. | `optimizers/fs2000_2.mod`, `optimizers/fs2000_4.mod`, `optimizers/fs2000_5.mod` |
+| 86 | ModelError: MATLAB error in the .mod file at "_": Reference to non-existent field '_'. | `optimizers/fs2000_2.mod`, `optimizers/fs2000_4.mod`, `optimizers/fs2000_5.mod` |
 | 60 | ModelError: MATLAB statement changes the model and cannot be interpreted: "_": it calls the Dynare function pac.update.exp | `shock_decomposition/shock_decomp_backward.mod`, `pac/var-1/example1.mod`, `pac/var-3/example1.mod` |
-| 24 | ModelError: ramsey_model (optimal policy) is not supported by JDyn: the Ramsey problem's steady state and policy rule are  | `optimal_policy/ramsey_.mod`, `optimal_policy/nk_ramsey_model.mod`, `optimal_policy/neo_ramsey_det_bytecode.mod` |
 | 22 | ModelError: heterogeneous-agent models (heterogeneity_dimension) are not supported | `heterogeneity/ks.mod`, `heterogeneity/hank_1a.mod`, `heterogeneity/ks_commands.mod` |
 | 17 | ModelError: MATLAB statement changes the model and cannot be interpreted: "_": it calls the Dynare function var_expectatio | `var-expectations/1-with-time-shift-a/example1.mod`, `var-expectations/2-with-time-shift/example1.mod`, `var-expectations/3-with-time-shift/example1.mod` |
 | 12 | ModelError: MATLAB error in the .mod file at "_": reference to non-existent field '_' | `occbin/model_borrcon/borrcon.mod`, `occbin/model_borrcon/borrcon_0_std_shocks.mod`, `occbin/filter/NKM_0_std_shocks.mod` |
@@ -168,9 +168,10 @@ Time: 14.8 min of test time; slowest: `moments/example1_bp_test.mod` 91 s, `mome
 | 2 | ModelError: MATLAB statement changes the model and cannot be interpreted: "_": it calls dyn_ols. Reason: '_' is unknown: " | `estimation/univariate/bayesian_param_names.mod`, `estimation/univariate/bayesian.mod` |
 | 2 | ModelError: MATLAB statement changes the model and cannot be interpreted: "_": it calls set_prior. Reason: unknown functio | `analytic_derivatives/BrockMirman_PertParamsDerivs.mod`, `analytic_derivatives/burnside_3_order_PertParamsDerivs.mod` |
 | 2 | ModelError: marginal linearization together with expectation errors is not implemented | `deterministic_simulations/pfwee_marginal_linearization.mod`, `deterministic_simulations/pfwee_homotopy_marginal_linearization.mod` |
-| 2 | ModelError: shock period "_" is not a number (dates are not supported in `shocks` blocks of the load API) | `deterministic_simulations/pfwee_learnt_in_dseries_bare_1st_period.mod`, `deterministic_simulations/ramst_dseries.mod` |
+| 2 | ModelError: osr with opt_algo=N is not implemented (JDyn has N csminwel, N fminsearch, N simplex and N CMA-ES; Dynare'_'s  | `optimal_policy/OSR/osr_obj_corr_algo_3.mod`, `optimal_policy/OSR/osr_obj_corr_algo_1.mod` |
+| 2 | ModelError: osr(analytic_derivation): the analytic derivatives of the moments (identification.get_perturbation_params_deri | `optimal_policy/OSR/osr_example.mod`, `optimal_policy/OSR/osr_objective_correctness_anal_deriv.mod` |
 
-(41 further causes with fewer tests are in results.csv.)
+(44 further causes with fewer tests are in results.csv.)
 
 #### TIMEOUT by cause (2 tests, 1 causes)
 
@@ -178,42 +179,42 @@ Time: 14.8 min of test time; slowest: `moments/example1_bp_test.mod` 91 s, `mome
 |---:|---|---|
 | 2 | interrupted: over the time limit | `moments/example1_bp_test.mod`, `moments/example1_hp_test.mod` |
 
-#### OK_WARN by cause (284 tests, 40 causes)
+#### OK_WARN by cause (293 tests, 43 causes)
 
 | n | cause | examples |
 |---:|---|---|
-| 154 | dynare(): '_' does not fill oo_ yet | `particle/dsge_base2.mod`, `particle/dsge_base_HSSMC.mod`, `particle/dsge_base_apf.mod` |
+| 149 | dynare(): '_' does not fill oo_ yet | `particle/dsge_base2.mod`, `particle/dsge_base_HSSMC.mod`, `particle/dsge_base_apf.mod` |
 | 19 | MATLAB lines not executed (N blocks with an unknown condition) | `optimizers/fs2000_7.mod`, `optimizers/fs2000_102.mod`, `steady_state/ramst_solve_algo_0.mod` |
 | 12 | MATLAB lines not executed (N blocks with an unknown condition, N dependent on skipped statements, N unknown fu | `model-inversion/bk-3a/varmodel.mod`, `model-inversion/bk-3b/varmodel.mod`, `model-inversion/bk-4/varmodel.mod` |
-| 9 | MATLAB lines not executed (N blocks with an unknown condition, N unknown functions, N dependent on skipped sta | `trend-component-and-var-models/tcm1.mod`, `trend-component-and-var-models/tcm3.mod`, `trend-component-and-var-models/tcm5.mod` |
+| 10 | MATLAB lines not executed (N blocks with an unknown condition, N unknown functions, N dependent on skipped sta | `trend-component-and-var-models/tcm1.mod`, `trend-component-and-var-models/tcm3.mod`, `trend-component-and-var-models/tcm5.mod` |
 | 8 | MATLAB lines not executed (N blocks with an unknown condition, N unknown functions) | `kalman_skewed/skew_in_estimated_params.mod`, `trend-component-and-var-models/legacy/tcm2.mod`, `trend-component-and-var-models/legacy/tcm4.mod` |
 | 7 | perfect_foresight does not act on these perfect_foresight_solver options from the .mod file: solve_algo (solve | `solve_algo_12_14/purely_backward_12.mod`, `solve_algo_12_14/purely_backward_14.mod`, `solve_algo_12_14/purely_forward_12.mod` |
 | 7 | stack_solve_algo=N: JDyn has one solver for the stacked system, Newton'_'s stack_solve_algo=N); every value of | `deterministic_simulations/linear_approximation/sw.mod`, `deterministic_simulations/rbc_det_stack_solve_algo_7.mod`, `deterministic_simulations/rbc_det_stack_solve_algo_7_exo_lag.mod` |
 | 6 | MATLAB lines not executed (N blocks with an unknown condition, N dependent on skipped statements, N unsupporte | `model-inversion/bk-8/varmodel.mod`, `model-inversion/bk-9/msm2.mod`, `model-inversion/bk-diff-4/varmodel.mod` |
 | 6 | statements not handled: ["_"] | `equation_tags/example1_with_tags.mod`, `steady_state/multi_leads.mod`, `deterministic_simulations/rbc_det.mod` |
+| 6 | steady state accepted with max \|residual\| = N (tolerance N, as in Dynare); results are only that accurate | `lmmcp/SMOPEC.mod`, `optimal_policy/Ramsey/ramsey_ex_initval_AR2.mod`, `optimal_policy/Ramsey/ramsey_ex_initval.mod` |
 | 5 | MATLAB lines not executed (N unknown functions) | `ep/rbc_mc.mod`, `stochastic-backward-models/solow_ces.mod`, `stochastic-backward-models/solow_cd.mod` |
 | 5 | the .mod file sets aim_solver: JDyn always uses its QZ-based solver | `AIM/fs2000x10L9_L_AIM.mod`, `AIM/fs2000_b1L1L_AIM.mod`, `AIM/ls2003_2L2L_AIM.mod` |
 | 4 | MATLAB lines not executed (N blocks with an unknown condition, N dependent on skipped statements, N use of res | `deterministic_simulations/multiple_lead_lags/AR2_forward.mod`, `stochastic_simulations/fs2000_k_order_simul.mod`, `deterministic_simulations/multiple_lead_lags/AR2.mod` |
-| 3 | MATLAB lines not executed (N dependent on skipped statements, N blocks with an unknown condition, N unknown fu | `minimal_state_space_system/sw_minimal.mod`, `minimal_state_space_system/as2007_minimal.mod`, `bgp/solow-1/solow.mod` |
+| 4 | MATLAB lines not executed (N dependent on skipped statements, N blocks with an unknown condition, N unknown fu | `optimal_policy/mult_elimination_test.mod`, `minimal_state_space_system/sw_minimal.mod`, `minimal_state_space_system/as2007_minimal.mod` |
+| 4 | MATLAB lines not executed (N file input<path>) | `discretionary_policy/dennis_1.mod`, `arima/mod1.mod`, `arima/mod2.mod` |
+| 4 | the .mod file sets partial_information: JDyn always uses its QZ-based solver | `partial_information/PItest3aHc0PCLsimModPiYrVarobsAll.mod`, `partial_information/Partial_ramsey.mod`, `partial_information/PItest3aHc0PCLsimModPiYrVarobsCNR.mod` |
 | 3 | MATLAB lines not executed (N dependent on skipped statements, N unsupported syntax) | `model-inversion/bk-diff-2/varmodel.mod`, `ecb/contribution-plots/contrib2.mod`, `model-inversion/bk-diff-3/varmodel.mod` |
-| 3 | MATLAB lines not executed (N file input<path>) | `arima/mod1.mod`, `arima/mod2.mod`, `dsge-var/simul_hybrid.mod` |
-| 3 | the .mod file sets partial_information: JDyn always uses its QZ-based solver | `partial_information/PItest3aHc0PCLsimModPiYrVarobsAll.mod`, `partial_information/PItest3aHc0PCLsimModPiYrVarobsCNR.mod`, `partial_information/Partial_steady_state_model.mod` |
 | 2 | MATLAB lines not executed (N blocks with an unknown condition, N use of results (oo_, options_ defaults, ...)) | `kalman_skewed/skew_in_shocks_block.mod`, `deterministic_simulations/purely_backward/ar1.mod` |
 | 2 | MATLAB lines not executed (N dependent on skipped statements, N blocks with an unknown condition, N unsupporte | `model-inversion/bk-1/solow_ces.mod`, `model-inversion/nk-1/invert.mod` |
+| 2 | MATLAB lines not executed (N unknown functions, N blocks with an unknown condition) | `trend-component-and-var-models/vm4.mod`, `discretionary_policy/Gali_discretion.mod` |
 | 2 | MATLAB lines not executed (N unknown functions, N dependent on skipped statements) | `bgp/nk-1/nk.mod`, `bgp/ramsey-1/ramsey.mod` |
 | 2 | MATLAB lines not executed (N use of results (oo_, options_ defaults, ...)) | `exogenous-observed-variables/preprocessor.mod`, `decision_rules/third_order/FV2011.mod` |
+| 2 | OSR: The use of maxit and tolf is now deprecated. Please use the optim-option instead. | `optimal_policy/OSR/osr_example_obj_corr_non_stat_vars.mod`, `optimal_policy/OSR/osr_obj_corr_algo_4.mod` |
 | 2 | perfect_foresight does not act on these perfect_foresight_setup options from the .mod file: simul.first_simula | `deterministic_simulations/homotopy.mod`, `deterministic_simulations/homotopy_histval.mod` |
 | 2 | perfect_foresight does not act on these perfect_foresight_solver options from the .mod file: simul.steady_solv | `deterministic_simulations/homotopy_endval_steady_linearization.mod`, `deterministic_simulations/homotopy_marginal_linearization.mod` |
 | 1 | MATLAB code in the .mod file writes simulation paths or results (oo_.*); JDyn ignores these assignments, so a  | `model-inversion/nk-2/z_check_inversion.mod` |
+| 1 | MATLAB lines not executed (N blocks with an unknown condition, N dependent on skipped statements) | `optimal_policy/Ramsey/Gali_commitment.mod` |
 | 1 | MATLAB lines not executed (N blocks with an unknown condition, N file input<path>) | `decision_rules/example1.mod` |
 | 1 | MATLAB lines not executed (N blocks with an unknown condition, N use of results (oo_, options_ defaults, ...), | `lmmcp/sw_newton.mod` |
 | 1 | MATLAB lines not executed (N dependent on skipped statements, N blocks with an unknown condition, N use of res | `stochastic_simulations/pruning/fs2000_pruning.mod` |
-| 1 | MATLAB lines not executed (N dependent on skipped statements, N file input<path>) | `histval_initval_file/ramst_data_generate.mod` |
-| 1 | MATLAB lines not executed (N dependent on skipped statements, N unsupported syntax, N blocks with an unknown c | `model-inversion/nk-2/invert.mod` |
-| 1 | MATLAB lines not executed (N dependent on skipped statements, N unsupported syntax, N unknown functions) | `ecb/backward-models/irf/solow_1.mod` |
-| 1 | MATLAB lines not executed (N dependent on skipped statements, N unsupported syntax, N unknown functions, N use | `examples/reporting/collard_2001_reporting.mod` |
 
-(10 further causes with fewer tests are in results.csv.)
+(13 further causes with fewer tests are in results.csv.)
 
 ## Triage (hand-written; appended to the generated tables)
 

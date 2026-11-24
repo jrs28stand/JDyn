@@ -101,7 +101,10 @@ variable in its own equation is constant, so the Jacobian is evaluated once.
 """
 function fill_auxiliary(m::Model, ys, x, params)
     aux = get!(m.cache, :aux_endo_index) do
-        Int[Int(d["endo_index"]) for d in get_or(m.raw, "aux_vars", [])]
+        Int[Int(d["endo_index"]) for d in get_or(m.raw, "aux_vars", []) if get(d, "type", -1) != 6]    # Lagrange multipliers have no defining equation
+    end::Vector{Int}
+    rowof = get!(m.cache, :aux_rows) do
+        any(d -> get(d, "type", -1) == 6, get_or(m.raw, "aux_vars", [])) ? _aux_rows(m, aux) : copy(aux)
     end::Vector{Int}
     ys = copy(ys)
     isempty(aux) && return ys
@@ -118,16 +121,17 @@ function fill_auxiliary(m::Model, ys, x, params)
             ys[i] = log(ys[o]); push!(logaux, i)
         end
     end
-    aux = [i for i in aux if !(i in logaux)]
+    keep = [k for k in eachindex(aux) if !(aux[k] in logaux)]
+    aux, rowof = aux[keep], rowof[keep]
     isempty(aux) && return ys
     J = static_jac(m, ys, x, params)
-    diagc = Float64[J[i, i] for i in aux]
+    diagc = Float64[J[rowof[k], aux[k]] for k in eachindex(aux)]
     exact = all(isfinite, diagc) && all(!iszero, diagc)
     for _ in 1:2
         for (k, i) in enumerate(aux)
             isfinite(ys[i]) || (ys[i] = 0.0)
-            r = static_resid(m, ys, x, params)[i]
-            d = exact ? diagc[k] : static_jac(m, ys, x, params)[i, i]
+            r = static_resid(m, ys, x, params)[rowof[k]]
+            d = exact ? diagc[k] : static_jac(m, ys, x, params)[rowof[k], i]
             (isfinite(d) && d != 0) || continue          # equation without its own variable (a lead-lag auxiliary of a unit-root / MCE model): keep the start value
             ys[i] -= r / d
         end
@@ -160,6 +164,7 @@ function steady_state(m::Model; params=nothing, guess=nothing, tol=nothing, chec
 end
 
 function _steady_state(m::Model, params, guess, x; tolf=DYNARE_TOLF)
+    is_ramsey(m) && return ramsey_steady_state(m, params, guess, x; tolf=tolf)     # dyn_ramsey_static.m (src/optimal_policy.jl)
     fn = m.steady_state_fn
     if fn === nothing && m.steady_state_model === nothing && m.steady_state_file !== nothing
         fn = steady_state_file_fn(m)
@@ -334,14 +339,14 @@ Dulmage-Mendelsohn decomposition and the blocks are solved from the last to the 
 equations already hold at the initial guess is skipped (so the variables that only appear in identically satisfied
 equations stay at their initial values); `j2(j)` is indexed with the *row* positions of the block, as in Dynare.
 """
-function _dynare_solve(fun, jac, x0::Vector{Float64}; tolf, tolx, maxit, rng=Random.default_rng())
+function _dynare_solve(fun, jac, x0::Vector{Float64}; tolf, tolx, maxit, rng=Random.default_rng(), jacflag::Bool=true)
     x = copy(x0)
     nn = length(x)
     fvec = fun(x)
     if all(isfinite, fvec) && maximum(abs, fvec; init=0.0) < tolf
         return x, true, Int[], Int[], :none
     end
-    fjac = jac(x)
+    fjac = jacflag ? jac(x) : zeros(0, 0)          # Dynare without analytic Jacobian: only fvec decides whether to randomise
     if !(all(isfinite, fvec) && all(isfinite, fjac))
         # options_.solve_randomize_initial_guess (true by default): replace the default (zero) initial values by random
         # numbers, first positive (rand*10), then normal (randn*10), then negative, until the model can be evaluated
@@ -351,7 +356,7 @@ function _dynare_solve(fun, jac, x0::Vector{Float64}; tolf, tolx, maxit, rng=Ran
         for gen in (() -> rand(rng, in0) .* 10, () -> randn(rng, in0) .* 10, () -> -rand(rng, in0) .* 10)
             for _ in 0:in0*10
                 x[idx] .= gen()
-                fvec = fun(x); fjac = jac(x)
+                fvec = fun(x); fjac = jacflag ? jac(x) : zeros(0, 0)
                 good = all(isfinite, fvec) && all(isfinite, fjac)
                 good && break
             end
@@ -359,6 +364,7 @@ function _dynare_solve(fun, jac, x0::Vector{Float64}; tolf, tolx, maxit, rng=Ran
         end
         good || return x0, false, Int[], Int[], :failed
     end
+    jacflag || (fjac = jac(x))
     j1, j2, r, s = dmperm(fjac)
     srows = Int[]; moved = Int[]
     for i in length(r)-1:-1:1

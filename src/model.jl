@@ -466,7 +466,8 @@ function static_resid(m::Model, y::AbstractVector, x=nothing, params=nothing)
     p = params === nothing ? m.params : Vector{Float64}(params)
     y = Vector{Float64}(y)
     T = _tmp(f.sta_tmp[1])
-    r = zeros(m.n_endo)
+    neq = _neq(m)
+    r = zeros(neq)
     try
         Base.invokelatest(f.sta_resid_tt, T, y, x, p)
         Base.invokelatest(f.sta_resid, T, r, y, x, p)
@@ -474,8 +475,10 @@ function static_resid(m::Model, y::AbstractVector, x=nothing, params=nothing)
         e isa DomainError || rethrow()
         fill!(r, NaN)
     end
-    r
+    neq == m.n_endo ? r : vcat(r, zeros(m.n_endo - neq))
 end
+"Number of equations written in the model block (fewer than the variables under `discretionary_policy`)."
+_neq(m::Model) = (v = get(m.raw, "model", nothing); v isa AbstractVector && !isempty(v) && length(v) < m.n_endo ? length(v) : m.n_endo)
 
 function static_jac(m::Model, y::AbstractVector, x=nothing, params=nothing)
     f = m.fns
@@ -504,7 +507,8 @@ function dynamic_resid(m::Model, yy::AbstractVector, x=nothing, params=nothing, 
     p = params === nothing ? m.params : Vector{Float64}(params)
     ss = ss === nothing ? zeros(m.n_endo) : Vector{Float64}(ss)
     T = _tmp(f.dyn_tmp[1])
-    r = zeros(m.n_endo)
+    neq = _neq(m)
+    r = zeros(neq)
     try
         Base.invokelatest(f.dyn_resid_tt, T, Vector{Float64}(yy), x, p, ss)
         Base.invokelatest(f.dyn_resid, T, r, Vector{Float64}(yy), x, p, ss)
@@ -512,7 +516,7 @@ function dynamic_resid(m::Model, yy::AbstractVector, x=nothing, params=nothing, 
         e isa DomainError || rethrow()
         fill!(r, NaN)
     end
-    r
+    neq == m.n_endo ? r : vcat(r, zeros(m.n_endo - neq))
 end
 
 "Structural non-zeros of the dynamic Jacobian (at `(m.fns.g1_rows, m.fns.g1_cols)`)."
@@ -650,7 +654,12 @@ function _exec_statement!(m::Model, st)
             end
         end
     elseif kind in ("ramsey_model", "ramsey_policy")
-        throw(ModelError("$kind (optimal policy) is not supported by JDyn: the Ramsey problem's steady state and policy rule are not computed"))
+        o = get_or(st, "options", Dict{String,Any}())
+        m.options[kind] = o
+        kind == "ramsey_policy" && _accumulate_options!(m, o)
+        ins = get(o, "instruments", nothing)
+        # options_.instruments as Dynare holds it (a column cell array), for _steadystate.m files that read it
+        ins === nothing || (m.matlab_options["instruments"] = Cell(Any[String(v) for v in (ins isa AbstractDict ? ins["symbol_list"] : ins)], (length(ins isa AbstractDict ? ins["symbol_list"] : ins), 1)))
     elseif kind == "shocks" && get(st, "surprise", false) == true
         m.n_surprise += 1
         push!(get!(m.options, "shock_paths", Any[]), st)
@@ -707,6 +716,12 @@ function _exec_statement!(m::Model, st)
         else
             m.options[kind] = get_or(st, "options", Dict{String,Any}())
         end
+    elseif kind in ("planner_objective", "evaluate_planner_objective", "discretionary_policy", "osr", "osr_params", "optim_weights",
+                    "osr_params_bounds", "ramsey_constraints")
+        # read by src/optimal_policy.jl and src/results_policy.jl; the solution commands' options persist in options_
+        o = get_or(st, "options", Dict{String,Any}())
+        m.options[kind] = merge(get(m.options, kind, Dict{String,Any}()), o)
+        kind in ("discretionary_policy", "osr") && _accumulate_options!(m, o)
     elseif kind in ("native", "verbatim") || kind in _LATEX_KINDS || kind in _SEMI_KINDS
         # native lines are run by the MATLAB session
     else

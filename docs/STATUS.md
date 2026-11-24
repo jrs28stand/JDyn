@@ -54,7 +54,24 @@ faster than pydyn on the same machine. An interpreted `_steadystate.m` costs abo
 - Plotting beyond first-order IRFs (OccBin, smoother, decompositions, ...). First-order IRF figures are
   done: Dynare's content rules, tidy CSV export, SVG built in, PNG/PDF through an optional Plots.jl
   extension (see docs/plotting.md).
-- Optimal policy (Ramsey, OSR), heterogeneous agents, `dseries`: refused with an error. Semi-structural toolbox: see "Semi-structural models" below for what is and is not done (`pac.estimate.*`, legacy `get_companion_matrix_legacy`, `pac.print`/`var_expectation.print`).
+- Optimal policy: not done are `ramsey_constraints` (Dynare's inequality constraints, `solve_algo=10`), perfect-foresight Ramsey
+  welfare with `ramsey_policy` after `perfect_foresight_solver` beyond Dynare's backward recursion, `osr(analytic_derivation)`,
+  `osr` with `opt_algo` 1, 2, 3 (MATLAB toolboxes), `stoch_simul` orders above 3 for Ramsey models, `mult_elimination` as a
+  separate option (the preprocessor does it). All refuse with an error. Heterogeneous agents, `dseries`: refused with an error. Semi-structural toolbox: see "Semi-structural models" below for what is and is not done (`pac.estimate.*`, legacy `get_companion_matrix_legacy`, `pac.print`/`var_expectation.print`).
+
+## Optimal policy (src/optimal_policy.jl, src/results_policy.jl; docs/RAMSEY_PROGRESS.md)
+
+`ramsey_model` / `ramsey_policy` (instruments, planner_discount, the Ramsey steady state `dyn_ramsey_static` with multipliers found
+by least squares, steady-state files, `histval`, several instruments, auxiliary variables), `evaluate_planner_objective` (orders 1
+and 2, conditional welfare with multipliers at 0 and at their steady state, unconditional welfare, `u` and `histval`),
+`discretionary_policy` (Dennis' algorithm) and `osr` (`osr_params`, `osr_params_bounds`, `optim_weights`, weighted variances or
+minus the welfare; csminwel, fminsearch, simplex, CMA-ES). They run through `dynare()`; `ramsey_policy!`, `discretionary_policy!`,
+`osr!`, `evaluate_planner_objective!` re-run them on a workspace, and `osr`, `discretionary_policy`, `evaluate_planner_objective`,
+`ramsey_steady_state` work on a `Model`. test/test_optimal_policy.jl compares with Dynare 7.2 (Octave) on 18 Ramsey models, 5
+discretionary models, 5 osr models and a 2-shock order-2 welfare: steady state, rules, welfare and osr objective to 1e-9 or better
+(csminwel optima to the optimiser's tolerance). Dynare's order-2 welfare mixes the Kronecker order of its `Wyu` term (matters with
+several shocks and states, and a nonzero first shock); JDyn corrects it by default and reproduces Dynare with
+`replicate_dynare_bugs=true` (checked against Octave).
 
 ## OccBin
 
