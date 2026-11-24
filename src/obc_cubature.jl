@@ -58,13 +58,16 @@ mutable struct CubState
     Pm::Matrix{Float64}
     Y::Matrix{Float64}
     ok::Vector{Bool}
+    m_diag::Any                        # up-front diagnostic of M (`cub_m_diagnostic`), nothing when skipped
+    milp_time_limit::Float64           # s per failed point (obc_cubature_milp_time_limit)
+    tolerance::Float64                 # share of failed relevant points that is dropped instead of raised (obc_cubature_failure_tolerance)
 end
 function CubState(M::AbstractMatrix, N::Integer)
     nws = size(M, 1)
     CubState(:cache, CubCache(), zeros(Bool, nws), zeros(nws), zeros(nws), zeros(nws), zeros(UInt64, cld(nws, 64)),
                UInt64[], Int[], zeros(nws), zeros(N), maximum(abs, M),
                zeros(Bool, nws, 0), zeros(UInt64, 120, 0), Int[], Int[], UInt64[], UInt64[], zeros(nws, 0), zeros(nws, 0), zeros(nws, nws),
-               zeros(N, 0), zeros(nws, 0), Bool[])
+               zeros(N, 0), zeros(nws, 0), Bool[], nothing, 1.0, 0.0)
 end
 
 @inline function _pack!(key::Vector{UInt64}, S::Vector{Bool})
@@ -313,4 +316,51 @@ function _cub_group!(st::CubState, Mh::Matrix{Float64}, scale::Float64, Pm::Abst
         empty!(act); append!(act, newact)
     end
     nothing
+end
+
+
+# ------------------------------------------------------------------------------------------------ options
+"`obc_m_diagnostic`: `:s` (S-matrix test, default), `:full` (also the exact P-matrix tests) or `false` (skip)."
+function _obc_mdiag(x)
+    v = x isa AbstractArray && length(x) == 1 ? x[1] : x
+    v === false && return false
+    v isa Real && return v == 0 ? false : v == 1 ? :s : throw(ArgumentError("obc_m_diagnostic must be s, full or false (got $x)"))
+    v === true && return :s
+    s = lowercase(strip(string(v)))
+    s in ("s", "true") && return :s
+    s == "full" && return :full
+    s in ("false", "off", "none", "no") && return false
+    throw(ArgumentError("obc_m_diagnostic must be s, full or false (got $x)"))
+end
+
+"`obc_cubature_milp_time_limit` (seconds, > 0) and `obc_cubature_failure_tolerance` (a share in [0, 1))."
+function _obc_float_option(x, name::AbstractString; lo::Real, hi::Real=Inf, open_hi::Bool=false)
+    v = x isa AbstractArray && length(x) == 1 ? x[1] : x
+    v isa AbstractString && (v = tryparse(Float64, v))
+    ok = v isa Real && isfinite(v) && v >= lo && (open_hi ? v < hi : v <= hi)
+    ok || throw(ArgumentError("$name must be a number in [$lo, $hi" * (open_hi ? ") " : "] ") * "(got $x)"))
+    Float64(v)
+end
+
+# ------------------------------------------------------------------------------------------------ up-front diagnostic of M
+const _CUB_DIAG_CACHE = Dict{Tuple{UInt,Int,Symbol},Any}()
+
+"""
+    cub_m_diagnostic(M, n_c; level=:s) -> NamedTuple | nothing
+
+Existence diagnostic of the complementarity block of `M` when cubature is on (`m_diagnostics`, reused): `is_s` (S-matrix: some y > 0 has M y > 0, necessary for a
+solution to exist for every q). Level `:s` runs the S-matrix linear programme and one leading P-block per constraint (`is_p = nothing`: not decided); `:full`
+also runs the exact P-matrix tests (hundreds of ms at T = 32); `false` skips (returns `nothing`). Cached per parameter set (key: hash of `M`). One-way: a non-S matrix
+means some paths have no solution; an S-matrix does not guarantee that every path has one (the borrowing-constraint example is S and still has failing points).
+The named tuple adds `seconds` and `level`.
+"""
+function cub_m_diagnostic(M::AbstractMatrix, n_c::Integer; level=:s)
+    level === false && return nothing
+    key = (hash(M), Int(n_c), level)
+    get!(_CUB_DIAG_CACHE, key) do
+        length(_CUB_DIAG_CACHE) > 32 && empty!(_CUB_DIAG_CACHE)
+        t = @elapsed d = m_diagnostics(M; n_c=n_c, max_exact=level == :full ? 16 : n_c)
+        d = level == :full ? d : merge(d, (is_p=nothing,))
+        merge(d, (seconds=t, level=level))
+    end
 end

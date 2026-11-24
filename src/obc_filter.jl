@@ -36,6 +36,11 @@ function _obc_flat_options(flat::AbstractDict)
         (out[:obc_periods_of_uncertainty] = _obc_int_option(flat["obc_periods_of_uncertainty"], "obc_periods_of_uncertainty"))
     haskey(flat, "obc_qmc_level") && (out[:obc_qmc_level] = _obc_int_option(flat["obc_qmc_level"], "obc_qmc_level"; min=0))
     haskey(flat, "obc_cubature_regions") && (out[:obc_cubature_regions] = _obc_regions(flat["obc_cubature_regions"]))
+    haskey(flat, "obc_m_diagnostic") && (out[:obc_m_diagnostic] = _obc_mdiag(flat["obc_m_diagnostic"]))
+    haskey(flat, "obc_cubature_milp_time_limit") &&
+        (out[:obc_cubature_milp_time_limit] = _obc_float_option(flat["obc_cubature_milp_time_limit"], "obc_cubature_milp_time_limit"; lo=0.0))
+    haskey(flat, "obc_cubature_failure_tolerance") &&
+        (out[:obc_cubature_failure_tolerance] = _obc_float_option(flat["obc_cubature_failure_tolerance"], "obc_cubature_failure_tolerance"; lo=0.0, hi=1.0, open_hi=true))
     haskey(flat, "obc_check_ahead") && (out[:obc_check_ahead] = _obc_int_option(flat["obc_check_ahead"], "obc_check_ahead"; min=0))
     out
 end

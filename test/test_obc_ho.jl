@@ -113,7 +113,7 @@ end
         r, E = ref_endo("ref_o2cub.mat")
         _, E2 = ref_endo("ref_o2.mat")
         @test maximum(abs, E .- E2) > 1e-5                      # cubature changes the answer
-        h = JDyn.obc_ho(ob; order=2, horizon=32, check_ahead=32, cubature=true, qmc_level=9)
+        h = JDyn.obc_ho(ob; order=2, horizon=32, check_ahead=32, cubature=true, qmc_level=9, regions=1)
         Rd = real.(r["Rcc"])
         @test size(h.R) == size(Rd) == (64, 12)
         @test maximum(abs, h.R * h.R' .- Rd * Rd') < 1e-15      # the conditional covariance, tapered and pruned
@@ -141,23 +141,23 @@ end
 
     @testset "cubature limits" begin
         tiny = m.Sigma_e .* 1e-12
-        c = JDyn.obc_ho(ob; order=2, horizon=32, check_ahead=32, cubature=true, qmc_level=5, Sigma_e=tiny)
+        c = JDyn.obc_ho(ob; order=2, horizon=32, check_ahead=32, cubature=true, qmc_level=5, regions=1, Sigma_e=tiny)
         b = JDyn.obc_ho(ob; order=2, horizon=32, check_ahead=32, Sigma_e=tiny)
         @test maximum(abs, JDyn.obc_ho_simulate(c, S[1:100, :]).with_bound .- JDyn.obc_ho_simulate(b, S[1:100, :]).with_bound) < 1e-9
         # without taper and pruning R R' is the exact covariance of the gap path from the shocks of the next 16 periods
-        w = JDyn.obc_ho(ob; order=1, horizon=32, check_ahead=32, cubature=true, taper=false, pruning_cutoff=nothing, qmc_level=3)
+        w = JDyn.obc_ho(ob; order=1, horizon=32, check_ahead=32, cubature=true, taper=false, pruning_cutoff=nothing, qmc_level=3, regions=1)
         cov = zeros(64, 64)
         for i in 1:16
             B = zeros(64, 1); B[i+1:64, :] = w.Gq[1:64-i, :]
             cov .+= B * m.Sigma_e * B'
         end
         @test maximum(abs, w.R * w.R' .- cov) < 1e-12 * max(1.0, maximum(abs, cov))
-        t = JDyn.obc_ho(ob; order=1, horizon=32, check_ahead=32, cubature=true, qmc_level=3)
+        t = JDyn.obc_ho(ob; order=1, horizon=32, check_ahead=32, cubature=true, qmc_level=3, regions=1)
         @test tr(t.R * t.R') < tr(cov)                          # the cosine taper shrinks it
         # cubature (one region): wedges in at least as many periods; it acts where the bound binds in expectation later (on this model the
         # bound binds in the same 83 periods with and without)
         a = JDyn.obc_ho_simulate(JDyn.obc_ho(ob; order=2, horizon=32, check_ahead=32), S)
-        cb = JDyn.obc_ho_simulate(JDyn.obc_ho(ob; order=2, horizon=32, check_ahead=32, cubature=true, qmc_level=7), S)
+        cb = JDyn.obc_ho_simulate(JDyn.obc_ho(ob; order=2, horizon=32, check_ahead=32, cubature=true, qmc_level=7, regions=1), S)
         @test count(w -> maximum(w) > 1e-10, eachrow(cb.wedges)) >= count(w -> maximum(w) > 1e-10, eachrow(a.wedges))
     end
 
@@ -171,7 +171,7 @@ end
         @test size(res.news.wedges) == (300, 32) && all(==(:ok), res.news.status)
         @test maximum(res.linear[:, iR]) > 1.0                      # `linear`: the simulation that ignores the bound
         # order 1 with cubature, and order 1 alone through the new loop equals the order-1 OccBin-style loop (a shock in every period)
-        r1 = JDyn.simulate(ob, S; obc_order=1, obc_cubature=true, obc_qmc_level=4, kw...)
+        r1 = JDyn.simulate(ob, S; obc_order=1, obc_cubature=true, obc_qmc_level=4, obc_cubature_regions=1, kw...)
         r0 = JDyn.simulate(ob, S; kw...)
         @test maximum(abs, JDyn.simulate(ob, S; obc_order=2, obc_cubature=false, kw...).piecewise .- res.piecewise) == 0
         ho1 = JDyn.obc_ho_simulate(JDyn.obc_ho(ob; order=1, horizon=32, check_ahead=32), S)
@@ -220,7 +220,7 @@ end
         moc = JDyn.mod_options(obc_)
         @test moc.obc_cubature === true && moc.obc_qmc_level == 9 && moc.obc_periods_of_uncertainty == 16 && moc.obc_cubature_regions == 1
         rc = JDyn.simulate(obc_, S300; moc..., periods=300)
-        rk = JDyn.simulate(ob2, S300; obc_method=:news, obc_order=2, obc_cubature=true, obc_qmc_level=9, obc_horizon=32, obc_check_ahead=32, periods=300)
+        rk = JDyn.simulate(ob2, S300; obc_method=:news, obc_order=2, obc_cubature=true, obc_qmc_level=9, obc_cubature_regions=1, obc_horizon=32, obc_check_ahead=32, periods=300)
         @test maximum(abs, rc.piecewise .- rk.piecewise) < 1e-15
         _, Ec = ref_endo("ref_o2cub.mat")
         @test 1e-9 < maximum(abs, rc.piecewise .- E2) && maximum(abs, rc.piecewise .- Ec) < 2e-4   # own root signs: see the cubature testset
@@ -364,4 +364,58 @@ end
         minimum(qv) < 0 || (qv = hv.qc .+ hv.Q1 * (-0.03 .* ones(hv.n)))
         @test maximum(abs, JDyn.ho_news_shocks(hv, qv) .- JDyn._ho_lcp(hv, qv, 0)) < 1e-6
     end
+end
+
+@testset "cubature defaults: the full average over 4,095 points" begin
+    m = load_copy(joinpath(HO_DIR, "nk_occ.mod"))
+    ob = JDyn.Occbin(m)
+    h = JDyn.obc_ho(ob; order=2, horizon=32, check_ahead=32, cubature=true)
+    @test h.regions == 0 && h.qmc_level == 11 && size(h.xi, 2) == 4095
+    @test JDyn.obc_ho(ob; order=2, horizon=32, check_ahead=32, cubature=true, regions=1).regions == 1
+    @test JDyn.obc_ho(ob; order=2, horizon=32, check_ahead=32, cubature=true, regions="all").regions == 0
+    S = reshape(vec(ho_ref("shocks.mat")["ShockSequence"]), :, 1)[1:40, :]
+    kw = (obc_method=:news, obc_order=2, obc_cubature=true, obc_horizon=32, check_ahead_periods=32, periods=40)
+    rd = JDyn.simulate(ob, S; kw...)                                             # defaults: all, level 11
+    ra = JDyn.simulate(ob, S; obc_cubature_regions="all", obc_qmc_level=11, kw...)
+    r1 = JDyn.simulate(ob, S; obc_cubature_regions=1, obc_qmc_level=11, kw...)
+    @test rd.piecewise == ra.piecewise
+    @test maximum(abs, rd.piecewise .- r1.piecewise) > 1e-6                      # the full average prices what one region does not
+end
+
+# ---------------------------------------------------------------------------------------------- models for the failure tests
+"The 32-variable SW-type stand-in of pydyn's bench (obc_sw_zlb.mod with `rlag = rnot`: only the policy-rate equation switches); M is not an S-matrix."
+function sw_cp_model()
+    src = read(joinpath(@__DIR__, "obc", "obc_sw_zlb.mod"), String)
+    a = first(findfirst("[name = 'Auxiliary notional interest rate',bind='zlb']", src))
+    b = first(findfirst("    [name='Output gap check']", src))
+    d = mktempdir()
+    for f in readdir(joinpath(@__DIR__, "obc"))
+        isfile(joinpath(@__DIR__, "obc", f)) && cp(joinpath(@__DIR__, "obc", f), joinpath(d, f); force=true)
+    end
+    write(joinpath(d, "sw_cp.mod"), src[1:a-1] * "[name = 'Auxiliary notional interest rate']\nrlag = rnot;\n" * src[b:end])
+    with_logger(NullLogger()) do; JDyn.load(joinpath(d, "sw_cp.mod")); end
+end
+
+@testset "up-front diagnostic of M when cubature is on" begin
+    m = load_copy(joinpath(HO_DIR, "nk_occ.mod"))
+    ob = JDyn.Occbin(m)
+    h = @test_logs JDyn.obc_ho(ob; order=1, horizon=32, check_ahead=32, cubature=true, qmc_level=3)       # S-matrix: no warning
+    d = h.cub.m_diag
+    @test d.is_s === true && d.level == :s && d.seconds >= 0 && d.is_p === nothing
+    @test JDyn.obc_ho(ob; order=1, horizon=32, check_ahead=32, cubature=true, qmc_level=3).cub.m_diag === d           # cached per parameter set
+    @test JDyn.obc_ho(ob; order=1, horizon=32, check_ahead=32, cubature=true, qmc_level=3, m_diagnostic=false).cub.m_diag === nothing
+    @test JDyn.obc_ho(ob; order=1, horizon=32, check_ahead=32, qmc_level=3).cub.m_diag === nothing                   # no cubature: not computed
+    @test JDyn.obc_ho(ob; order=1, horizon=12, check_ahead=12, cubature=true, qmc_level=3, m_diagnostic="full").cub.m_diag.level == :full
+    @test_throws ArgumentError JDyn.obc_ho(ob; order=1, cubature=true, qmc_level=3, m_diagnostic="maybe")
+    sw = sw_cp_model()
+    h2 = @test_logs (:warn, r"not an S-matrix") JDyn.obc_ho(JDyn.Occbin(sw); order=1, horizon=32, check_ahead=32, cubature=true, qmc_level=3)
+    @test h2.cub.m_diag.is_s === false
+    # the options reach the solver through simulate and the mod-file route
+    S = reshape(vec(ho_ref("shocks.mat")["ShockSequence"]), :, 1)[1:20, :]
+    kw = (obc_method=:news, obc_order=1, obc_cubature=true, obc_qmc_level=3, obc_horizon=32, check_ahead_periods=32, periods=20)
+    @test JDyn.simulate(ob, S; obc_m_diagnostic=false, kw...).piecewise == JDyn.simulate(ob, S; kw...).piecewise
+    @test_throws ArgumentError JDyn.simulate(ob, S; obc_m_diagnostic="maybe", kw...)
+    @test_throws ArgumentError JDyn.simulate(ob, S; obc_cubature_failure_tolerance=1.0, kw...)
+    @test_throws ArgumentError JDyn.simulate(ob, S; obc_cubature_milp_time_limit=-1, kw...)
+    @test_throws ArgumentError JDyn.simulate(ob, S; obc_method=:news, obc_order=2, obc_cubature=false, obc_cubature_failure_tolerance=0.1, obc_horizon=32, check_ahead_periods=32)
 end

@@ -432,8 +432,9 @@ function simulate(ob::Occbin, shocks_in::AbstractMatrix; periods::Integer=100, c
                   reset_regime_in_new_period::Bool=false, exo_pos=nothing, algo_truncation::Integer=1,
                   replicate_dynare_bugs::Bool=false, obc_method=:occbin, obc_horizon=40, obc_tol::Real=1e-10,
                   obc_raise::Bool=true, obc_solver_options=NamedTuple(), obc_fast_path::Bool=true,
-                  obc_order=1, obc_cubature::Bool=false, obc_periods_of_uncertainty=16, obc_qmc_level=10, obc_cubature_regions=1,
-                  obc_check_ahead=nothing, obc_selection=:occbin)
+                  obc_order=1, obc_cubature::Bool=false, obc_periods_of_uncertainty=16, obc_qmc_level=11, obc_cubature_regions="all",
+                  obc_check_ahead=nothing, obc_selection=:occbin, obc_m_diagnostic=:s, obc_cubature_milp_time_limit=1.0,
+                  obc_cubature_failure_tolerance=0.0)
     method = _obc_method(obc_method)
     selection = _obc_selection(obc_selection)
     selection != :occbin && method != :news && throw(ArgumentError("obc_selection = $selection needs obc_method = news"))
@@ -445,12 +446,16 @@ function simulate(ob::Occbin, shocks_in::AbstractMatrix; periods::Integer=100, c
         obc_fast_path || throw(ArgumentError("obc_fast_path = false is not supported with obc_order = 2 or obc_cubature"))
         isempty(obc_solver_options) || throw(ArgumentError("obc_solver_options are not supported with obc_order = 2 or obc_cubature"))
         selection == :occbin || throw(ArgumentError("obc_selection = $selection is not implemented with obc_order = 2 or obc_cubature"))
+        tolc = _obc_float_option(obc_cubature_failure_tolerance, "obc_cubature_failure_tolerance"; lo=0.0, hi=1.0, open_hi=true)
+        tolc > 0 && !obc_cubature && throw(ArgumentError("obc_cubature_failure_tolerance > 0 needs obc_cubature = true"))
         # gap periods beyond the horizon: obc_check_ahead; else an explicit check_ahead_periods (OccBin's default, 200, is not meant for this); else 40 (pydyn's default)
         ca = obc_check_ahead !== nothing ? _obc_int_option(obc_check_ahead, "obc_check_ahead"; min=0) : (check_ahead_periods != 200 ? check_ahead_periods : 40)
         return _simulate_obc_ho(ob, shocks_in; horizon=_obc_horizon(obc_horizon), tol=obc_tol, periods=periods, check_ahead_periods=ca,
                                 max_check_ahead_periods=max_check_ahead_periods, init=init, exo_pos=exo_pos, order=_obc_order(obc_order),
                                 cubature=obc_cubature, periods_of_uncertainty=_obc_int_option(obc_periods_of_uncertainty, "obc_periods_of_uncertainty"),
                                 qmc_level=_obc_int_option(obc_qmc_level, "obc_qmc_level"; min=0), regions=_obc_regions(obc_cubature_regions),
+                                m_diagnostic=_obc_mdiag(obc_m_diagnostic), failure_tolerance=tolc,
+                                milp_time_limit=_obc_float_option(obc_cubature_milp_time_limit, "obc_cubature_milp_time_limit"; lo=0.0),
                                 ignored=(maxit=maxit, curb_retrench=curb_retrench, periodic_solution=periodic_solution,
                                          periodic_solution_threshold=periodic_solution_threshold, periodic_solution_strict=periodic_solution_strict,
                                          init_regime=init_regime, init_binding_indicator=init_binding_indicator,

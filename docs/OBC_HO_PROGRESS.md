@@ -5,10 +5,11 @@ Branch `obc-ho` (pushed to `origin wip/obc-ho`), based on `wip/obc` at 5f0d3a0. 
 
 ## State / next step
 
-CUBATURE PORT (current task; spec: pydyn docs/OBC_HO_PERF.md). Step 1 in progress: `obc_cubature_regions = all` (internal regions = 0; `_obc_regions`) implemented in
-src/obc_cubature.jl (cached-LU scalar point solver, `cub_mode` :scalar/:cache) and `_cub_all!` in src/obc_ho.jl; default still regions = 1 until step 2.
-Loop (existing solve_active_set) vs cache so far (nk L9 4.8 ms -> 1.5 ms/period). Next: :group lockstep mode, timing table (bench script idea: simulate 100 periods,
-min of repeats, levels 9/11/13, nk and NKM), then tests, then steps 2-6.
+CUBATURE PORT (current task; spec: pydyn docs/OBC_HO_PERF.md). DONE and pushed: step 1 (full average, timing table at the end of this file), step 2 (defaults: when cubature is on the
+full average, level 11; `obc_cubature_regions = 1` and `all`), step 3 (up-front M diagnostic `obc_m_diagnostic = s|full|false`, cached per parameter set, warns when M is not an S-matrix; stored in
+`h.cub.m_diag`). Options already wired (keyword, workspace, native mod lines) for step 4: `obc_cubature_milp_time_limit` (1.0), `obc_cubature_failure_tolerance` (0); they are stored in `h.cub` but
+the failure handling itself is NEXT (step 4: classification LP head / LP full / MILP with a native HiGHS model per parameter set, CubatureFailure, tolerance mode). Then step 5 (two constraints),
+step 6 (regions = k, lowest priority). Models for the failure tests: test/obc/ho/occ_borrcon.mod, `sw_cp_model()` in test/test_obc_ho.jl. Cross-port checks vs pydyn (injected root and points) still to do.
 
 State: H1, H2, C1 done. Follow-up (rule 7, regime selection, end-to-end estimation) done, see docs/OBC_ESTIMATION.md. Task 1 (mod-file/workspace/keyword routes and refusals for the higher-order options) and Task 2 (estimation under obc_method, steps a-d, docs/OBC_ESTIMATION.md) done; test_obc_ho.jl (85), test_obc_estimation.jl and the existing OccBin/OBC suites pass.
 Next step: review by the coordinator; the cubature step is untouched (being redesigned elsewhere).
@@ -83,3 +84,8 @@ Per relevant point: nk 6.9 us (loop), 2.0 us (cache); NKM 6.6 us (loop), 1.5 us 
 because the per-point solve is already a few microseconds; the default is `:cache`. Sets in the cache after 100 periods: nk 2,931 / 6,418 / 12,362 (levels 9/11/13), NKM 655 / 1,129 / 1,806.
 Maximum difference of the simulated wedges between the three modes: 1.7e-16.
 Note: the NKM rows are not at pydyn's shock scale (pydyn has 65% of points relevant): per relevant point the NKM cost is ~1.5 us against pydyn's ~2.4 us (3.5 ms / ~2,660 points).
+
+### Steps 2 and 3
+Defaults with cubature on: `obc_cubature_regions = all`, `obc_qmc_level = 11` (4,095 points); `obc_ho(...; qmc_level=11, regions="all")`. Tests that relied on one region at level 9/10 now pass `regions = 1` (and the level) explicitly; the DynareOBC checks (regions 1, level 9,
+injected root and points) are unchanged and hold. The M diagnostic: `cub_m_diagnostic(M, n_c; level)` reuses `m_diagnostics` (level `:s`: S-matrix LP and one leading P block, `is_p = nothing`; `:full`: exact P tests); key = hash of M. It is one-way: a non-S matrix means some paths have no
+solution; an S-matrix does not guarantee that every path has one (pydyn's borrowing-constraint example is S and still has failing points).

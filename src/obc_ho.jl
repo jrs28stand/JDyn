@@ -104,7 +104,7 @@ end
 _dr_rows(A::AbstractMatrix, ov) = (B = similar(A); B[ov, :] = A; Matrix{Float64}(B))
 
 """
-    obc_ho(ob::Occbin; order=2, horizon=40, check_ahead=40, cubature=false, periods_of_uncertainty=16, qmc_level=10, regions=1,
+    obc_ho(ob::Occbin; order=2, horizon=40, check_ahead=40, cubature=false, periods_of_uncertainty=16, qmc_level=11, regions="all",
            taper=true, pruning_cutoff=0.01, max_cubature_dimension=128, tol=1e-10, Sigma_e=nothing) -> ObcHO
 
 Build the higher-order news solver of a model with one complementarity constraint (the class the order-1 `news` method handles); order 1
@@ -113,8 +113,9 @@ or 2. `horizon`, `check_ahead`: periods with wedges and further periods over whi
 the first `2^(level+1) - 1` of the unscrambled Sobol sequence after the origin), `regions` (only 1: one region, DynareOBC's default).
 """
 function obc_ho(ob::Occbin; order::Integer=2, horizon::Integer=40, check_ahead::Integer=40, cubature::Bool=false,
-                periods_of_uncertainty::Integer=16, qmc_level::Integer=10, regions=1, taper::Bool=true,
-                pruning_cutoff=0.01, max_cubature_dimension::Integer=128, tol::Real=1e-10, Sigma_e=nothing)
+                periods_of_uncertainty::Integer=16, qmc_level::Integer=11, regions="all", taper::Bool=true,
+                pruning_cutoff=0.01, max_cubature_dimension::Integer=128, tol::Real=1e-10, Sigma_e=nothing,
+                m_diagnostic=:s, cubature_milp_time_limit::Real=1.0, cubature_failure_tolerance::Real=0.0)
     order in (1, 2) || throw(ArgumentError("obc_order must be 1 or 2 (order 3 is not implemented)"))
     regions = _obc_regions(regions)
     periods_of_uncertainty >= 1 || throw(ArgumentError("obc_periods_of_uncertainty must be at least 1"))
@@ -155,6 +156,14 @@ function obc_ho(ob::Occbin; order::Integer=2, horizon::Integer=40, check_ahead::
               zeros(0, 0), zeros(0, 0), Float64[], Float64[], zeros(0, 0), Float64(tol),
               Dict(:lcp => 0, :cubature_points => 0, :relevant_points => 0), CubState(sys.M, N))
     _ho_build_q_map!(h)
+    h.cub.milp_time_limit = _obc_float_option(cubature_milp_time_limit, "obc_cubature_milp_time_limit"; lo=0.0)
+    h.cub.tolerance = _obc_float_option(cubature_failure_tolerance, "obc_cubature_failure_tolerance"; lo=0.0, hi=1.0, open_hi=true)
+    if cubature
+        lev = _obc_mdiag(m_diagnostic)
+        h.cub.m_diag = cub_m_diagnostic(sys.M, length(sys.cons); level=lev)
+        h.cub.m_diag !== nothing && !h.cub.m_diag.is_s &&
+            @warn "obc_cubature: M is not an S-matrix: some paths can have no solution; cubature points may fail (see h.cub.m_diag; obc_m_diagnostic = false skips this test)"
+    end
     if cubature
         h.R = ho_conditional_root(h)
         h.xi = qmc_normal_points(size(h.R, 2), h.qmc_level)
@@ -572,7 +581,8 @@ positive wedges.
 """
 function _simulate_obc_ho(ob::Occbin, shocks_in::AbstractMatrix; horizon::Integer, tol::Real, periods::Integer, check_ahead_periods::Integer,
                           max_check_ahead_periods::Real, init, exo_pos, ignored::NamedTuple, order::Integer, cubature::Bool,
-                          periods_of_uncertainty::Integer, qmc_level::Integer, regions::Integer)
+                          periods_of_uncertainty::Integer, qmc_level::Integer, regions::Integer, m_diagnostic=:s,
+                          milp_time_limit::Real=1.0, failure_tolerance::Real=0.0)
     m, n, n_exo = ob.model, ob.n, ob.n_exo
     changed = [String(key) for (key, v) in pairs(ignored) if !isequal(v, getfield(_OBC_IGNORED_DEFAULTS, key))]
     isempty(changed) || warn_once(m, "obc_order = $order: OccBin options of the regime iteration are not used (ignored): " * join(sort(changed), ", "))
@@ -585,9 +595,10 @@ function _simulate_obc_ho(ob::Occbin, shocks_in::AbstractMatrix; horizon::Intege
     shocks = zeros(n_periods, n_exo)
     shocks[1:S, exo_idx] = Float64.(shocks_in)
     check = Int(min(check_ahead_periods, max_check_ahead_periods))
-    key = (Int(horizon), check, Int(order), cubature, Int(periods_of_uncertainty), Int(qmc_level), Int(regions), Float64(tol))
+    key = (Int(horizon), check, Int(order), cubature, Int(periods_of_uncertainty), Int(qmc_level), Int(regions), Float64(tol), m_diagnostic, Float64(milp_time_limit), Float64(failure_tolerance))
     h = get!(() -> obc_ho(ob; order=order, horizon=horizon, check_ahead=check, cubature=cubature, periods_of_uncertainty=periods_of_uncertainty,
-                          qmc_level=qmc_level, regions=regions, tol=tol), get!(() -> Dict{Any,ObcHO}(), _OBC_HO_CACHE, ob), key)
+                          qmc_level=qmc_level, regions=regions, tol=tol, m_diagnostic=m_diagnostic,
+                          cubature_milp_time_limit=milp_time_limit, cubature_failure_tolerance=failure_tolerance), get!(() -> Dict{Any,ObcHO}(), _OBC_HO_CACHE, ob), key)
     foreach(k -> h.stats[k] = 0, keys(h.stats))
     y0 = init === nothing || isempty(init) ? nothing : Float64.(vec(collect(init)))
     y0 === nothing || length(y0) == n || throw(ArgumentError("init needs $n values (declaration order)"))
