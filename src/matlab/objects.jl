@@ -211,7 +211,7 @@ function obj_assign(I, cur::MObject, chain, i, value, sc)
         if length(tdx) == size(b, 1)
             d[tdx, :] = size(b, 2) == vobs(sA) ? b : repeat(b, 1, vobs(sA))
         elseif size(b, 1) == 1
-            d[tdx, :] = repeat(b, length(tdx), 1)
+            d[tdx, :] = repeat(b, length(tdx), size(b, 2) == vobs(sA) ? 1 : vobs(sA))
         else
             merr("dseries::subsasgn: Dimension error! The number of periods on the left and right hand side must match.")
         end

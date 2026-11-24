@@ -351,11 +351,12 @@ dm!("dates", "minus") do I, a, nout
     throw(MatlabError("Invalid input.", "dates:minus:ArgCheck"))
 end
 
+# (sic) Dynare's uminus and uplus change the handle in place: `-d` moves d one period back, `+d` one forward
 dm!("dates", "uminus") do I, a, nout
-    o = a[1]; MDates(o.freq, o.time .- 1)
+    o = a[1]; o.time = o.time .- 1; o
 end
 dm!("dates", "uplus") do I, a, nout
-    o = a[1]; MDates(o.freq, o.time .+ 1)
+    o = a[1]; o.time = o.time .+ 1; o
 end
 dm!("dates", "mtimes") do I, a, nout
     o, n = a[1], a[2]
@@ -549,9 +550,16 @@ dm!("dates", "setdiff") do I, a, nout
     o, p = a[1], a[2]
     (o isa MDates && p isa MDates) || throw(MatlabError("All input arguments must be dates objects.", "dates:setdiff"))
     o.freq == p.freq || throw(MatlabError("All input arguments must have common frequency.", "dates:setdiff"))
-    isempty(p.time) && return copy(o)
-    (length(o.time) == length(p.time) && o.time == p.time) && return MDates(o.freq, Float64[])
-    MDates(o.freq, _setdiff_legacy(o.time, p.time))
+    q = if isempty(p.time)
+        copy(o)
+    elseif length(o.time) == length(p.time) && o.time == p.time
+        MDates(o.freq, Float64[])
+    else
+        MDates(o.freq, _setdiff_legacy(o.time, p.time))
+    end
+    nout > 1 || return q
+    # second output: indices into o of the values kept (Octave: first occurrences, in the order of q)
+    Any[q, ret(reshape(Float64[findfirst(==(t), o.time) for t in q.time], 1, :))]
 end
 dm!("dates", "isequal") do I, a, nout
     length(a) >= 2 || merr("isequal: at least two arguments")
