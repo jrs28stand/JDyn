@@ -37,7 +37,8 @@ const DYNARE_SRC = get(ENV, "JDYN_DYNARE_SRC", "/home/claude/ref/dynare-7.2")
 # ------------------------------------------------------------------ command line
 function parse_args(args)
     o = Dict{String,String}("tag" => "run", "models" => "zlb,zlb2,nkm,sw", "parts" => "p1,p2,p3,p4,r1", "reps" => "5",
-                            "out" => joinpath(REPO, "bench", "results"), "methods" => "all")
+                            "out" => joinpath(REPO, "bench", "results"), "methods" => "all", "limit" => "1.0", "r1states" => "2000",
+                            "r1scales" => "0.5,1.0,1.5,2.0", "spell_states" => "200")
     i = 1
     while i <= length(args)
         a = args[i]
@@ -50,6 +51,9 @@ end
 const OPTS = parse_args(ARGS)
 const REPS = parse(Int, OPTS["reps"])
 const PARTS = Set(split(OPTS["parts"], ","))
+# time limit (seconds) of every integer-programme solve of the news methods: HiGHS call of the LCP formulation (obc_solver_options time_limit) and
+# JDyn.REGIME_MILP_TIME_LIMIT of the regime formulation (several calls can run in one state: the limit is per call, so a state takes at most a few times it)
+const TIME_LIMIT = parse(Float64, OPTS["limit"])
 mkpath(OPTS["out"])
 const OUTIO = open(joinpath(OPTS["out"], "obc_bench_$(OPTS["tag"]).md"), "w")
 function say(args...)
@@ -81,8 +85,14 @@ function methods_of(spec::ModelSpec)
     all = spec.news ? [:occbin, :minnorm, :minnorm_pure, :news, :news_pure, :regime] : [:occbin, :regime]
     OPTS["methods"] == "all" ? all : [m for m in all if m == :occbin || String(m) in split(OPTS["methods"], ",")]
 end
-simkw(method::Symbol, H::Int) = method == :occbin ? (check_ahead_periods=H,) :
-                                merge(METHOD_KW[method], (obc_horizon=H, check_ahead_periods=H))
+function simkw(method::Symbol, H::Int)
+    method == :occbin && return (check_ahead_periods=H,)
+    kw = METHOD_KW[method]
+    if method in (:news, :news_pure)                  # the LCP formulation's integer programme gets the time limit
+        kw = merge(kw, (obc_solver_options=(time_limit=TIME_LIMIT,),))
+    end
+    merge(kw, (obc_horizon=H, check_ahead_periods=H))
+end
 
 "Load a copy of the file's whole folder (include files); the preprocessor run is not part of any timing."
 function load_dir(J::Module, path)
@@ -173,7 +183,13 @@ function failure_label(J::Module, e)
     if e isa J.OccbinError
         "occbin $(J.error_flag(e))"
     elseif e isa J.ObcError
-        "obc $(e.status)"
+        if e.status == :no_solution
+            occursin("programme infeasible", e.msg) ? "obc no_solution (proof)" : "obc no_solution (no proof)"
+        elseif e.status == :not_converged
+            occursin(r"did not finish|time limit"i, e.msg) ? "obc not_converged (time-out)" : "obc not_converged (other)"
+        else
+            "obc $(e.status)"
+        end
     else
         "error " * string(typeof(e).name.name)
     end
@@ -447,9 +463,9 @@ function p3_check(backs, loaded, shocks200, H, ps, meths)
 end
 
 # ------------------------------------------------------------------ R1
-const R1_SCALES = [0.5, 1.0, 1.5, 2.0]
+const R1_SCALES = parse.(Float64, split(OPTS["r1scales"], ","))
 
-function r1(backs, loaded::Dict{Symbol,Loaded}, H; nstates=2000)
+function r1(backs, loaded::Dict{Symbol,Loaded}, H; nstates=parse(Int, OPTS["r1states"]))
     J = backs[findfirst(x -> x[1] == :after, backs)].second          # reliability is a property of the current code
     L = loaded[:after]
     ob = L.ob
@@ -466,8 +482,10 @@ function r1(backs, loaded::Dict{Symbol,Loaded}, H; nstates=2000)
     draws = randn(MersenneTwister(SEED + 3), nstates, nx) .* L.sd'
     meths = methods_of(L.spec)
     results = Dict{Tuple{Float64,Symbol},Vector{Any}}()           # (s, method) => per state: (:ok, regime_history, y1) or (:fail, label)
+    secs = Dict{Tuple{Float64,Symbol},Float64}()                  # wall-clock seconds of the 2000 solves of a cell
     for s in R1_SCALES, meth in meths
         v = Any[]
+        t0 = time()
         for i in 1:nstates
             sh = reshape(draws[i, :] .* s, 1, nx)
             try
@@ -478,13 +496,16 @@ function r1(backs, loaded::Dict{Symbol,Loaded}, H; nstates=2000)
             end
         end
         results[(s, meth)] = v
+        secs[(s, meth)] = time() - t0
+        println(stdout, "R1 s=$s $meth done in $(round(secs[(s, meth)]; digits=1)) s"); flush(stdout)
     end
-    results, meths, nstates
+    (results=results, meths=meths, nstates=nstates, states=states, draws=draws, secs=secs, J=J, L=L, H=H)
 end
 
-function report_r1(results, meths, nstates)
-    say("| s | method | solved | failed | failure types | solved by both it and OccBin | different regime sequences vs OccBin | max |path diff| vs OccBin (solved by both) |")
-    say("|---|---|---|---|---|---|---|---|")
+function report_r1(R)
+    results, meths, nstates, secs = R.results, R.meths, R.nstates, R.secs
+    say("| s | method | solved | failed | failure types | solved by both it and OccBin | different regime sequences vs OccBin | max |path diff| vs OccBin (solved by both) | wall s for the 2000 solves |")
+    say("|---|---|---|---|---|---|---|---|---|")
     for s in R1_SCALES, meth in meths
         v = results[(s, meth)]
         ok = count(x -> x[1] == :ok, v)
@@ -497,7 +518,7 @@ function report_r1(results, meths, nstates)
         diffreg = count(i -> v[i][2] != ref[i][2], both)
         dmax = isempty(both) ? NaN : maximum(maximum(abs.(v[i][3] .- ref[i][3])) for i in both)
         say("| ", s, " | ", meth, " | ", ok, " | ", nstates - ok, " | ", isempty(types) ? "-" : join(["$k: $c" for (k, c) in sort(collect(types))], ", "),
-            " | ", meth == :occbin ? "-" : length(both), " | ", meth == :occbin ? "-" : diffreg, " | ", meth == :occbin ? "-" : @sprintf("%.1e", dmax), " |")
+            " | ", meth == :occbin ? "-" : length(both), " | ", meth == :occbin ? "-" : diffreg, " | ", meth == :occbin ? "-" : @sprintf("%.1e", dmax), " | ", fmt(secs[(s, meth)]; d=1), " |")
     end
     # failures of one method where another solves (for the record)
     say("")
@@ -514,6 +535,51 @@ function report_r1(results, meths, nstates)
     say("")
 end
 
+
+"Failures of OccBin: what each other method does there (solved, proved no solution, other failures), per scale."
+function report_r1_fail_split(R)
+    results, meths = R.results, R.meths
+    say("States where OccBin fails: outcome of each other method.")
+    say("")
+    say("| s | method | OccBin failed | method solves | proves no solution (linear programme infeasible) | no_solution without proof | horizon_too_short | not_converged (time-out) | not_converged (other) | other error |")
+    say("|---|---|---|---|---|---|---|---|---|---|")
+    for s in R1_SCALES, meth in meths
+        meth == :occbin && continue
+        o, v = results[(s, :occbin)], results[(s, meth)]
+        idx = [i for i in eachindex(o) if o[i][1] == :fail]
+        c(f) = count(i -> f(v[i]), idx)
+        lab(x, l) = x[1] == :fail && x[2] == l
+        known = ["obc no_solution (proof)", "obc no_solution (no proof)", "obc horizon_too_short", "obc not_converged (time-out)", "obc not_converged (other)"]
+        say("| ", s, " | ", meth, " | ", length(idx), " | ", c(x -> x[1] == :ok), " | ", c(x -> lab(x, known[1])), " | ", c(x -> lab(x, known[2])), " | ", c(x -> lab(x, known[3])), " | ",
+            c(x -> lab(x, known[4])), " | ", c(x -> lab(x, known[5])), " | ", c(x -> x[1] == :fail && !(x[2] in known)), " |")
+    end
+    say("")
+end
+
+"""
+Of `nsel` binding states solved by the regime formulation (first ones in state order at scale `s`; binding = a binding period somewhere on the path),
+how many have more than one single-spell solution (`single_spell_solutions`, l_max = 8, spells that start in periods 0..8).
+"""
+function report_spells(R, s; nsel=parse(Int, OPTS["spell_states"]), meth=:regime)
+    J, L, H = R.J, R.L, R.H
+    haskey(R.results, (s, meth)) || return
+    v = R.results[(s, meth)]
+    sel = [i for i in eachindex(v) if v[i][1] == :ok && any(x -> any(!=(0), x[1]), v[i][2])]
+    sel = sel[1:min(nsel, length(sel))]
+    isempty(sel) && (say("No binding solved state at s = $s."); say(""); return)
+    rg = J.regime_obc(L.ob, H, 2H)
+    counts = Dict{Int,Int}()
+    t = @elapsed for i in sel
+        sh = R.draws[i, :] .* s
+        n = length(J.single_spell_solutions(rg, R.states[i], sh))
+        counts[n] = get(counts, n, 0) + 1
+    end
+    say("Single-spell solutions at s = $s: $(length(sel)) binding states solved by `$meth` (of $(count(x -> x[1] == :ok, v)) solved); number of states by count of single-spell solutions: ",
+        join(["$k solution(s): $c" for (k, c) in sort(collect(counts))], ", "), "; more than one: ", count(>(1), [k for (k, c) in counts for _ in 1:c]),
+        " (", fmt(t; d=1), " s).")
+    say("")
+end
+
 # ------------------------------------------------------------------ main
 function main()
     say("# OBC benchmark run `", OPTS["tag"], "`")
@@ -522,9 +588,9 @@ function main()
         " (before = baseline source commit ", isfile("/home/claude/work/jdynbase/BASE_COMMIT") ? strip(read("/home/claude/work/jdynbase/BASE_COMMIT", String)) : "n/a",
         "; after = ", strip(read(`git -C $REPO rev-parse --short HEAD`, String)), " + working tree)")
     for (_, J) in BACKENDS
-        isdefined(J, :REGIME_MILP_TIME_LIMIT) && (J.REGIME_MILP_TIME_LIMIT[] = 0.5)
+        isdefined(J, :REGIME_MILP_TIME_LIMIT) && (J.REGIME_MILP_TIME_LIMIT[] = TIME_LIMIT)
     end
-    say("- regime formulation: integer programmes of the fallbacks limited to 0.5 s; methods: ", OPTS["methods"])
+    say("- integer programmes (news LCP formulation and regime formulation fallbacks) limited to $(TIME_LIMIT) s per HiGHS call; methods: ", OPTS["methods"])
     say("- load average at start: ", strip(read("/proc/loadavg", String)), "; nproc ", Sys.CPU_THREADS, "; BLAS threads 1; repeats ", REPS)
     say("")
     for id in MODEL_ORDER
@@ -606,10 +672,18 @@ function main()
         if "r1" in PARTS
             say("### R1 reliability (2000 states from a long unconstrained simulation, one period solved from each, H = $H)")
             say("")
-            say("No method has a time limit; OccBin's own limit is maxit = 30 iterations (counted as its error 311). Different regime sequences are counted among the states both methods solve.")
+            say("OccBin's own limit is maxit = 30 iterations (counted as its error 311); integer programmes of the news methods are limited to $(TIME_LIMIT) s per HiGHS call (a state can run several calls); time-outs are counted as failures (`not_converged (time-out)`). Different regime sequences are counted among the states both methods solve.")
             say("")
-            results, meths, nst = r1(BACKENDS, loaded, H)
-            report_r1(results, meths, nst)
+            R = r1(BACKENDS, loaded, H)
+            report_r1(R)
+            if spec.id == "sw" || OPTS["parts"] == "r1"
+                report_r1_fail_split(R)
+            end
+            if spec.id == "sw"
+                for s in R1_SCALES
+                    report_spells(R, s)
+                end
+            end
         end
         say("load average at end of model: ", strip(read("/proc/loadavg", String)))
         say("")
