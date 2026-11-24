@@ -231,7 +231,23 @@ mutable struct PFWorkspace
     dirty::Bool                               # values set by initval/endval since the last steady
     pfwee::Bool
     has_setup::Bool
+    cpaths::Vector{Any}                       # M_.perfect_foresight_controlled_paths / shock_paths+exogenize: Dicts exogenize_id, endogenize_id, periods, value, learnt_in
 end
+PFWorkspace(a, b, c, d, e, f, g, h, i, j, k, l, mm) = PFWorkspace(a, b, c, d, e, f, g, h, i, j, k, l, mm, Any[])
+
+"""
+Controlled path of one period (controlled_paths_by_period.m): the endogenous variables held at `values`
+(`exo_ids`) and the exogenous variables solved for in their place (`endo_ids`); `learnt_in` per entry.
+"""
+mutable struct PFCP
+    exo_ids::Vector{Int}
+    endo_ids::Vector{Int}
+    values::Vector{Float64}
+    learnt_in::Vector{Int}
+end
+PFCP() = PFCP(Int[], Int[], Float64[], Int[])
+Base.:(==)(a::PFCP, b::PFCP) = a.exo_ids == b.exo_ids && a.endo_ids == b.endo_ids && a.values == b.values && a.learnt_in == b.learnt_in
+Base.copy(c::PFCP) = PFCP(copy(c.exo_ids), copy(c.endo_ids), copy(c.values), copy(c.learnt_in))
 
 _pf_is_setup(st) = st["statementName"] in ("perfect_foresight_setup", "perfect_foresight_with_expectation_errors_setup")
 
@@ -379,7 +395,18 @@ function _pf_replay(m::Model, params=nothing, steady=nothing, extra_learnt_shock
                                           Float64(_value(m, v["value"])), typ))
                 end
             end
-        elseif kind in ("initval_file", "histval_file", "perfect_foresight_controlled_paths", "shock_paths", "smoother2histval")
+        elseif kind == "perfect_foresight_controlled_paths"
+            lin = haskey(st, "learnt_in") ? _pf_period(st["learnt_in"], "learnt_in", dctx) : 1
+            for d in get_or(st, "paths", [])
+                haskey(ie, d["exogenize"]) || throw(ModelError("perfect_foresight_controlled_paths: $(d["exogenize"]) is not an endogenous variable"))
+                haskey(ix, d["endogenize"]) || throw(ModelError("perfect_foresight_controlled_paths: $(d["endogenize"]) is not an exogenous variable"))
+                for v in d["values"]
+                    p1, p2 = _pf_period(v["period1"], "period", dctx), _pf_period(v["period2"], "period", dctx)
+                    push!(ws.cpaths, Dict{String,Any}("exogenize_id" => ie[d["exogenize"]], "endogenize_id" => ix[d["endogenize"]],
+                          "periods" => collect(p1:p2), "value" => Float64(_value(m, v["value"])), "learnt_in" => lin))
+                end
+            end
+        elseif kind in ("initval_file", "histval_file", "shock_paths", "smoother2histval")
             throw(ModelError("$kind is not implemented in JDyn's perfect foresight"))
         elseif _pf_is_setup(st)
             ws.pfwee = kind != "perfect_foresight_setup"
@@ -404,6 +431,46 @@ function _pf_replay(m::Model, params=nothing, steady=nothing, extra_learnt_shock
     end
     ws
 end
+
+"""
+controlled_paths_by_period.m: for each of the `periods` simulation periods the controlled variables known at
+`info_period` (all of them when `nothing`), or `nothing` when the file has no controlled path.
+"""
+function _pf_cp_by_period(m::Model, ws::PFWorkspace, periods::Int, info_period=nothing)
+    isempty(ws.cpaths) && return nothing
+    cp = [PFCP() for _ in 1:periods]
+    for c in ws.cpaths
+        lin = c["learnt_in"]
+        info_period !== nothing && lin > info_period && continue
+        prange = c["periods"]
+        info_period !== nothing && any(<(lin), prange) &&
+            throw(ModelError("perfect_foresight_controlled_paths(learnt_in=$lin): the periods are inconsistent with the learnt_in value"))
+        for p in prange
+            (1 <= p <= periods) || throw(PerfectForesightError("perfect_foresight_controlled_paths: period $p is outside the simulation"))
+            q = cp[p]
+            idx = findfirst(k -> q.exo_ids[k] == c["exogenize_id"] && q.endo_ids[k] == c["endogenize_id"] && q.learnt_in[k] < lin, eachindex(q.exo_ids))
+            if idx === nothing
+                push!(q.exo_ids, c["exogenize_id"]); push!(q.endo_ids, c["endogenize_id"]); push!(q.values, c["value"]); push!(q.learnt_in, lin)
+            else
+                q.values[idx] = c["value"]; q.learnt_in[idx] = lin
+            end
+        end
+    end
+    for (p, q) in enumerate(cp)
+        length(unique(q.exo_ids)) == length(q.exo_ids) ||
+            throw(PerfectForesightError("perfect_foresight_controlled_paths: variable $(m.endo_names[q.exo_ids[findfirst(i -> q.exo_ids[i] in q.exo_ids[1:i-1], eachindex(q.exo_ids))]]) is exogenized two times in period $p"))
+        length(unique(q.endo_ids)) == length(q.endo_ids) ||
+            throw(PerfectForesightError("perfect_foresight_controlled_paths: variable $(m.exo_names[q.endo_ids[findfirst(i -> q.endo_ids[i] in q.endo_ids[1:i-1], eachindex(q.endo_ids))]]) is endogenized two times in period $p"))
+    end
+    for (j, p1, p2, _, _) in ws.det_shocks
+        for p in p1:p2
+            (1 <= p <= periods) && j in cp[p].endo_ids &&
+                throw(PerfectForesightError("Exogenous variable $(m.exo_names[j]) is present in both the shocks and the perfect_foresight_controlled_paths in period $p"))
+        end
+    end
+    cp
+end
+_pf_cp_active(cp) = cp !== nothing && any(q -> !isempty(q.exo_ids), cp)
 
 const _PF_SIMPLE_AUX = r"^\s*([A-Za-z_]\w*)\s*(?:\(\s*(-?\d+)\s*\))?\s*$"
 
@@ -783,10 +850,49 @@ function _pf_maxerror(m::Model, P::PFStacked, endo, exo, periods)
 end
 
 # ------------------------------------------------------------------------------------------ solvers
-"sim1.m: Newton's method on the stacked system. Returns (endo, success, err, iter)."
-function _pf_sim1(m::Model, P::PFStacked, endo, exo, periods, o, log)
+"""
+controlled_paths_substitute_stacked_jacobian.m: in each controlled period the columns of the exogenized
+variables are replaced by the derivatives of the equations with respect to the endogenized exogenous variables.
+`Jconst` (n x (3n + nx)) is the constant Jacobian of a linear model, else it is evaluated at each period.
+"""
+function _pf_cp_substitute(m::Model, P::PFStacked, A::SparseMatrixCSC, Y, y0, yT, X, cp, Jconst=nothing)
+    n, T, f = m.n_endo, size(Y, 2), m.fns
+    full = hcat(y0, Y, yT)
+    I, J, V = findnz(A)
+    drop = Set{Int}()
+    nI, nJ, nV = Int[], Int[], Float64[]
+    for p in 1:T
+        c = cp[p]
+        isempty(c.exo_ids) && continue
+        Jf = Jconst
+        if Jf === nothing
+            vals = dynamic_jac_values(m, vec(full[:, p:p+2]), X[:, p], P.params, P.ss)
+            Jf = sparse(f.g1_rows, f.g1_cols, vals, n, 3n + m.n_exo)
+        end
+        for (k, id) in enumerate(c.exo_ids)
+            col = (p - 1) * n + id
+            push!(drop, col)
+            g = Jf[:, 3n + c.endo_ids[k]]
+            for (r, v) in zip(findnz(g)...)
+                push!(nI, (p - 1) * n + r); push!(nJ, col); push!(nV, v)
+            end
+        end
+    end
+    keep = [!(j in drop) for j in J]
+    sparse(vcat(I[keep], nI), vcat(J[keep], nJ), vcat(V[keep], nV), size(A, 1), size(A, 2))
+end
+
+"sim1.m: Newton's method on the stacked system. Returns (endo, success, err, iter); with controlled paths `cp` the solved exogenous variables are written into `exo`."
+function _pf_sim1(m::Model, P::PFStacked, endo, exo, periods, o, log, cp=nothing)
     lag, n = m.info["maximum_lag"], m.n_endo
     endo = copy(endo)
+    cp = _pf_cp_active(cp) ? cp : nothing
+    if cp !== nothing
+        o["endogenous_terminal_period"] && throw(PerfectForesightError("The endogenous_terminal_period option not available with perfect_foresight_controlled_paths or shock_paths+exogenize"))
+        for p in 1:periods
+            isempty(cp[p].exo_ids) || (endo[cp[p].exo_ids, lag+p] = cp[p].values)
+        end
+    end
     y0, yT = _pf_boundaries(m, endo, periods)
     Y = endo[:, lag+1:lag+periods]
     X = exo[:, lag+1:lag+periods]
@@ -813,12 +919,23 @@ function _pf_sim1(m::Model, P::PFStacked, endo, exo, periods, o, log)
         if err < tolf
             converged = true
         else
+            cp === nothing || (A = _pf_cp_substitute(m, P, A, Y, y0, yT, X, cp))
             dy = o["simul.robust_lin_solve"] ? _pf_lin_solve_robust(A, res, o["simul.allow_nonfinite_values"]) :
-                                               _pf_lu_solve(A, res, _pf_pattern(P, periods))
-            Y = Y .- reshape(dy, n, T)
+                                               _pf_lu_solve(A, res, cp === nothing ? _pf_pattern(P, periods) : nothing)
+            mdy = reshape(dy, n, T)
+            Y = Y .- mdy
+            if cp !== nothing
+                for p in 1:T
+                    c = cp[p]
+                    isempty(c.exo_ids) && continue
+                    X[c.endo_ids, p] .-= mdy[c.exo_ids, p]
+                    Y[c.exo_ids, p] = c.values
+                end
+            end
         end
         it += 1
     end
+    cp === nothing || (exo[:, lag+1:lag+periods] .= X)
     endo[:, lag+1:lag+T] .= Y
     o["endogenous_terminal_period"] && (err = _pf_maxerror(m, P, endo, exo, periods))
     success = converged && all(isfinite, Y)
@@ -826,8 +943,15 @@ function _pf_sim1(m::Model, P::PFStacked, endo, exo, periods, o, log)
 end
 
 "sim1_linear.m: one linear solve around the (terminal) steady state."
-function _pf_sim1_linear(m::Model, P::PFStacked, endo, exo, periods, ss, xss, params, o, nocheck)
+function _pf_sim1_linear(m::Model, P::PFStacked, endo, exo, periods, ss, xss, params, o, nocheck, cp=nothing)
     lag, n, nx = m.info["maximum_lag"], m.n_endo, m.n_exo
+    cp = _pf_cp_active(cp) ? cp : nothing
+    if cp !== nothing
+        endo = copy(endo)
+        for p in 1:periods
+            isempty(cp[p].exo_ids) || (endo[cp[p].exo_ids, lag+p] = cp[p].values)
+        end
+    end
     y3 = repeat(ss, 3)
     d1 = dynamic_resid(m, y3, xss, params, ss)
     if !nocheck && !(maximum(abs, d1) <= DYNARE_TOLF)
@@ -861,7 +985,20 @@ function _pf_sim1_linear(m::Model, P::PFStacked, endo, exo, periods, ss, xss, pa
     for i in eachindex(nz)
         nz[i] = V[perm[i]]
     end
-    Y = Y .- reshape(_pf_lu_solve(A, res), n, periods)
+    if cp !== nothing
+        A = _pf_cp_substitute(m, P, A, repeat(ss, 1, periods), ss, ss, repeat(xss, 1, periods), cp, J)
+    end
+    mdy = reshape(_pf_lu_solve(A, res), n, periods)
+    Y = Y .- mdy
+    if cp !== nothing
+        for p in 1:periods
+            c = cp[p]
+            isempty(c.exo_ids) && continue
+            Y[c.exo_ids, p] = c.values .- ss[c.exo_ids]
+            dx[c.endo_ids, lag+p] .-= mdy[c.exo_ids, p]
+            exo[c.endo_ids, lag+p] = dx[c.endo_ids, lag+p] .+ xss[c.endo_ids]
+        end
+    end
     err = _pf_norm_inf(residuals(Y))
     success = all(isfinite, Y) && isfinite(err)
     out = copy(endo)
@@ -1242,6 +1379,7 @@ mutable struct PFSim
     mcp::Any
     problems::Dict{Vector{Float64},PFStacked}
     solver::String
+    cp::Any                    # controlled paths by period (Vector{PFCP}) or nothing
 end
 
 function PFSim(m::Model, params, o, endo, exo, ss, xss, ss0, xss0, verbose)
@@ -1252,7 +1390,7 @@ function PFSim(m::Model, params, o, endo, exo, ss, xss, ss0, xss0, verbose)
         mcp = complementarity_conditions(m)
     end
     PFSim(m, Vector{Float64}(params), o, endo, exo, ss, xss, ss0, xss0, verbose, m.info["maximum_lag"], m.info["maximum_lead"], mcp,
-          Dict{Vector{Float64},PFStacked}(), "")
+          Dict{Vector{Float64},PFStacked}(), "", nothing)
 end
 
 _pf_log(s::PFSim) = msg -> (s.verbose && println(msg); nothing)
@@ -1265,7 +1403,7 @@ function _pf_problem(s::PFSim, ss)
 end
 
 "perfect_foresight_solver_core.m: returns (endo, success, maxerror, iterations)."
-function _pf_core(s::PFSim, endo, exo, ss, xss, periods)
+function _pf_core(s::PFSim, endo, exo, ss, xss, periods, cp=s.cp)
     m, o, info = s.m, s.o, s.m.info
     has_lag, has_lead = info["maximum_endo_lag"] > 0, info["maximum_endo_lead"] > 0
     linear = o["linear_approximation"]
@@ -1274,6 +1412,10 @@ function _pf_core(s::PFSim, endo, exo, ss, xss, periods)
         throw(ArgumentError("option $name is not available with purely backward, purely forward or static models"))
     end
     get(o, "linear", false) && has_lag && has_lead && (linear = true)
+    if _pf_cp_active(cp)
+        o["lmmcp.status"] && throw(PerfectForesightError("perfect_foresight_controlled_paths or shock_paths+exogenize is not available for mixed-complementarity problems (LMMCP or PATH solvers)"))
+        has_lag && has_lead || throw(PerfectForesightError("perfect_foresight_controlled_paths or shock_paths+exogenize is not available with purely backward, purely forward or static models"))
+    end
     P = _pf_problem(s, ss)
     if s.mcp !== nothing
         s.solver = "lmmcp"
@@ -1287,10 +1429,10 @@ function _pf_core(s::PFSim, endo, exo, ss, xss, periods)
     if linear
         s.solver = "linear"
         nocheck = get(get(m.options, "steady", Dict{String,Any}()), "steadystate.nocheck", false) == true
-        return _pf_sim1_linear(m, P, endo, exo, periods, ss, xss, s.params, o, nocheck)
+        return _pf_sim1_linear(m, P, endo, exo, periods, ss, xss, s.params, o, nocheck, cp)
     end
     s.solver = "stacked Newton"
-    _pf_sim1(m, P, endo, exo, periods, o, _pf_log(s))
+    _pf_sim1(m, P, endo, exo, periods, o, _pf_log(s), cp)
 end
 
 function _pf_steady_at(s::PFSim, guess, x)
@@ -1306,7 +1448,7 @@ function _pf_steady_at(s::PFSim, guess, x)
 end
 
 "create_scenario of perfect_foresight_solver.m: (ok, endo, exo, ss, xss)."
-function _pf_scenario(s::PFSim, share, shareorig, endoorig, exoorig, endobase, exobase, recompute, endo, ss, xss, periods)
+function _pf_scenario(s::PFSim, share, shareorig, endoorig, exoorig, endobase, exobase, recompute, endo, ss, xss, periods; exo_cur=nothing)
     lag, lead = s.lag, s.lead
     w = share / shareorig
     exo = exoorig .* w .+ exobase .* (1 - w)
@@ -1335,7 +1477,17 @@ function _pf_scenario(s::PFSim, share, shareorig, endoorig, exoorig, endobase, e
     else
         endo[:, lag+periods+1:end] .= w .* endoorig[:, lag+periods+1:end] .+ (1 - w) .* endobase[:, lag+periods+1:end]
     end
-    ok, endo, exo, ss, xss
+    cps = s.cp
+    if _pf_cp_active(s.cp)             # the controlled values follow the share too; the guess of the solved exogenous variables is kept
+        cps = [copy(q) for q in s.cp]
+        for p in 1:periods
+            q = cps[p]
+            isempty(q.exo_ids) && continue
+            q.values = s.cp[p].values .* share .+ endobase[q.exo_ids, p] .* (1 - share)
+            exo[q.endo_ids, lag+p] = exo_cur[q.endo_ids, lag+p]
+        end
+    end
+    ok, endo, exo, ss, xss, cps
 end
 
 "homotopy_loop of perfect_foresight_solver.m."
@@ -1354,14 +1506,15 @@ function _pf_homotopy(s::PFSim, max_share, shareorig, endoorig, exoorig, endobas
             new_share = max_share
             step = new_share - completed
         end
-        ok, endo, exo, ss, xss = _pf_scenario(s, new_share, shareorig, endoorig, exoorig, endobase, exobase, recompute, endo, ss, xss, periods)
+        ok, endo, exo, ss, xss, cps = _pf_scenario(s, new_share, shareorig, endoorig, exoorig, endobase, exobase, recompute, endo, ss, xss, periods; exo_cur=exo)
         success = false
         if ok
             if completed == 0 && !(iteration == 1 && new_share == shareorig)
                 # guess: the terminal steady state (the base scenario for models without leads)
                 endo[:, sim] .= lead > 0 ? endo[:, lag+periods+1] : endobase[:, sim]
+                _pf_cp_active(cps) && (exo[:, sim] .= exobase[:, sim])      # perfect_foresight_solver.m: guess of the exogenous variables with controlled paths
             end
-            endo, success, maxerror, solver_iter = _pf_core(s, endo, exo, ss, xss, periods)
+            endo, success, maxerror, solver_iter = _pf_core(s, endo, exo, ss, xss, periods, cps)
         else
             maxerror = NaN
         end
@@ -1418,7 +1571,8 @@ function _pf_solve(s::PFSim, periods::Int)
     max_share = o["simul.homotopy_max_completion_share"]
     completed, endo, exo, ss, xss, iteration, maxerror, solver_iter = _pf_homotopy(s, max_share, 1.0, endoorig, exoorig, endobase, exobase, recompute, periods)
     # oo_.exo_simul is left as perfect_foresight_setup built it unless the simulation fails
-    out = Dict{String,Any}("endo" => endo, "exo" => exoorig, "ss" => s.ss, "xss" => s.xss, "status" => false, "linearization" => false,
+    cpa = _pf_cp_active(s.cp)
+    out = Dict{String,Any}("endo" => endo, "exo" => cpa ? exo : exoorig, "cp" => cpa, "ss" => s.ss, "xss" => s.xss, "status" => false, "linearization" => false,
                            "marginal" => false, "share" => completed, "homotopy_iterations" => iteration, "iterations" => solver_iter,
                            "recompute" => recompute)
     marg = o["simul.homotopy_marginal_linearization_fallback"]
@@ -1427,14 +1581,15 @@ function _pf_solve(s::PFSim, periods::Int)
         recompute && (out["ss"] = ss)
     elseif o["simul.homotopy_linearization_fallback"] && completed > 0
         out["endo"] = endobase .+ (endo .- endobase) ./ completed
+        cpa && (out["exo"] = exobase .+ (exo .- exobase) ./ completed)
         recompute && (out["ss"] = out["endo"][:, end])
         maxerror = _pf_maxerror(m, _pf_problem(s, out["ss"]), out["endo"], out["exo"], periods)
         out["status"] = true; out["linearization"] = true
     elseif marg > 0 && completed > marg
         extra_share = completed - marg
-        ok, e_endo, e_exo, e_ss, e_xss = _pf_scenario(s, extra_share, 1.0, endoorig, exoorig, endobase, exobase, recompute, endo, ss, xss, periods)
+        ok, e_endo, e_exo, e_ss, e_xss, e_cps = _pf_scenario(s, extra_share, 1.0, endoorig, exoorig, endobase, exobase, recompute, endo, ss, xss, periods; exo_cur=exo)
         if ok
-            e_endo, ok, _, _ = _pf_core(s, e_endo, e_exo, e_ss, e_xss, periods)
+            e_endo, ok, _, _ = _pf_core(s, e_endo, e_exo, e_ss, e_xss, periods, e_cps)
         end
         if !ok
             share2, e_endo, e_exo, e_ss, e_xss, _, _, _ = _pf_homotopy(s, extra_share, 1.0, endoorig, exoorig, endobase, exobase, recompute, periods)
@@ -1442,6 +1597,7 @@ function _pf_solve(s::PFSim, periods::Int)
         end
         if ok
             out["endo"] = endo .+ (endo .- e_endo) .* ((1 - completed) / marg)
+            cpa && (out["exo"] = exo .+ (exo .- e_exo) .* ((1 - completed) / marg))
             recompute && (out["ss"] = out["endo"][:, end])
             maxerror = _pf_maxerror(m, _pf_problem(s, out["ss"]), out["endo"], out["exo"], periods)
             out["marginal"] = true
@@ -1555,6 +1711,8 @@ function _pf_solve_pfwee(m::Model, ws::PFWorkspace, periods, o, verbose, datafil
     ss, xss = copy(ws.ss), copy(ws.xss)
     ss0, xss0 = ws.ss0 === nothing ? (copy(ss), copy(xss)) : (ws.ss0, ws.xss0)
     const_len = o["pfwee.constant_simulation_length"]
+    cps = isempty(ws.cpaths) ? nothing : [_pf_cp_by_period(m, ws, periods, ip) for ip in 1:periods]
+    cps !== nothing && const_len && throw(PerfectForesightError("Options constant_simulation_length is incompatible with perfect_foresight_controlled_paths or shock_paths+exogenize block"))
     info_period, increment, share0 = 1, 0, nothing
     out = nothing
     solves = Tuple{Int,Int,Float64}[]
@@ -1572,6 +1730,7 @@ function _pf_solve_pfwee(m::Model, ws::PFWorkspace, periods, o, verbose, datafil
         exo[:, lag+1:lag+known] = shocks[:, info_period:periods, info_period]
         exo[:, lag+known+1:end] .= xss
         sim = PFSim(m, ws.params, o, endo, exo, ss, xss, ss0, xss0, verbose)
+        cps === nothing || (sim.cp = cps[info_period][info_period:end])
         out = _pf_solve(sim, sim_length)
         out["solver"] = sim.solver
         push!(solves, (info_period, Int(out["iterations"]), Float64(out["maxerror"])))
@@ -1593,7 +1752,8 @@ function _pf_solve_pfwee(m::Model, ws::PFWorkspace, periods, o, verbose, datafil
         exo_simul[:, p+1:end] = out["exo"]
         increment = 1
         while info_period + increment <= periods && terminal[:, info_period] == terminal[:, info_period+increment] &&
-              isequal(shocks[:, info_period+increment:periods, info_period], shocks[:, info_period+increment:periods, info_period+increment])
+              isequal(shocks[:, info_period+increment:periods, info_period], shocks[:, info_period+increment:periods, info_period+increment]) &&
+              (cps === nothing || cps[info_period][info_period+increment:end] == cps[info_period+increment][info_period+increment:end])
             increment += 1
         end
         info_period += increment
@@ -1714,6 +1874,7 @@ function perfect_foresight(m::Model; periods=nothing, params=nothing, exo=nothin
             endo[:, lag+1:lag+T] .= guess
         end
         sim = PFSim(m, ws.params, o, endo, x, ws.ss, ws.xss, ws.ss0, ws.xss0, verbose)
+        sim.cp = _pf_cp_by_period(m, ws, T)
         out = _pf_solve(sim, T)
         out["solver"] = sim.solver
         ss0, xss0 = ws.ss0, ws.xss0

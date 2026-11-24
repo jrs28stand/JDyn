@@ -133,6 +133,7 @@ function _pfo_store!(oo::MStruct, out, m::Model, exo_t::Bool=true)
     oo["endo_simul"] = Matrix{Float64}(out["endo"])
     if out["status"] === true
         out["recompute"] === true && (oo["steady_state"] = _col(out["ss"]))
+        get(out, "cp", false) === true && (oo["exo_simul"] = Matrix{Float64}(permutedims(out["exo"])))
     else
         oo["exo_simul"] = Matrix{Float64}(permutedims(out["exo"]))
         oo["steady_state"] = _col(out["ss"])
@@ -157,6 +158,7 @@ function _pfo_solve!(m::Model, O::MStruct, oo::MStruct, params)
     ss0, xss0 = _pfo_vec(oo, "initial_steady_state"), _pfo_vec(oo, "initial_exo_steady_state")
     (ss0 === nothing) == (xss0 === nothing) || (ss0 === nothing ? (xss0 = nothing) : (xss0 = copy(xss)))
     sim = PFSim(m, params, o, endo, exo, ss, xss, ss0, xss0, false)
+    sim.cp = _pf_cp_by_period(m, _pf_replay(m, params, nothing, (), ()), T)
     out = _pf_solve(sim, T)
     _pfo_store!(oo, out, m)
     out["solver"] = sim.solver
@@ -175,7 +177,7 @@ function _pfo_pfwee_setup!(m::Model, O::MStruct, oo::MStruct, params)
     info = MStruct()
     info["terminal_info"] = terminal
     info["shocks_info"] = shocks
-    info["controlled_paths_by_period"] = nothing
+    info["controlled_paths_by_period"] = isempty(pws.cpaths) ? nothing : [_pf_cp_by_period(m, pws, T, ip) for ip in 1:T]
     oo["pfwee"] = info
     pws.det_shocks = []                       # the setup command builds the paths without the shocks
     endo, x = _pf_make_paths(m, pws, T)
@@ -211,6 +213,8 @@ function _pfo_pfwee_solve!(m::Model, O::MStruct, oo::MStruct, params; verbose::B
         oo["initial_steady_state"] = _col(ss0)
         oo["initial_exo_steady_state"] = _col(xss0)
     end
+    cps = oo["pfwee"]["controlled_paths_by_period"]
+    cps === nothing || (const_len && merr("Options constant_simulation_length is incompatible with perfect_foresight_controlled_paths or shock_paths+exogenize block"))
     info_period, increment, share0 = 1, 0, nothing
     out = nothing
     while info_period <= T
@@ -227,6 +231,7 @@ function _pfo_pfwee_solve!(m::Model, O::MStruct, oo::MStruct, params; verbose::B
         exo[:, lag+1:lag+known] = shocks[:, info_period:T, info_period]
         exo[:, lag+known+1:end] .= xss
         sim = PFSim(m, params, o, endo, exo, ss, xss, ss0, xss0, verbose)
+        cps === nothing || (sim.cp = cps[info_period][info_period:end])
         out = _pf_solve(sim, sim_length)
         out["solver"] = sim.solver
         if !out["status"]
@@ -246,7 +251,8 @@ function _pfo_pfwee_solve!(m::Model, O::MStruct, oo::MStruct, params; verbose::B
         exo_simul[:, p+1:end] = out["exo"]
         increment = 1
         while info_period + increment <= T && terminal[:, info_period] == terminal[:, info_period+increment] &&
-              isequal(shocks[:, info_period+increment:T, info_period], shocks[:, info_period+increment:T, info_period+increment])
+              isequal(shocks[:, info_period+increment:T, info_period], shocks[:, info_period+increment:T, info_period+increment]) &&
+              (cps === nothing || cps[info_period][info_period+increment:end] == cps[info_period+increment][info_period+increment:end])
             increment += 1
         end
         info_period += increment
