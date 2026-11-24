@@ -69,3 +69,16 @@ end
         @test read(first(filter(endswith(".pdf"), files)), 4) == codeunits("%PDF")
     end
 end
+
+@testset "occbin_graph and realtime decomposition statements" begin
+    ob = joinpath(EXAMPLES, "occbin", "rbc_occbin.mod")
+    d = mktempdir(); cp(ob, joinpath(d, "rbc_occbin.mod"))
+    ws = quiet(() -> dynare(joinpath(d, "rbc_occbin.mod"); plots=true))
+    @test any(endswith("rbc_occbin_occbin_1.svg"), get(ws.state, :figure_files, String[]))
+    f = sdmod(; sdcmds="shock_decomposition(parameter_set=posterior_mode);\nrealtime_shock_decomposition(parameter_set=posterior_mode, forecast=4, presample=20, save_realtime=[30,45]);\n" *
+                       "plot_shock_decomposition(realtime=1, vintage=45, nograph);\nplot_shock_decomposition(realtime=3, vintage=30, use_shock_groups=grp) pi;",
+              est="estimation(datafile=est_nk_data, mode_compute=4, mh_replic=0, plot_priors=0, nodisplay);")
+    ws = quiet(() -> dynare(f; plots=true, extra_args=["-DCASE=1"]))
+    fl = get(ws.state, :figure_files, String[])
+    @test length(fl) == 1 && occursin("sd_nk_shock_decomposition_pi_group_grp", fl[1])
+end
