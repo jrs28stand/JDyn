@@ -621,7 +621,7 @@ otherwise shocks are drawn from the workspace's random stream (`seed=n` seeds it
 seed 0 like Dynare's 'default'; `set_dynare_seed(...)` lines of the file act as in Dynare; an explicit `rng` replaces
 the stream). The draws are Julia's, reproducible run to run but not MATLAB's: see docs/RESULTS.md, "Random draws".
 """
-function dynare(modfile::AbstractString; output=nothing, shocks=Dict{Int,Any}(), rng=nothing, seed=nothing, particle_rng=nothing, mcmc_rng=nothing, _json_dir=nothing, kw...)
+function dynare(modfile::AbstractString; output=nothing, shocks=Dict{Int,Any}(), rng=nothing, seed=nothing, particle_rng=nothing, mcmc_rng=nothing, _json_dir=nothing, plots::Bool=false, plots_backend::Symbol=:svg, kw...)
     if output === nothing
         # derivatives up to the highest order a stoch_simul statement asks for (Dynare's default is 2)
         output = occursin(r"order\s*=\s*3", read(modfile, String)) ? "third" : "second"
@@ -638,6 +638,7 @@ function dynare(modfile::AbstractString; output=nothing, shocks=Dict{Int,Any}(),
         ws.state[:matlab_options] = Dict{String,Any}()
         m.session.host.oo.results = ws.oo_          # MATLAB lines of the file see (and write) this oo_
         _pf_register_host!(ws)                      # perfect_foresight_solver(M_, options_, oo_) & co. (src/pf_functions.jl)
+        ws.state[:plots] = plots; ws.state[:plots_backend] = plots_backend
         wsref[] = ws
         st -> _run_in_place!(ws, st, nss, shocks, rng)
     end
@@ -768,6 +769,7 @@ function _run_in_place!(ws, st, nss, shocks, rng)
     elseif !(kind in _QUIET_KINDS)
         warn_once(m, "dynare(): '$kind' does not fill oo_ yet")
     end
+    get(ws.state, :plots, false) === true && _statement_figures!(ws, kind, st)      # src/plots_hooks.jl
     nothing
 end
 

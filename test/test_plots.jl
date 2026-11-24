@@ -246,3 +246,22 @@ end
     @test rplot_figures(mm, E, X, ["a"]; smpl=[1, 3])[1].panels[1].curves[1].y == [2.0, 3, 4]
     @test_throws ArgumentError rplot_figures(mm, E, X, ["zzz"])
 end
+
+# ------------------------------------------------------------------ statements write figures (dynare(file; plots=true))
+@testset "dynare(...; plots=true) writes <fname>/graphs" begin
+    d = mktempdir()
+    txt = replace(read(EX1, String), "var e, u = 0.009*0.009;" => "var e, u = 0;")
+    write(joinpath(d, "example1.mod"), txt)
+    ws = quiet(() -> dynare(joinpath(d, "example1.mod"); plots=true))
+    files = ws.state[:figure_files]
+    @test basename.(files) == ["example1_IRF_e.svg", "example1_IRF_u.svg"] && all(isfile, files)
+    @test dirname(files[1]) == joinpath(d, "example1", "graphs")
+    d2 = mktempdir()                                    # plots off by default; nograph respected
+    write(joinpath(d2, "example1.mod"), txt)
+    quiet(() -> dynare(joinpath(d2, "example1.mod")))
+    @test !isdir(joinpath(d2, "example1", "graphs"))
+    d3 = mktempdir()
+    write(joinpath(d3, "example1.mod"), replace(txt, r"stoch_simul\(" => "stoch_simul(nograph, "))
+    quiet(() -> dynare(joinpath(d3, "example1.mod"); plots=true))
+    @test !isdir(joinpath(d3, "example1", "graphs"))
+end
