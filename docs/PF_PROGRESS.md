@@ -22,19 +22,39 @@ Branch `pf-fixes` (base main 65ed314). Acceptance files: Dynare 7.2 `tests/deter
 - src/matlab/session.jl: one condition added in `run_stmt!` (a name in `SOLVE_FUNCS` that has a builtin is executed, not
   skipped), needed for `oo_.steady_state = evaluate_steady_state(...)`.
 
-## Not done / next
+## Phase 2 (branch pf-fixes-2)
 
-- `ramst_datafile`: `perfect_foresight_setup(datafile=...)` reads the data with `dseries(file)` (histvalf_initvalf.m,
-  `oo_.initval_series`), and the file is a `.mat` written by a data script (`ramst_initval_file_data.m`) that the
-  acceptance harness skips. Left for the dates/dseries work.
-- `perfect_foresight_controlled_paths` (9 tests) and `shock_paths` (3 tests): still refused.
+- **perfect_foresight_controlled_paths** (perfect_foresight.jl): `PFCP`/`_pf_cp_by_period` (controlled_paths_by_period.m),
+  `_pf_cp_substitute` (controlled_paths_substitute_stacked_jacobian.m: the Jacobian columns of the exogenised variables'
+  equations are swapped with the derivatives w.r.t. the endogenised exogenous variables), solved exogenous variables
+  returned in `oo_.exo_simul`; linear case (`sim1_linear`), homotopy (the controlled values follow the share, the guess of
+  the solved exogenous variables is `exobase`), linearization fallback (also on the exogenous path), and
+  expectation errors (`learnt_in`, per-information-period controlled paths, increment test). All stack_solve_algo values
+  use the same Newton solver, as before. In pf_functions.jl the function forms read the same data.
+- `_pf_steady_at` rejects a "solution" more than 1e8 times larger than the guess (Dynare's `steady_solve_algo=13`, used by
+  pfwee_homotopy_linearization_condpaths, avoids this runaway; JDyn's single steady solver accepted values with
+  1/C -> 0 satisfying the absolute tolerance). The caller then retries from the initial steady state, as Dynare does.
+- **initval_file / perfect_foresight_setup(datafile=...)** (`_pf_initval_series`, port of histvalf_initvalf.m for numeric
+  first_obs/last_obs/nobs/first_simulation_period/last_simulation_period, data from .m/.mat/.csv through `ds_ctor`;
+  auxiliary variable of an exogenous lead is rebuilt, other auxiliary variables refused). `_pf_make_paths` follows
+  make_y_.m/make_ex_.m with `oo_.initval_series` (also used by the function forms). `options_.periods` comes from the file
+  when the setup does not give it. The harness (test/acceptance/worker.jl) now runs `*_data.m` scripts, as Dynare's test
+  order does.
+- Statements `perfect_foresight_controlled_paths` and `initval_file` no longer produce the "statements not handled" warning.
 
-## Evidence
+### Not done (refused with a reason)
 
-Acceptance (deterministic_simulations): pfwee, pfwee_constant_sim_length, pfwee_learnt_in, pfwee_learnt_in_bare_1st_period,
-Irreversible_investment, Irreversible_investment_leadlag: CHECK_FAILED -> OK (the files' own strict-equality checks pass);
-pfwee_homotopy_linearization OK_WARN -> OK. Solow_no_varexo unchanged (OK_WARN) after an endval fix.
-Full test suite: all files pass (test_perfect_foresight.jl: the expectation that robust_lin_solve is warned about was
-changed to markowitz only, since it is now implemented).
-ramst_datafile: main now has dseries; the needed pieces are `dseries(file)` for the .mat/.m datafile and
-`oo_.initval_series` in make_ex_/make_y_ (see histvalf_initvalf.m); the data .mat is produced by a script the harness skips.
+- `perfect_foresight_with_expectation_errors` with `homotopy_marginal_linearization_fallback`
+  (pfwee_homotopy_marglin_condpaths, pfwee_homotopy_marginal_linearization): needs oo_.deterministic_simulation.sim1/sim2
+  carried across information periods.
+- `shock_paths` (3 tests): the preprocessor writes invalid JSON for the block (stray quote), and the `table`/database
+  evaluation functions are not available in julia mode.
+- `initval_file(series=...)`, dates-valued first/last_obs, `histval_file`, spreadsheets (.xls/.xlsx: dseries cannot read them),
+  `oo_.initval_series` as a MATLAB-visible field (sim_exo_lead_lag_initvalf, ramst_initval_file_with_dseries).
+- ramst_initval_file: its `if ispc` block holds initval_file statements the replay cannot skip (and .xlsx), so it is refused.
+
+### Evidence (acceptance)
+
+controlled paths: linear_state_space_arma_condpaths, homotopy_linearization_condpaths, homotopy_marglinearization_condpaths,
+pfwee_homotopy_linearization_condpaths, ramst_pf_controlled_paths (+_lbj, _ssa7, _check), ramst_pfwee_controlled_paths:
+REFUSED -> OK/OK_WARN (the files' own strict equality checks pass). ramst_datafile: CHECK_FAILED -> OK.
