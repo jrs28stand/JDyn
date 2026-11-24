@@ -49,7 +49,7 @@ deviation, for which Dynare draws nothing. `files` is filled by `plot_irfs`.
 struct IRFResult
     model::String
     periods::Int
-    order::Int                 # approximation order of the responses (only 1 is computed)
+    order::Int                 # approximation order of the responses
     threshold::Float64
     relative::Bool
     figures::Vector{IRFFigure}
@@ -81,14 +81,16 @@ _stoch_simul_options(m) = get(m.options, "stoch_simul", Dict{String,Any}())
 
 First-order impulse responses to one-standard-deviation orthogonalised shocks, selected and arranged as
 Dynare's `stoch_simul` does. Defaults come from the model's `stoch_simul` options (`irf`, `irf_plot_threshold` (stored by the preprocessor as `impulse_responses.plot_threshold`),
-`irf_shocks`, `relative_irf`) and its variable list. Higher approximation orders are not computed: the
-responses are those of the first-order solution (`order` of the result is 1).
+`irf_shocks`, `relative_irf`, `order`, `pruning`, `drop`, `replic`) and its variable list. At order 2 and 3 the responses
+are Dynare's generalised IRFs (simulation averages with `replic` replications; pass `rng` to fix the draws).
 """
 function irf_figures(m, sol=first_order(m); var_list=nothing, shocks=nothing, periods=nothing, threshold=nothing,
-                     relative=nothing)
+                     relative=nothing, order=nothing, pruning=nothing, drop=nothing, replic=nothing, rng=nothing)
     o = _stoch_simul_options(m)
-    ord = try Int(_opt(o, "order", 1)) catch; 1 end
-    ord > 1 && warn_once(m, "irf_figures computes first-order impulse responses, but the .mod file's stoch_simul asks for order $ord (Dynare's IRFs are then averages over simulations): the responses returned are those of the first-order solution (result.order == 1)")
+    ord = order === nothing ? (try Int(_opt(o, "order", 1)) catch; 1 end) : Int(order)
+    pruning = pruning === nothing ? _truthy(_opt(o, "pruning", false)) : pruning
+    dr = ord > 1 ? k_order(m; order=ord, pruning=pruning) : nothing
+    rng = rng === nothing ? Random.MersenneTwister(0) : rng
     periods = Int(periods === nothing ? _opt(o, "irf", 40) : periods)
     threshold = Float64(threshold === nothing ? _opt(o, "impulse_responses.plot_threshold", 1e-10) : threshold)
     relative = relative === nothing ? _truthy(_opt(o, "relative_irf", false)) : relative
@@ -112,8 +114,14 @@ function irf_figures(m, sol=first_order(m); var_list=nothing, shocks=nothing, pe
             push!(skipped_shocks, sname)
             continue
         end
-        y = irf(sol, L[:, i]; periods=periods)     # periods x endo
-        relative && (y = 100 .* y ./ L[i, i])
+        if ord == 1
+            y = irf(sol, L[:, i]; periods=periods)     # periods x endo
+            relative && (y = 100 .* y ./ L[i, i])
+        else                                           # generalised IRFs from simulations (Dynare's irf.m at order > 1)
+            impulse = relative ? L[:, i] ./ L[i, i] ./ 100 : L[:, i]
+            y = irf(dr, impulse; Sigma_e=m.Sigma_e, periods=periods, order=ord, pruning=pruning,
+                    drop=Int(drop === nothing ? _opt(o, "drop", 100) : drop), replic=Int(replic === nothing ? _opt(o, "replic", 50) : replic), rng=rng)
+        end
         keep = Int[]
         for (j, v) in zip(ivars, vnames)
             irfs[string(v, "_", sname)] = y[:, j]
@@ -135,7 +143,7 @@ function irf_figures(m, sol=first_order(m); var_list=nothing, shocks=nothing, pe
             push!(figures, IRFFigure(sname, f, nbplt, r, c, title, stem, String.(m.endo_names[cols]), y[:, cols]))
         end
     end
-    IRFResult(m.name, periods, 1, threshold, relative, figures, irfs, all_series, skipped, skipped_shocks, String[])
+    IRFResult(m.name, periods, ord, threshold, relative, figures, irfs, all_series, skipped, skipped_shocks, String[])
 end
 
 # ---------------------------------------------------------------------------------------------- tidy export
@@ -238,28 +246,20 @@ as `<outdir>/<name>_IRF_<shock>[<n>].<format>`, Dynare's file names; `outdir` de
 written then, but the content is still returned. `format` is "svg" (built in, no dependency) or, with
 `backend = :plots` and Plots.jl loaded, "png", "pdf" or "svg". The returned `res.files` lists the files written.
 """
-function plot_irfs(m, sol=first_order(m); outdir=nothing, format::AbstractString="svg", backend::Symbol=:svg,
+function plot_irfs(m, sol=first_order(m); outdir=nothing, format="svg", backend::Symbol=:svg,
                    nograph=nothing, kw...)
     res = irf_figures(m, sol; kw...)
-    nograph = nograph === nothing ? _truthy(_opt(_stoch_simul_options(m), "nograph", false)) : nograph
+    o = _stoch_simul_options(m)
+    nograph = nograph === nothing ? _truthy(_opt(o, "nograph", false)) : nograph
     nograph && return res
-    dir = outdir === nothing ? joinpath(m.mod_dir, m.name, "graphs") : outdir
-    mkpath(dir)
-    if backend == :svg
-        format == "svg" || throw(ArgumentError("the built-in backend writes SVG only; for $format load Plots and use backend = :plots"))
-    elseif backend != :plots
-        throw(ArgumentError("backend must be :svg or :plots"))
-    elseif !hasmethod(_render_plots, Tuple{IRFFigure,String,String})
-        throw(ArgumentError("backend = :plots needs the Plots package: run `using Plots` first"))
-    end
-    for fig in res.figures
-        path = joinpath(dir, string(fig.name, ".", format))
-        if backend == :svg
-            write(path, svg_figure(fig))
-        else
-            _render_plots(fig, path, String(format))
-        end
-        push!(res.files, path)
-    end
+    dir = outdir === nothing ? graphs_dir(m) : outdir
+    append!(res.files, save_figures(to_figure(res), dir; format=format, backend=backend))
     res
 end
+
+"The content of an `IRFFigure` as a generic `Figure`."
+function to_figure(f::IRFFigure)
+    panels = [Panel(v, [Curve(1:size(f.series, 1), f.series[:, k]; kind=:line)]; zeroline=true) for (k, v) in enumerate(f.variables)]
+    Figure(f.name, f.title, f.nrows, f.ncols, panels)
+end
+to_figure(r::IRFResult) = Figure[to_figure(f) for f in r.figures]

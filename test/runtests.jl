@@ -6,7 +6,7 @@ const ALL_TESTS = ["test_matlab.jl", "test_first_order.jl", "test_examples.jl", 
                    "test_perfect_foresight.jl", "test_smoother.jl", "test_shock_decomposition.jl", "test_results.jl", "test_review_findings.jl", "test_review2_findings.jl", "test_results_estimation.jl", "test_perf_seeds.jl",
                    "test_forecast.jl", "test_optimizers.jl", "test_occbin_estimation.jl", "test_acceptance_smoke.jl",
                    "test_nonlinear_estimation.jl", "test_pac.jl", "test_optimal_policy.jl", "test_dseries.jl", "test_posterior.jl", "test_samplers.jl",
-                   "test_parity_steady.jl", "test_parity_homotopy.jl", "test_parity_moments3.jl", "test_parity_varexo_det.jl", "test_parity_epilogue.jl", "test_parity_corrmat.jl", "test_parity_het.jl", "test_parity_external.jl"]
+                   "test_parity_steady.jl", "test_parity_homotopy.jl", "test_parity_moments3.jl", "test_parity_varexo_det.jl", "test_parity_epilogue.jl", "test_parity_corrmat.jl", "test_parity_het.jl", "test_parity_external.jl", "test_plots.jl"]
 failed = String[]
 for f in (isempty(ARGS) ? ALL_TESTS : ARGS)
     println("=== ", f)
