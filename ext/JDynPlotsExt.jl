@@ -55,8 +55,8 @@ function JDyn._render_figure_plots(fig::JDyn.Figure, path::String, format::Strin
     end
     append!(panels, [plot(framestyle=:none) for _ in length(panels)+1:fig.nrows*fig.ncols])
     anylegend = any(p -> any(c -> !isempty(c.label), p.curves), fig.panels)
-    out = plot(panels...; layout=(fig.nrows, fig.ncols), size=((320 + (anylegend ? 90 : 0)) * fig.ncols, 210 * fig.nrows + 30),
-               plot_title=fig.title, plot_titlefontsize=12)
+    out = plot(panels...; layout=(fig.nrows, fig.ncols), size=(max((320 + (anylegend ? 90 : 0)) * fig.ncols, 8 * length(fig.title) + 40), 210 * fig.nrows + 30),
+               plot_title=fig.title, plot_titlefontsize=11)
     if format == "eps"                         # GR writes PostScript for ps
         tmp = string(path, ".ps")
         savefig(out, tmp)

@@ -205,7 +205,7 @@ end
     x = randn(rng, 40, 12, 3)
     sd = JDyn.series_distribution(["a", "b", "c"], x, 0.9; density=false)
     sf = posterior_series_figures(m, sd, "SmoothedVariables")
-    @test length(sf) == 1 && sf[1].name == "est_small_SmoothedVariables_c" && length(sf[1].panels[1].curves) == 10
+    @test length(sf) == 1 && sf[1].name == "est_small_SmoothedVariables_c" && length(sf[1].panels[1].curves) == 10 && sf[1].panels[1].curves[3].y == sd.deciles[3, :, 1] && all(c -> length(c.y) == 12, sf[1].panels[1].curves)
     # smoother figures
     res = quiet(() -> JDyn.smooth(m; estimation=est, theta=est.x0))
     sm = smoother_figures(m, res, est.rawdata, est.varobs)

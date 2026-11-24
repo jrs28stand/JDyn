@@ -647,7 +647,7 @@ Dynare's `forecast` statement on a workspace: from the decision rule in `oo_.dr`
 `M_.Sigma_e`, `M_.H`, `M_.endo_histval` and `options_` (`periods`, `forecasts.conf_sig`, `order`, `pruning`, `loglinear`,
 `forecast_replic`; keyword options are written into options_ first, e.g. `forecast!(ws; periods=12)`); fills `oo_.forecast`.
 """
-function forecast!(ws::DynareWorkspace, var_list=String[]; draws=nothing, me_draws=nothing, rng=nothing, options...)
+function forecast!(ws::DynareWorkspace, var_list=String[]; draws=nothing, me_draws=nothing, rng=nothing, plots=nothing, options...)
     m = _sync_model!(ws)
     _take_options!(ws, options)
     oo = ws.oo_
@@ -671,6 +671,7 @@ function forecast!(ws::DynareWorkspace, var_list=String[]; draws=nothing, me_dra
                           varobs=m.varobs, replic=_opti(ws, "forecast_replic", 1000), draws=draws, me_draws=me_draws, rng=rng, max_lag=max(ml, 1))
     oo.forecast = forecast_struct(res)
     ws.state[:forecast] = res
+    plots === true && _statement_figures!(ws, "forecast", Dict{String,Any}())       # src/plots_hooks.jl
     ws
 end
 
@@ -687,7 +688,7 @@ parameters are read from `oo_.posterior_mode` / `oo_.posterior_mean` / `oo_.post
 `oo_.conditional_forecast` and the MATLAB variable `options_cond_fcst_`.
 """
 function conditional_forecast!(ws::DynareWorkspace; paths=nothing, draws=nothing, rng=nothing, estimation=nothing, mode=nothing,
-                               mcmc=nothing, options...)
+                               mcmc=nothing, plots=nothing, options...)
     m = _sync_model!(ws)
     o = Dict{String,Any}(String(k) => v for (k, v) in options)
     haskey(o, "conf_sig") && (o["conditional_forecast.conf_sig"] = pop!(o, "conf_sig"))
@@ -738,6 +739,7 @@ function conditional_forecast!(ws::DynareWorkspace; paths=nothing, draws=nothing
     end
     ws.oo_.conditional_forecast = conditional_forecast_struct(res)
     ws.state[:conditional_forecast] = res
+    plots === true && _statement_figures!(ws, "plot_conditional_forecast", Dict{String,Any}())
     ws
 end
 

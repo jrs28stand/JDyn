@@ -292,7 +292,7 @@ function posterior_series_figures(m, sd::SeriesDistribution, name3::AbstractStri
     for (i, v) in enumerate(sd.names)
         if !all(isnan, sd.mean[:, i])
             t = collect(1.0:size(sd.mean, 1))
-            cv = Curve[Curve(t, sd.deciles[:, q, i]; color="#3a9d5d") for q in 1:9]
+            cv = Curve[Curve(t, sd.deciles[q, :, i]; color="#3a9d5d") for q in 1:9]
             push!(cv, Curve(t, sd.mean[:, i]; color="#000000", label="mean"))
             push!(panels, Panel(v, cv))
         end
