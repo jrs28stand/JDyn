@@ -1,0 +1,42 @@
+optimal_policy/mult_elimination_test.mod	function	unknown function or variable 'mult_elimination'	dr2 = mult_elimination({'R'},M_,options_,oo_);
+optimal_policy/mult_elimination_test.mod	results	M_.nstatic is not available in JDyn	k1 = M_.nstatic+(1:M_.nspred);
+optimal_policy/mult_elimination_test.mod	tainted	'k1' is unknown: "k1 = M_.nstatic+(1:M_.nspred);" was not executed	k2 = strmatch('MULT_',M_.endo_names(oo_.dr.order_var(k1)));
+optimal_policy/mult_elimination_test.mod	tainted	'k1' is unknown: "k1 = M_.nstatic+(1:M_.nspred);" was not executed	k3 = k1(setdiff(1:M_.nspred,k2));
+optimal_policy/mult_elimination_test.mod	tainted	'k3' is unknown: "k3 = k1(setdiff(1:M_.nspred,k2));" was not executed	k4 = oo_.dr.order_var(k3);
+optimal_policy/mult_elimination_test.mod	tainted	'k4' is unknown: "k4 = oo_.dr.order_var(k3);" was not executed	V0 = oo_.var(k4,k4);
+optimal_policy/mult_elimination_test.mod	tainted	'dr2' is unknown: "dr2 = mult_elimination({'R'},M_,options_,oo_);" was not executed	Atest = [dr2.M1(k3,:) dr2.M2(k3,:) dr2.M4(k3,:); eye(6) zeros(6,10);zeros(4,16)];
+optimal_policy/mult_elimination_test.mod	tainted	'dr2' is unknown: "dr2 = mult_elimination({'R'},M_,options_,oo_);" was not executed	Btest = [dr2.M3(k3,:); zeros(6,4); eye(4)];
+optimal_policy/mult_elimination_test.mod	tainted	'Atest' is unknown: "Atest = [dr2.M1(k3,:) dr2.M2(k3,:) dr2.M4(k3,:); eye(6) zero" was not executed	V1=lyapunov_symm(Atest,Btest*M_.Sigma_e*Btest',options_.lyapunov_fixed_point_tol,1+1e-6,options_.lyapunov_complex_thresh
+optimal_policy/mult_elimination_test.mod	block	'V1' is unknown: "V1=lyapunov_symm(Atest,Btest*M_.Sigma_e*Btest',options_.lyap" was not executed	if max(max(abs(V1(1:6,1:6)-V0)))
+optimal_policy/neo_growth_ramsey.mod	function	unknown function or variable 'evaluate_planner_objective'	planner_objective_value = evaluate_planner_objective(M_, options_, oo_);
+optimal_policy/neo_growth_ramsey.mod	function	unknown function or variable 'simult_'	y_sim = simult_(M1.M_,options1.options_,initial_condition_states,oo1.oo_.dr,shock_matrix,options1.options_.order);
+optimal_policy/neo_growth_ramsey.mod	tainted	'y_sim' is unknown: "y_sim = simult_(M1.M_,options1.options_,initial_condition_st" was not executed	cond_W_hand_L_SS=y_sim(strmatch('W',M1.M_.endo_names,'exact'),2);
+optimal_policy/neo_growth_ramsey.mod	block	'planner_objective_value' is unknown: "planner_objective_value = evaluate_planner_objective(M_, opt" was not executed	if abs((unc_W_hand - planner_objective_value.unconditional)/unc_W_hand) > 1e-6;
+optimal_policy/neo_growth_ramsey.mod	block	'cond_W_hand_L_SS' is unknown: "cond_W_hand_L_SS=y_sim(strmatch('W',M1.M_.endo_names,'exact'" was not executed	if abs(cond_W_hand_L_SS - planner_objective_value.conditional.steady_initial_multiplier) > 1e-6;
+optimal_policy/neo_growth_ramsey.mod	block	'planner_objective_value' is unknown: "planner_objective_value = evaluate_planner_objective(M_, opt" was not executed	if abs(planner_objective_value.unconditional-oo_.mean(strmatch('U',M_.endo_names,'exact'))/(1-beta)) > 1e-6;
+optimal_policy/neo_growth_ramsey.mod	tainted	'y_sim' is unknown: "y_sim = simult_(M1.M_,options1.options_,initial_condition_st" was not executed	cond_W_hand_L_0=y_sim(strmatch('W',M1.M_.endo_names,'exact'),2);
+optimal_policy/neo_growth_ramsey.mod	block	'cond_W_hand_L_0' is unknown: "cond_W_hand_L_0=y_sim(strmatch('W',M1.M_.endo_names,'exact')" was not executed	if abs(cond_W_hand_L_0 - planner_objective_value.conditional.zero_initial_multiplier) > 1e-6;
+optimal_policy/Ramsey/Gali_commitment.mod	block	options_.irf was changed by a Dynare command; its value is not known to JDyn	for ii=2:options_.irf
+optimal_policy/Ramsey/Gali_commitment.mod	tainted	'p_irf' is unknown: block "for ii=2:options_.irf" was not executed	pi_irf=diff([0 p_irf]);
+optimal_policy/Ramsey/Gali_commitment.mod	block	'u_irf' is unknown: block "for ii=2:options_.irf" was not executed	if max(abs(u_irf-oo_.irfs.u_eps_u))>1e-10 || max(abs(p_irf-oo_.irfs.p_eps_u))>1e-10 || max(abs(p_irf-oo_.irfs.p_eps_u))>
+discretionary_policy/dennis_1.mod	file	file-system, shell or interactive functions are not available	datatomfile('dennis_simul', {'y'; 'i'; 'pi';});
+discretionary_policy/Gali_discretion.mod	function	unknown function or variable 'var_list_'	pi_pos=strmatch('pi',var_list_,'exact');
+discretionary_policy/Gali_discretion.mod	function	unknown function or variable 'var_list_'	y_gap_pos=strmatch('y_gap',var_list_,'exact');
+discretionary_policy/Gali_discretion.mod	block	'pi_pos' is unknown: "pi_pos=strmatch('pi',var_list_,'exact');" was not executed	if abs(oo_.var(pi_pos,pi_pos)-var_pi_theoretical)>1e-10 || abs(oo_.var(y_gap_pos,y_gap_pos)-var_y_gap_theoretical)>1e-10
+steady_state/Gali_2015_chapter_6_4.mod	results	options_.irf was changed by a Dynare command; its value is not known to JDyn	plot(1:options_.irf,oo_baseline.irfs.y_gap_eps_a,'-o',1:options_.irf,oo_flexible_wages.irfs.y_gap_eps_a,'-d',1:options_.
+steady_state/Gali_2015_chapter_6_4.mod	results	options_.irf was changed by a Dynare command; its value is not known to JDyn	plot(1:options_.irf,oo_baseline.irfs.pi_p_ann_eps_a,'-o',1:options_.irf,oo_flexible_wages.irfs.pi_p_ann_eps_a,'-d',1:opt
+steady_state/Gali_2015_chapter_6_4.mod	results	options_.irf was changed by a Dynare command; its value is not known to JDyn	plot(1:options_.irf,oo_baseline.irfs.pi_w_ann_eps_a,'-o',1:options_.irf,oo_flexible_wages.irfs.pi_w_ann_eps_a,'-d',1:opt
+steady_state/Gali_2015_chapter_6_4.mod	results	options_.irf was changed by a Dynare command; its value is not known to JDyn	plot(1:options_.irf,oo_baseline.irfs.w_real_eps_a,'-o',1:options_.irf,oo_flexible_wages.irfs.w_real_eps_a,'-d',1:options
+steady_state/Gali_2015_chapter_6_4.mod	function	unknown function or variable 'var_list_'	y_gap_pos=strmatch('y_gap',var_list_ ,'exact');
+steady_state/Gali_2015_chapter_6_4.mod	function	unknown function or variable 'var_list_'	pi_p_pos=strmatch('pi_p',var_list_ ,'exact');
+steady_state/Gali_2015_chapter_6_4.mod	function	unknown function or variable 'var_list_'	pi_w_pos=strmatch('pi_w',var_list_ ,'exact');
+steady_state/Gali_2015_chapter_6_4.mod	tainted	'y_gap_pos' is unknown: "y_gap_pos=strmatch('y_gap',var_list_ ,'exact');" was not executed	variance.y_gap=oo_.var(y_gap_pos,y_gap_pos);
+steady_state/Gali_2015_chapter_6_4.mod	tainted	'pi_p_pos' is unknown: "pi_p_pos=strmatch('pi_p',var_list_ ,'exact');" was not executed	variance.pi_p=oo_.var(pi_p_pos,pi_p_pos);
+steady_state/Gali_2015_chapter_6_4.mod	tainted	'pi_w_pos' is unknown: "pi_w_pos=strmatch('pi_w',var_list_ ,'exact');" was not executed	variance.pi_w=oo_.var(pi_w_pos,pi_w_pos);
+steady_state/Gali_2015_chapter_6_4.mod	tainted	'variance' is unknown: "variance.pi_w=oo_.var(pi_w_pos,pi_w_pos);" was not executed	L=0.5*((par.siggma+(par.varphi+par.alppha)/(1-par.alppha))*variance.y_gap+ par.epsilon_p/par.lambda_p*variance.pi_p+par.
+steady_state/Gali_2015_chapter_6_4.mod	tainted	'variance' is unknown: "variance.pi_w=oo_.var(pi_w_pos,pi_w_pos);" was not executed	values=[sqrt([variance.pi_p;variance.pi_w;variance.y_gap]);L];
+steady_state/Gali_2015_chapter_6_4.mod	tainted	'values' is unknown: "values=[sqrt([variance.pi_p;variance.pi_w;variance.y_gap]);L" was not executed	dyntable(options_,'Evaluation of Simple Rules',headers,labels,values,size(labels,2)+2,4,3)
+steady_state/Gali_2015_chapter_6_4.mod	block	'values' is unknown: "values=[sqrt([variance.pi_p;variance.pi_w;variance.y_gap]);L" was not executed	if any(isnan(values))
+bgp/ramsey-1/ramsey.mod	function	unknown variable, package or object 'bgp'	bgp.write(M_);
+bgp/ramsey-1/ramsey.mod	function	handle to ramsey.bgpfun	[y, fval, exitflag] = fsolve(@ramsey.bgpfun, [y;g], options);
+bgp/ramsey-1/ramsey.mod	tainted	'y' is unknown: "[y, fval, exitflag] = fsolve(@ramsey.bgpfun, [y;g], options)" was not executed	assert(max(abs(y(M_.endo_nbr+(1:M_.orig_endo_nbr))-1.02))<1e-6)

@@ -1,0 +1,147 @@
+
+Approximated value of unconditional welfare:  -51.15717880
+
+Approximated value of conditional welfare: -51.15717880
+
+Approximated value of unconditional welfare:  0.00000000
+
+Approximated value of conditional welfare:
+    - with initial Lagrange multipliers set to 0: 0.00000000
+    - with initial Lagrange multipliers set to steady state: 0.00000000
+
+Approximated value of unconditional welfare:  -25.21328482
+
+Approximated value of conditional welfare:
+    - with initial Lagrange multipliers set to 0: -25.21295165
+    - with initial Lagrange multipliers set to steady state: -25.21328482
+
+Approximated value of unconditional welfare:  -25.21328482
+
+Approximated value of conditional welfare:
+    - with initial Lagrange multipliers set to 0: -25.21311638
+    - with initial Lagrange multipliers set to steady state: -25.21328482
+
+Approximated value of unconditional welfare:  -25.21328482
+
+Approximated value of conditional welfare:
+    - with initial Lagrange multipliers set to 0: -25.21295165
+    - with initial Lagrange multipliers set to steady state: -25.21328482
+
+Approximated value of unconditional welfare:  -25.21328482
+
+Approximated value of conditional welfare:
+    - with initial Lagrange multipliers set to 0: -25.21295165
+    - with initial Lagrange multipliers set to steady state: -25.21328482
+
+Approximated value of unconditional welfare:  -25.21327959
+
+Approximated value of conditional welfare:
+    - with initial Lagrange multipliers set to 0: -25.21294641
+    - with initial Lagrange multipliers set to steady state: -25.21327959
+
+Approximated value of unconditional welfare:  -25.21328482
+
+Approximated value of conditional welfare:
+    - with initial Lagrange multipliers set to 0: -25.21295165
+    - with initial Lagrange multipliers set to steady state: -25.21328482
+
+Approximated value of unconditional welfare:  -25.21327959
+
+Approximated value of conditional welfare:
+    - with initial Lagrange multipliers set to 0: -25.21294641
+    - with initial Lagrange multipliers set to steady state: -25.21327959
+
+Approximated value of unconditional welfare:  -25.21328482
+
+Approximated value of conditional welfare:
+    - with initial Lagrange multipliers set to 0: -25.24413270
+    - with initial Lagrange multipliers set to steady state: -25.24446587
+evaluate_planner_objective: M_.det_shocks contains values for the predetermined t=0 period. Dynare will ignore them. Use histval to set the value of lagged innovations.
+
+Approximated value of unconditional welfare:  -25.21328482
+
+Approximated value of conditional welfare:
+    - with initial Lagrange multipliers set to 0: 8.23242650
+    - with initial Lagrange multipliers set to steady state: 8.23209334
+evaluate_planner_objective: M_.det_shocks contains values for the predetermined t=0 period. Dynare will ignore them. Use histval to set the value of lagged innovations.
+
+Approximated value of unconditional welfare:  -25.21328482
+
+Approximated value of conditional welfare:
+    - with initial Lagrange multipliers set to 0: 8.23195112
+    - with initial Lagrange multipliers set to steady state: 8.23209334
+evaluate_planner_objective: M_.det_shocks contains values for the predetermined t=0 period. Dynare will ignore them. Use histval to set the value of lagged innovations.
+
+Approximated value of unconditional welfare:  -25.21328482
+
+Approximated value of conditional welfare:
+    - with initial Lagrange multipliers set to 0: 8.23242650
+    - with initial Lagrange multipliers set to steady state: 8.23209334
+
+Approximated value of unconditional welfare:  -51.15717757
+
+Approximated value of conditional welfare:
+    - with initial Lagrange multipliers set to 0: -51.15001890
+    - with initial Lagrange multipliers set to steady state: -51.17845363
+
+Approximated value of unconditional welfare with discretionary policy:  100.22591725
+
+Approximated value of conditional welfare with discretionary policy: 100.04699359
+
+Approximated value of unconditional welfare with discretionary policy:  103.38721064
+
+Approximated value of conditional welfare with discretionary policy: 102.21541585
+
+Approximated value of unconditional welfare with discretionary policy:  103.38721064
+
+Approximated value of conditional welfare with discretionary policy: 102.21541585
+
+Approximated value of unconditional welfare with discretionary policy:  56.65722380
+
+Approximated value of conditional welfare with discretionary policy: 56.09065156
+
+Approximated value of unconditional welfare with discretionary policy:  56.65722380
+
+Approximated value of conditional welfare with discretionary policy: 56.65722380
+
+Approximated value of unconditional welfare with discretionary policy:  0.00905764
+
+Approximated value of conditional welfare with discretionary policy: 0.00896707
+
+Approximated value of unconditional welfare with discretionary policy:  7.56853359
+
+Approximated value of conditional welfare with discretionary policy: 7.18647737
+
+Approximated value of unconditional welfare with discretionary policy:  7.56853362
+
+Approximated value of conditional welfare with discretionary policy: 7.18647740
+
+Approximated value of unconditional welfare:  -25.21328482
+
+Approximated value of conditional welfare:
+    - with initial Lagrange multipliers set to 0: -25.21295165
+    - with initial Lagrange multipliers set to steady state: -25.21328482
+
+Approximated value of unconditional welfare:  -25.21327959
+
+Approximated value of conditional welfare:
+    - with initial Lagrange multipliers set to 0: -25.21294641
+    - with initial Lagrange multipliers set to steady state: -25.21327959
+
+Approximated value of unconditional welfare:  -25.21327959
+
+Approximated value of conditional welfare:
+    - with initial Lagrange multipliers set to 0: -25.21294641
+    - with initial Lagrange multipliers set to steady state: -25.21327959
+
+Approximated value of unconditional welfare:  -51.15717757
+
+Approximated value of conditional welfare:
+    - with initial Lagrange multipliers set to 0: -51.15001890
+    - with initial Lagrange multipliers set to steady state: -51.17845363
+
+Approximated value of unconditional welfare:  -51.15717757
+
+Approximated value of conditional welfare:
+    - with initial Lagrange multipliers set to 0: -51.15001890
+    - with initial Lagrange multipliers set to steady state: -51.17845363
