@@ -707,7 +707,7 @@ function _exec_statement!(m::Model, st)
         else
             m.options[kind] = get_or(st, "options", Dict{String,Any}())
         end
-    elseif kind in ("native", "verbatim") || kind in _LATEX_KINDS
+    elseif kind in ("native", "verbatim") || kind in _LATEX_KINDS || kind in _SEMI_KINDS
         # native lines are run by the MATLAB session
     else
         push!(m.unhandled_statements, kind)

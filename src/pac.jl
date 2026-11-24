@@ -328,7 +328,6 @@ _vec(x) = x isa Real ? Float64[x] : x isa AbstractMatrix ? vec(Float64.(x)) : x 
 _ivec(x) = Int.(_vec(x))
 _bvec(x) = x isa Bool ? Bool[x] : x isa AbstractMatrix{Bool} ? vec(x) : Bool.(_vec(x) .!= 0)
 _names(c) = String[String(x) for x in (c isa Cell ? c.items : [c])]
-_col(v::AbstractVector) = reshape(collect(v), :, 1)
 
 "Auxiliary variable record (a Dict of the preprocessor's JSON) of endogenous variable `idx`, or nothing."
 function _aux_info(m::Model, idx::Integer)
@@ -573,7 +572,7 @@ _a2alpha(a) = begin
     al
 end
 _polyval(p, x) = (r = 0.0; for c in p; r = r * x + c; end; r)
-_iota(n, idx) = (v = zeros(n); v[idx] .= 1; v)
+_iota(n, idx) = (v = zeros(n); for i in (idx isa Integer ? (idx,) : idx); v[i] = 1.0; end; v)
 
 function _build_G(params)
     all(isreal, params) && length(params) >= 2 || merr("Input argument has to be a vector with at least two elements. The last element is the discount factor.")
@@ -588,7 +587,7 @@ function _build_G(params)
 end
 
 "Dynare's hVectors: (h, lrcp)."
-function _hvectors(params, H::Matrix{Float64}, kind, id)
+function _hvectors(params, H::Matrix{Float64}, auxtype, kind, id)
     G, alpha, beta = _build_G(params)
     A = vcat(alpha, 1.0)
     A1 = _polyval(A, 1.0); Ab = _polyval(A, beta)
@@ -948,7 +947,7 @@ function _register_semi!()
         _nargs(a, 1, 2, "isauxiliary")
         _isaux(_need_host(I).model, _STR(a[1], "isauxiliary"), length(a) > 1 ? Int.(vec(farr(a[2]))) : nothing)
     end
-    reg(name, f) = (PKG_FUNCS[name] = f)
+    reg(f, name) = (PKG_FUNCS[name] = f)
     reg("var_expectation.initialize") do I, a, nout
         var_expectation_initialize!(_need_host(I), _STR(a[1], "var_expectation.initialize")); Any[]
     end
