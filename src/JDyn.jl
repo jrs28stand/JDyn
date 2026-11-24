@@ -68,8 +68,9 @@ include("samplers.jl")
 include("mcmc_driver.jl")
 include("smc.jl")
 include("mcmc_stage.jl")
+include("dsge_var.jl")
 
-export sample_mcmc, sample_smc, set_mcmc_rng!, mode_from_file, mcmc_diagnostics, posterior_irf, posterior_forecast, posterior_subsample, posterior_theoretical_moments,
+export dsge_var_posterior, endogenous_log_prior, sample_mcmc, sample_smc, set_mcmc_rng!, mode_from_file, mcmc_diagnostics, posterior_irf, posterior_forecast, posterior_subsample, posterior_theoretical_moments,
        posterior_smoother_statistics,
        run_preprocessor, load, Model, ModelError, steady_state, SteadyStateError, first_order, FirstOrderSolution,
        BlanchardKahnError, ghx, ghu, irf, simulate, set_param!, set_params!, get_param, set_shock_stderr!,

@@ -489,7 +489,7 @@ const _HONOURED_EST = Set(["datafile", "first_obs", "nobs", "loglinear", "logdat
     "bayesian_irf", "irf", "irf_shocks", "relative_irf", "consider_all_endogenous", "consider_all_endogenous_and_auxiliary",
     "consider_only_observed", "posterior_max_subsample_draws",
     "mode_file", "load_mh_file", "mh_recover", "posterior_sampling_method", "posterior_sampler_options", "mcmc_jumping_covariance",
-    "mh_tune_jscale", "mh_tune_guess", "load_results_after_load_mh"])
+    "mh_tune_jscale", "mh_tune_guess", "load_results_after_load_mh", "dsge_var", "dsge_varlag", "endogenous_prior"])
 # preprocessor option names -> the names used here
 const _EST_ALIASES = Dict("posterior_sampler_options.posterior_sampling_method" => "posterior_sampling_method",
     "posterior_sampler_options.sampling_opt" => "posterior_sampler_options", "MCMC_jumping_covariance" => "mcmc_jumping_covariance",
@@ -609,6 +609,8 @@ function Estimation(m::Model; data=nothing, allow_unsupported::Bool=false, state
     for k in ("mh_drop", "mh_conf_sig", "prior_trunc", "mh_init_scale_factor", "kalman_tol", "diffuse_kalman_tol", "riccati_tol", "Harvey_scale_factor")
         opts[k] = Float64(opts[k])
     end
+    opts["dsge_varlag"] = Int(get(opts, "dsge_varlag", 4))          # DSGE-VAR (src/dsge_var.jl): the model is a DSGE-VAR when it has dsge_prior_weight
+    opts["endogenous_prior"] = _est_flag(get(opts, "endogenous_prior", false))
     # posterior samplers (src/samplers.jl): mh_tune_jscale defaults to the target .33; slice needs bounded support
     (tune_status && get(opts, "mh_tune_jscale", nothing) === nothing) && (opts["mh_tune_jscale"] = 0.33)
     if _est_flag(get(opts, "mh_tune_jscale", nothing)) && opts["mh_jscale"] !== nothing
@@ -903,7 +905,9 @@ function solve(est::Estimation, theta::AbstractVector)
     m = est.model
     o = est.options
     sol = first_order(m; params=model_params(est, theta), qz_criterium=o["qz_criterium"], loglinear=o["loglinear"])
-    all(isfinite, sol.params) || throw(SteadyStateError("parameters are NaN or Inf after the steady-state computation"))
+    pfin = isfinite.(sol.params)
+    haskey(m.ip, "dsge_prior_weight") && (pfin[m.ip["dsge_prior_weight"]] = true)      # dsge_var=Inf: an infinite weight is legitimate
+    all(pfin) || throw(SteadyStateError("parameters are NaN or Inf after the steady-state computation"))
     (all(isfinite, sol.G) && all(isfinite, sol.H)) || throw(BlanchardKahnError("the decision rule contains NaN or Inf"))
     sol.ys, sol.G, sol.H, sol.params
 end
@@ -952,6 +956,7 @@ function _setup_data!(est::Estimation, data)
         any(x -> !isnan(x) && x <= 0, raw) && throw(EstimationError("loglinear without logdata: the data contain non-positive values, whose logarithm is complex"))
         raw = log.(raw)
     end
+    o["_alldata"] = copy(raw)                          # DSGE-VAR: observations before first_obs are initial conditions
     first = Int(o["first_obs"])
     nobs = o["nobs"] === nothing ? size(raw, 1) - first + 1 : Int(o["nobs"])
     (first < 1 || nobs < 1 || first - 1 + nobs > size(raw, 1)) &&
@@ -1052,6 +1057,10 @@ function _dsge_likelihood(est::Estimation, theta::AbstractVector; bounds=(est.lb
         return reject(44, _ispd_penalty(Hm[est.H_check, est.H_check]), "covariance matrix of the measurement errors is not positive definite (info 44)")
     end
     get(o, "occbin", nothing) === nothing || return _occbin_likelihood(est, theta, with_lik)    # src/occbin_estimation.jl
+    if dsge_var_active(est)                                                                      # src/dsge_var.jl
+        rj = _dvar_precheck(est, theta)
+        rj === nothing || return rj
+    end
     local ys, G, Hs, params
     try
         ys, G, Hs, params = solve(est, theta)
@@ -1071,6 +1080,7 @@ function _dsge_likelihood(est::Estimation, theta::AbstractVector; bounds=(est.lb
     r = est.restrict
     T, R, z = G[r, r], Hs[r, :], est.mf
     (all(isfinite, T) && all(isfinite, R)) || return reject(3, 0.1, "the decision rule contains NaN or Inf")
+    dsge_var_active(est) && return _dvar_likelihood(est, theta, ys, T, R, Q, z)
     mm = size(T, 1)
     pp = length(z)
     Y = permutedims(est.data) .- ys[est.obs_decl]
@@ -1164,6 +1174,13 @@ function _dsge_likelihood(est::Estimation, theta::AbstractVector; bounds=(est.lb
         return Inf, info, 0.1, -LIK, lnprior, Float64[]
     end
     contrib = with_lik ? vcat(dlik, lik)[pre+1:end] : Float64[]
+    if o["endogenous_prior"]
+        # dsge_likelihood.m: endogenous_prior.m on the data from the last missing observation (stationary models only)
+        o["lik_init"] == 1 || throw(EstimationError("Endogenous prior not supported with non-stationary models"))
+        Pst = lyapunov_symm(T, QQ; qz_criterium=o["qz_criterium"], complex_threshold=o["lyapunov_complex_threshold"])[1]
+        lnpriormom = endogenous_log_prior(Y[:, est.no_more_missing:end], Pst, z, Hm)
+        return LIK - lnprior - lnpriormom, 0, 0.0, -LIK, lnprior, contrib
+    end
     LIK - lnprior, 0, 0.0, -LIK, lnprior, contrib
 end
 
