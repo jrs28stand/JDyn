@@ -20,6 +20,11 @@ Default `occbin` is bit-for-bit unchanged: simulations (file shocks, 200 random 
 rbc_occbin, borrcon_sim, nk_zlb2, obc_zlb were serialised from `main` (a487e5d) and from this branch and compared with
 `isequal`: all identical (including the two OccBin failures on rbc_occbin's random/IRF runs, same errors).
 
+Full suite on this branch (`julia --project=. test/runtests.jl`, 2026-11-24, fresh process): 27 of 28 files pass,
+including test_obc.jl (264 checks), test_occbin.jl (37), test_occbin_options.jl (456), test_occbin_estimation.jl (203),
+test_results.jl (41). test_plotting.jl fails at load because it reads a hard-coded Dynare.jl checkout
+(`/root/jl/src/Dynare.jl/test/models/example1/example1.mod`) absent on this machine; the file is unchanged from `main`.
+
 ## What is where
 
 - src/obc.jl: `ObcConstraint`/`ObcAffine` (post-processor), `ObcSystem` (M, q0, Qx, cached per `Occbin` object and
