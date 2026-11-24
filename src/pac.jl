@@ -483,7 +483,7 @@ function semi_companion!(h::Host, name::AbstractString, type=nothing)
 end
 
 # ---------------------------------------------------------------------- var_expectation
-_isint(x) = isfinite(x) && x == round(x)
+# _isint: defined in src/matlab/dates.jl (a finite real with no fractional part)
 
 function var_expectation_initialize!(h::Host, name::AbstractString)
     S = semi_M(h.model)
