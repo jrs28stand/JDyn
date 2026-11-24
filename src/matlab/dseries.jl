@@ -43,7 +43,7 @@ function _cellstrs(x, what)
 end
 
 # ---------------------------------------------------------------------- file readers
-function _read_csv(path)
+function ds_read_csv(path)
     isfile(path) || merr("load_csv_file_data: I can't find file $path!")
     lines = readlines(path)
     isempty(lines) && merr("load_csv_file_data: $path is empty")
@@ -161,8 +161,8 @@ function _resolve_file(I, name)
     merr("dseries: cannot find file $name")
 end
 
-function load_data(I, filename)
-    isempty(filename) && merr("dseries:load_data: Input argument cannot be an empty string!")
+function ds_load_data(I, filename)
+    isempty(filename) && merr("dseries:ds_load_data: Input argument cannot be an empty string!")
     path = _resolve_file(I, filename)
     ext = lowercase(splitext(path)[2])
     if ext == ".m"
@@ -170,7 +170,7 @@ function load_data(I, filename)
     elseif ext == ".mat"
         init, data, names, tex, ops, tags = _from_struct(_mat_struct(path))
     elseif ext == ".csv"
-        init, data, names = _read_csv(path)
+        init, data, names = ds_read_csv(path)
         tex = nothing; ops = fill("", length(names)); tags = Pair{String,Vector{Any}}[]
     elseif ext in (".xls", ".xlsx")
         throw(Unsupported("dseries: reading spreadsheets ($(basename(path))) is not implemented", "file"))
@@ -202,7 +202,7 @@ function ds_ctor(I, a::Vector{Any})
             o.dates = x
             return o
         elseif x isa AbstractString
-            init, o.data, o.name, o.tex, o.ops, o.tags = load_data(I, x)
+            init, o.data, o.name, o.tex, o.ops, o.tags = ds_load_data(I, x)
             o.dates = _range(init, nobs(o))
             return o
         elseif x isa MDseries
@@ -221,12 +221,12 @@ function ds_ctor(I, a::Vector{Any})
     end
     n > 4 && wrongin("Wrong calling sequence!")
     if n == 2 && a[1] isa AbstractString && a[2] isa MDates
-        init, o.data, o.name, o.tex, o.ops, o.tags = load_data(I, a[1])
+        init, o.data, o.name, o.tex, o.ops, o.tags = ds_load_data(I, a[1])
         o.dates = _range(a[2], nobs(o))
         return o
     end
     if n == 2 && a[1] isa AbstractString && a[2] isa AbstractString && isstringdate(a[2])
-        init, o.data, o.name, o.tex, o.ops, o.tags = load_data(I, a[1])
+        init, o.data, o.name, o.tex, o.ops, o.tags = ds_load_data(I, a[1])
         o.dates = _range(dates_ctor(Any[a[2]]), nobs(o))
         return o
     end
@@ -282,6 +282,9 @@ function struct2dseries(I, s::MStruct)
     _unsup("struct2dseries")
 end
 
+_mean1(x) = sum(x; dims=1) ./ size(x, 1)
+_std1(x) = sqrt.(sum((x .- _mean1(x)) .^ 2; dims=1) ./ max(size(x, 1) - 1, 1))
+
 # ---------------------------------------------------------------------- helpers
 _prev(o::MDseries, i) = isempty(o.ops[i]) ? o.name[i] : o.ops[i]
 function _setops!(o::MDseries, f)
@@ -290,7 +293,7 @@ function _setops!(o::MDseries, f)
     end
     o
 end
-_num2str(I, x) = BUILTINS["num2str"](I, Any[x], 1)
+_n2s(I, x) = BUILTINS["num2str"](I, Any[x], 1)
 
 "Dseries ensure: a dseries argument or an error."
 _needds(x, who) = x isa MDseries ? x : throw(MatlabError("$who: Both input arguments must be dseries objects!"))
@@ -330,7 +333,7 @@ end
 _isnumvec(x) = (x isa Real && !(x isa Bool)) || (x isa AbstractMatrix{Float64} && !isempty(x) && min(size(x)...) == 1)
 
 function _numstr(I, x)
-    x isa Real && return _num2str(I, x)
+    x isa Real && return _n2s(I, x)
     string("[", BUILTINS["num2str"](I, Any[x, 12.0], 1), "]")
 end
 
@@ -344,7 +347,7 @@ function _ds_arith(I, name, fn, a, usesops_left=true)
         q = copy_ds(p)
         q.data = _bsx(fn, ov, p.data)
         for i in 1:vobs(q)
-            s = o isa Real ? _num2str(I, o) : (size(o, 1) == 1 ? _num2str(I, o[i]) : _numstr(I, o))
+            s = o isa Real ? _n2s(I, o) : (size(o, 1) == 1 ? _n2s(I, o[i]) : _numstr(I, o))
             q.ops[i] = name == "mrdivide" ? "mrdivide($s, $(p.name[i]))" : "$name($s, $(isempty(p.ops[i]) ? p.name[i] : p.ops[i]))"
         end
         return q
@@ -355,7 +358,7 @@ function _ds_arith(I, name, fn, a, usesops_left=true)
         q = copy_ds(o)
         q.data = _bsx(fn, o.data, pv)
         for i in 1:vobs(q)
-            s = p isa Real ? _num2str(I, p) : (size(p, 1) == 1 ? _num2str(I, p[i]) : _numstr(I, p))
+            s = p isa Real ? _n2s(I, p) : (size(p, 1) == 1 ? _n2s(I, p[i]) : _numstr(I, p))
             q.ops[i] = "$name($(isempty(q.ops[i]) ? q.name[i] : q.ops[i]), $s)"
         end
         return q
@@ -473,7 +476,7 @@ dm!("dseries", "mpower") do I, a, nout
         q = copy_ds(o)
         q.data = _pow.(o.data, Float64(p))
         for i in 1:vobs(q)
-            q.ops[i] = "power($(isempty(o.ops[i]) ? q.name[i] : o.ops[i]), $(_num2str(I, p)))"
+            q.ops[i] = "power($(isempty(o.ops[i]) ? q.name[i] : o.ops[i]), $(_n2s(I, p)))"
         end
         return q
     end
@@ -769,18 +772,18 @@ end
 dm!("dseries", "mean") do I, a, nout
     o = a[1]
     geo = length(a) > 1 && truth(a[2])
-    ret(geo ? prod(o.data; dims=1) .^ (1 / nobs(o)) : mean(o.data; dims=1))
+    ret(geo ? prod(o.data; dims=1) .^ (1 / nobs(o)) : _mean1(o.data))
 end
 dm!("dseries", "std") do I, a, nout
     o = a[1]
     length(a) > 1 && truth(a[2]) && _unsup("geometric std")
-    ret(std(o.data; dims=1))
+    ret(_std1(o.data))
 end
 dot!("dseries", "mean", "std")
 
 function _center!(I, o, geometric=false)
     g = geometric isa Bool ? geometric : truth(geometric)
-    m = mean(o.data; dims=1)
+    m = _mean1(o.data)
     o.data = g ? o.data ./ m : o.data .- m
     _setops!(o, s -> "center($s, $(g ? 1 : 0))")
 end
@@ -790,7 +793,7 @@ _inplace!("detrend", function (I, o, model=0.0)
     (model isa Real && _isint(model)) || dserr("dseries::detrend: Second argument must be a positive integer scalar!")
     m = Int(model)
     if m == 0
-        o.data = o.data .- mean(o.data; dims=1)
+        o.data = o.data .- _mean1(o.data)
     else
         n = nobs(o)
         x = ones(n, m + 1)
@@ -830,12 +833,12 @@ function _hp!(o, lambda, cycle, name)
 end
 _inplace!("hpcycle", function (I, o, lambda=nothing)
     _hp!(o, lambda, true, "hpcycle")
-    ls = lambda === nothing || (lambda isa AbstractMatrix && isempty(lambda)) ? "[]" : _num2str(I, lambda)
+    ls = lambda === nothing || (lambda isa AbstractMatrix && isempty(lambda)) ? "[]" : _n2s(I, lambda)
     _setops!(o, s -> "hpcycle($s, $ls)")
 end)
 _inplace!("hptrend", function (I, o, lambda=nothing)
     _hp!(o, lambda, false, "hptrend")
-    ls = lambda === nothing || (lambda isa AbstractMatrix && isempty(lambda)) ? "[]" : _num2str(I, lambda)
+    ls = lambda === nothing || (lambda isa AbstractMatrix && isempty(lambda)) ? "[]" : _n2s(I, lambda)
     _setops!(o, s -> "hptrend($s, $ls)")
 end)
 _inplace!("baxter_king_filter", function (I, o, hf=nothing, lf=nothing, K=nothing)
@@ -864,7 +867,7 @@ _inplace!("baxter_king_filter", function (I, o, hf=nothing, lf=nothing, K=nothin
     o.data = tmp[Kk+1:end-Kk, :]
     init = o.dates.time[1] + Kk
     o.dates = mkdates(dsfreq(o), init .+ (0:nobs(o)-1))
-    s1, s2, s3 = _num2str(I, high), _num2str(I, low), _num2str(I, Float64(Kk))
+    s1, s2, s3 = _n2s(I, high), _n2s(I, low), _n2s(I, Float64(Kk))
     _setops!(o, s -> "baxter_king_filter($s, $s1, $s2, $s3)")
 end)
 
