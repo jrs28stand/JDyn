@@ -653,6 +653,8 @@ function _exec_statement!(m::Model, st)
                 push!(m.session.oo_written, d["name"])
             end
         end
+    elseif kind == "save_params_and_steady_state"
+        _save_params_and_steady_state(m, st["filename"])
     elseif kind in ("ramsey_model", "ramsey_policy")
         o = get_or(st, "options", Dict{String,Any}())
         m.options[kind] = o
@@ -684,26 +686,9 @@ function _exec_statement!(m::Model, st)
         o = get_or(st, "options", Dict{String,Any}())
         m.options[kind] = merge(get(m.options, kind, Dict{String,Any}()), o)
         kind == "check" && _accumulate_options!(m, o)
-        if kind == "steady" && get(get_or(st, "options", Dict()), "homotopy_mode", 0) != 0 && get(m.options, "homotopy_from_initval_to_endval", false) == true
-            isempty(m.endval) && throw(ModelError("homotopy_setup: the from_initval_to_endval option cannot be used without an endval block"))
-            # exogenous variables explicitly listed in the homotopy_setup block keep the user's values (handled below)
-            listed = m.homotopy === nothing ? Set{String}() : Set(String(d["name"]) for d in m.homotopy if haskey(m.ix, d["name"]))
-            for (nm, v) in m.endval
-                (haskey(m.ix, nm) && !(nm in listed)) || continue
-                m.initval[nm] = v; m.oo[nm] = v
-            end
-        end
-        if kind == "steady" && get(get_or(st, "options", Dict()), "homotopy_mode", nothing) !== nothing && m.homotopy !== nothing
-            # Dynare's steady moves these parameters and exogenous variables to their final values
-            for d in m.homotopy
-                val = _value(m, d["final_value"])
-                if haskey(m.ip, d["name"])
-                    m.params[m.ip[d["name"]]] = val
-                else
-                    m.initval[d["name"]] = val; m.oo[d["name"]] = val
-                end
-            end
-        end
+        # homotopy_setup + steady(homotopy_mode=...): stepped as Dynare's homotopy1/2/3 (src/homotopy.jl); moves the parameters and
+        # exogenous variables to their final values and leaves the steady state there
+        kind == "steady" && haskey(get_or(st, "options", Dict()), "homotopy_mode") && _steady_homotopy!(m, merge(get(m.options, "steady", Dict()), get_or(st, "options", Dict())))
     elseif kind in _STORED_KINDS
         if kind == "estimated_params"
             m.options[kind] = st
