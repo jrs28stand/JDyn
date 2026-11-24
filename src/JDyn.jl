@@ -60,6 +60,7 @@ include("results_policy.jl")
 include("results_estimation.jl")
 include("seeds.jl")
 include("varexo_det.jl")
+include("epilogue.jl")
 include("forecast.jl")
 include("mcmc_diagnostics.jl")
 include("posterior.jl")
@@ -91,7 +92,8 @@ export mcmc_diagnostics, posterior_irf, posterior_forecast, posterior_subsample,
        DiscretionaryPolicyError, variance_of_endogenous_variables,
        forecast, ForecastResult, conditional_forecast, ConditionalForecastResult, conditional_forecast_table, forecast_struct,
        conditional_forecast_struct, forecast!, conditional_forecast!,
-       exo_det_names, n_exo_det, exo_det_steady, exo_det_decision_rules, simult_varexo_det, exo_det_paths
+       exo_det_names, n_exo_det, exo_det_steady, exo_det_decision_rules, simult_varexo_det, exo_det_paths,
+       epilogue, Epilogue, epilogue_dynamic, epilogue_static, epilogue_from_paths, epilogue_names
 
 include("precompile.jl")
 

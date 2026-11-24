@@ -8,7 +8,7 @@ Branch `parity` (base main ce58c84). References: Dynare 7.2 under Octave 8.4; ge
 | 2 | homotopy stepping, `save_params_and_steady_state` | done: `src/homotopy.jl`, `test/test_parity_homotopy.jl`; 12 Dynare runs (modes 1/2/3, from_initval_to_endval, failing and halving mode-3 paths): steady states 1e-15 relative (with solve_algo=9), same number of solves/failed steps; file identical to Dynare's |
 | 3 | pruned order-3 theoretical moments | done: `src/moments_order3.jl`, `test/test_parity_moments3.jl`; 3 models x 2 cases x (JDyn, Dynare decision rules), max scaled diff 4.5e-15 with Dynare's rules; no variance decomposition at order 3 (as Dynare); order 3 without `pruning` and with filters refused (ArgumentError) |
 | 4 | `varexo_det` | done: `src/varexo_det.jl`, `test/test_parity_varexo_det.jl`; ghud/ghxud/ghuud/ghudud (orders 1-2) and simult_varexo_det paths 5e-14, forecast with exo_det paths (order 1 3e-15, order 2 with replayed draws 6e-15); perfect foresight, order 3 and pruning refused |
-| 5 | `epilogue` | |
+| 5 | `epilogue` | done as a Julia API (src/epilogue.jl); not hooked into the MATLAB interpreter or shock decompositions. Dynare numbers: bit-identical with `replicate_dynare_bugs=true`, <1e-6 without (static: 1e-14) |
 | 6 | `external_function` | |
 | 7 | heteroskedastic shocks / filter | |
 | 8 | `M_.Correlation_matrix` | |
@@ -28,3 +28,8 @@ Branch `parity` (base main ce58c84). References: Dynare 7.2 under Octave 8.4; ge
   `shocks` on varexo_det variables go to `m.cache[:det_shocks_exo_det]` (not to `m.det_shocks`). `forecast` with exo_det: `ForecastResult.Exogenous`.
   `M_.exo_det_nbr`, `M_.exo_det_names`, `oo_.exo_det_steady_state` are set. Not done: `stoch_simul` itself ignores varexo_det (as Dynare),
   `forecast` after `estimation`, simulation of `simult_` with exo_det outside forecast, estimation with varexo_det (not tested).
+- Epilogue: `epilogue(m)` reads the block from the macro-expanded .mod (the JSON has none); `epilogue_dynamic(ep, series; params, replicate_dynare_bugs)`,
+  `epilogue_static`, `epilogue_from_paths`. Dynare's generated epilogue_dynamic rounds every assigned series to 6 dp (dseries `sprintf('%f')`) and
+  feeds the rounded values to later definitions: a Dynare defect, so exact values are the default; `replicate_dynare_bugs=true` reproduces Dynare
+  bit for bit (also the lead-from-`t-lead` quirk of non-recursive definitions). Not done: calling `<mod>.epilogue_dynamic(params, ds)` from the
+  MATLAB interpreter, `shock_decomposition(..., with_epilogue)`.
