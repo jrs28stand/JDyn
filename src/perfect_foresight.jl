@@ -123,7 +123,7 @@ const PF_DEFAULTS = Dict{String,Any}("dynatol.f" => nothing, "dynatol.x" => 1e-5
     "simul.homotopy_max_completion_share" => 1.0, "simul.homotopy_linearization_fallback" => false,
     "simul.homotopy_marginal_linearization_fallback" => 0.0, "simul.homotopy_exclude_varexo" => String[],
     "simul.steady_tolf" => nothing, "pfwee.constant_simulation_length" => false, "noprint" => false,
-    "periods" => nothing, "simul.endval_steady" => false, "simul.endval_steady_nocheck" => false, "datafile" => nothing)
+    "periods" => nothing, "simul.first_simulation_period" => nothing, "simul.last_simulation_period" => nothing, "simul.endval_steady" => false, "simul.endval_steady_nocheck" => false, "datafile" => nothing)
 "Dynare's default tolerance on the residuals of a perfect foresight simulation (options_.dynatol.f)."
 const PF_DEFAULT_TOLF = 1e-5
 const PF_NOTES = Dict("markowitz" => "markowitz only matters for Dynare's bytecode solvers",
@@ -227,7 +227,39 @@ end
 
 _pf_is_setup(st) = st["statementName"] in ("perfect_foresight_setup", "perfect_foresight_with_expectation_errors_setup")
 
-function _pf_period(v, what)
+"Time (frequency, count) of a date literal the preprocessor writes, `dates('2000Q1')`, or nothing."
+function _pf_date_literal(v)
+    v isa AbstractString || return nothing
+    mt = match(r"^\s*dates\('([^']+)'\)\s*$", v)
+    mt === nothing && return nothing
+    d = string2date(String(mt.captures[1]))
+    d === nothing ? nothing : (Int(d[1]), Float64(d[2]))
+end
+
+"First simulation period (frequency, time) from the setup statement's options, or nothing; with the number of periods when known."
+function _pf_date_context(m::Model)
+    first = last = nothing; periods = nothing
+    for st in m.statements
+        _pf_is_setup(st) || continue
+        o = get_or(st, "options", Dict{String,Any}())
+        haskey(o, "simul.first_simulation_period") && (first = _pf_date_literal(o["simul.first_simulation_period"]))
+        haskey(o, "simul.last_simulation_period") && (last = _pf_date_literal(o["simul.last_simulation_period"]))
+        haskey(o, "periods") && (periods = try Int(_pf_float(o["periods"])) catch; nothing end)
+    end
+    if first === nothing && last !== nothing && periods !== nothing
+        first = (last[1], last[2] - periods + 1)
+    end
+    (first=first, last=last, periods=periods)
+end
+
+function _pf_period(v, what, ctx=nothing)
+    lit = _pf_date_literal(v)
+    if lit !== nothing
+        (ctx === nothing || ctx.first === nothing) &&
+            throw(ModelError("$what is given as a date but neither first_simulation_period nor last_simulation_period was passed to perfect_foresight_setup"))
+        lit[1] == ctx.first[1] || throw(ModelError("$what $(repr(v)) and first_simulation_period have different frequencies"))
+        return Int(lit[2] - ctx.first[2] + 1)
+    end
     v isa Integer && return Int(v)
     v isa Real && isinteger(v) && return Int(v)
     v isa AbstractString && occursin(r"^\s*-?\d+\s*$", v) && return parse(Int, v)
@@ -264,6 +296,7 @@ function _pf_replay(m::Model, params=nothing, steady=nothing, extra_learnt_shock
     force = steady === nothing ? isempty(idx) : steady === true
     never = steady === false
     ie, ix = m.ie, m.ix
+    dctx = _pf_date_context(m)
     counts = Dict{Tuple{String,String},Int}()
     for st in sts[1:last]
         if st["statementName"] in ("initval", "endval")
@@ -297,7 +330,7 @@ function _pf_replay(m::Model, params=nothing, steady=nothing, extra_learnt_shock
             set_values!(st, m.initval)
         elseif kind == "endval" && haskey(st, "learnt_in")
             for d in get_or(st, "vals", [])
-                push!(ws.learnt_endval, Dict{String,Any}("learnt_in" => _pf_period(st["learnt_in"], "learnt_in"), "exo" => ix[d["name"]],
+                push!(ws.learnt_endval, Dict{String,Any}("learnt_in" => _pf_period(st["learnt_in"], "learnt_in", dctx), "exo" => ix[d["name"]],
                       "type" => get(d, "type", "level"), "value" => Float64(_value(m, d["value"]))))
             end
         elseif kind == "endval"
@@ -320,12 +353,12 @@ function _pf_replay(m::Model, params=nothing, steady=nothing, extra_learnt_shock
         elseif kind == "histval"
             _pf_histval!(m, ws, st)
         elseif kind in ("shocks", "mshocks") && haskey(st, "learnt_in")
-            lin = _pf_period(st["learnt_in"], "learnt_in")
+            lin = _pf_period(st["learnt_in"], "learnt_in", dctx)
             get(st, "overwrite", false) == true && filter!(d -> d["learnt_in"] != lin, ws.learnt_shocks)
             for d in get_or(st, "learnt_shocks", [])
                 for v in d["values"]
-                    push!(ws.learnt_shocks, Dict{String,Any}("learnt_in" => lin, "exo" => ix[d["var"]], "p1" => _pf_period(v["period1"], "period"),
-                          "p2" => _pf_period(v["period2"], "period"), "type" => get(v, "type", "level"), "value" => Float64(_value(m, v["value"]))))
+                    push!(ws.learnt_shocks, Dict{String,Any}("learnt_in" => lin, "exo" => ix[d["var"]], "p1" => _pf_period(v["period1"], "period", dctx),
+                          "p2" => _pf_period(v["period2"], "period", dctx), "type" => get(v, "type", "level"), "value" => Float64(_value(m, v["value"]))))
                 end
             end
         elseif kind in ("shocks", "mshocks") && get(st, "surprise", false) != true
@@ -334,7 +367,7 @@ function _pf_replay(m::Model, params=nothing, steady=nothing, extra_learnt_shock
             for d in get_or(st, "deterministic_shocks", [])
                 haskey(ix, d["var"]) || throw(ModelError("shock on $(d["var"]): deterministic exogenous variables are not supported"))
                 for v in d["values"]
-                    push!(ws.det_shocks, (ix[d["var"]], _pf_period(v["period1"], "period"), _pf_period(v["period2"], "period"),
+                    push!(ws.det_shocks, (ix[d["var"]], _pf_period(v["period1"], "period", dctx), _pf_period(v["period2"], "period", dctx),
                                           Float64(_value(m, v["value"])), typ))
                 end
             end
@@ -1495,6 +1528,10 @@ function perfect_foresight(m::Model; periods=nothing, params=nothing, exo=nothin
     if o["periods"] === nothing
         o["periods"] = get(_pf_statement_options(m, "perfect_foresight_setup"), "periods", nothing)
         o["periods"] === nothing && (o["periods"] = get(_pf_statement_options(m, "perfect_foresight_with_expectation_errors_setup"), "periods", nothing))
+    end
+    if o["periods"] === nothing
+        dc = _pf_date_context(m)
+        dc.first !== nothing && dc.last !== nothing && (o["periods"] = dc.last[2] - dc.first[2] + 1)
     end
     o["periods"] === nothing && throw(ArgumentError("periods not given and not set in the .mod file"))
     T = Int(_pf_float(o["periods"]))

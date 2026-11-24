@@ -434,6 +434,16 @@ function set_param_value!(ws::DynareWorkspace, name::AbstractString, v::Real)
     ws
 end
 
+"options_.periods, or the length of first_simulation_period:last_simulation_period when only dates were given."
+function _pf_T(ws)
+    T = _opti(ws, "periods", 0)
+    if T <= 0
+        dc = _pf_date_context(ws.model)
+        dc.first !== nothing && dc.last !== nothing && (T = Int(dc.last[2] - dc.first[2] + 1))
+    end
+    T
+end
+
 """
     perfect_foresight_setup!(ws=current workspace; periods=options_.periods)
 
@@ -444,7 +454,7 @@ guess) and `oo_.exo_simul` (the shocks of the `shocks` block) for the current `M
 function perfect_foresight_setup!(ws::DynareWorkspace; options...)
     m = _sync_model!(ws)
     _take_options!(ws, options)
-    T = _opti(ws, "periods", 0)
+    T = _pf_T(ws)
     T > 0 || throw(ArgumentError("perfect_foresight_setup: options_.periods must be positive"))
     pws = _pf_replay(m, nothing, nothing, (), ())
     endo, x = _pf_make_paths(m, pws, T)
@@ -466,7 +476,7 @@ conditions, and the starting guess) and `oo_.exo_simul`, as Dynare does, and sto
 function perfect_foresight_solver!(ws::DynareWorkspace; raise_on_failure::Bool=true, options...)
     m = _sync_model!(ws)
     _take_options!(ws, _pf_option_paths(options))
-    T = _opti(ws, "periods", 0)
+    T = _pf_T(ws)
     lag, lead = Int(m.raw["model_info"]["maximum_lag"]), Int(m.raw["model_info"]["maximum_lead"])
     rows = lag + T + lead
     oo = ws.oo_
@@ -648,6 +658,7 @@ function _run_in_place!(ws, st, nss, shocks, rng)
         perfect_foresight_solver!(ws; raise_on_failure=false)      # Dynare stores the status and goes on
         ws.oo_.deterministic_simulation.status == true ||
             @warn "perfect_foresight_solver: the simulation failed (oo_.deterministic_simulation.status = false)"
+        _simulated_series!(ws)
     elseif kind == "perfect_foresight_with_expectation_errors_solver"
         _perfect_foresight_wee!(ws)
     elseif kind == "occbin_solver"
@@ -686,6 +697,27 @@ function _merge_struct!(dst::MStruct, src::MStruct)
         v = src[k]
         v isa MStruct && get(dst, k, nothing) isa MStruct ? _merge_struct!(dst[k], v) : (dst[k] = deepcopy(v))
     end
+end
+
+"""
+Dynare's `Simulated_time_series` (construct_simulation_dseries.m): a dseries of the original endogenous variables and the
+exogenous ones over the simulation, which starts `maximum_lag` periods before first_simulation_period (default 1Y).
+"""
+function _simulated_series!(ws)
+    m = ws.model
+    dc = _pf_date_context(m)
+    f = dc.first === nothing ? (1, 1.0) : dc.first
+    first = MDates(f[1], [f[2]])
+    lag = Int(m.raw["model_info"]["maximum_lag"])
+    no = orig_endo_nbr(m)
+    E, X = ws.oo_.endo_simul, ws.oo_.exo_simul
+    data = hcat(permutedims(E[1:no, :]), X)
+    names = vcat(m.endo_names[1:no], m.exo_names)
+    init = MDates(first.freq, [first.time[1] - lag])
+    ts = MDseries(Matrix{Float64}(data), String.(names), [name2tex(n) for n in names], mkdates(first.freq, init.time[1] .+ (0:size(data, 1)-1)),
+                  fill("", length(names)), Pair{String,Vector{Any}}[])
+    m.session.sc.vars["Simulated_time_series"] = ts
+    nothing
 end
 
 "M_.endo_histval from the histval block (Dynare: unset values are 0), as stoch_simul starts from it."
