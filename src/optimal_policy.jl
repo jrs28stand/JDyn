@@ -52,7 +52,7 @@ end::Bool
 is_discretionary(m::Model) = _statement(m, "discretionary_policy") !== nothing
 
 "Number of equations of the model as written (fewer than the variables under `discretionary_policy`: the instruments' equations are missing)."
-eq_nbr(m::Model) = length(m.raw["model"])
+eq_nbr(m::Model) = _neq(m)
 
 "What Dynare keeps in `M_.ramsey_orig_endo_nbr`, `M_.ramsey_orig_eq_nbr`, `options_.instruments`."
 struct RamseyInfo
@@ -365,7 +365,7 @@ function _objective_expr(s::AbstractString)
     _floatify(ex)
 end
 _floatify(x::Integer) = Float64(x)
-_floatify(x::Expr) = Expr(x.head, map(_floatify, x.args)...)
+_floatify(x::Expr) = x.head === :ref ? x : Expr(x.head, map(_floatify, x.args)...)
 _floatify(x) = x
 
 """
@@ -390,8 +390,8 @@ function _compile_objective(m::Model)
         nm in _JL_KEYWORDS && throw(ModelError("the planner objective cannot be compiled: the symbol $nm is a Julia keyword"))
     end
     pre = String[]
-    for (i, nm) in enumerate(m.endo_names); push!(pre, "$nm = y[$i]"); end
-    for (i, nm) in enumerate(m.param_names); push!(pre, "$nm = p[$i]"); end
+    for (i, nm) in enumerate(m.endo_names); push!(pre, "$nm = __y[$i]"); end
+    for (i, nm) in enumerate(m.param_names); push!(pre, "$nm = __p[$i]"); end
     for nm in m.exo_names; push!(pre, "$nm = 0.0"); end
     for d in get_or(blk, "model_local_variables", [])
         push!(pre, "$(d["variable"]) = $(d["value"])")
@@ -403,7 +403,7 @@ function _compile_objective(m::Model)
     jac = Tuple{Int,String}[(Int(e["indices"][2]), e["val"]) for e in get_or(get_or(blk, "jacobian", Dict()), "entries", [])]
     hes = Tuple{Int,Int,String}[(Int(e["indices"][2]), Int(e["indices"][3]), e["val"]) for e in get_or(get_or(blk, "hessian", Dict()), "entries", [])]
     mk(body_lines, ret) = begin
-        src = "function (y, p)\n" * join(vcat(pre, body_lines), "\n") * "\n" * ret * "\nend"
+        src = "function (__y, __p)\n" * join(vcat(pre, body_lines), "\n") * "\n" * ret * "\nend"
         ex = _floatify(_matlab_comparisons(Meta.parse(src)))
         mod = get!(m.cache, :objective_module) do
             md = _generating() ? _WorkloadModel : Module(gensym(:JDynObjective))
@@ -526,18 +526,17 @@ function format_planner_objective(v::PlannerObjectiveValue; ramsey::Bool, discre
     @sprintf("\nApproximated value of unconditional welfare%s:  %10.8f\n\nApproximated value of conditional welfare%s: %10.8f\n", kind, v.unconditional, kind, v.conditional)
 end
 
-"M_.endo_histval's last column as the histval block leaves it (unset variables are 0), or nothing without histval."
-function _histval_vector(m::Model)
-    isempty(_statements(m, "histval")) && return nothing
-    h = try
-        _pf_replay(m, nothing, nothing, (), ()).endo_histval
-    catch e
-        e isa Union{ModelError,PerfectForesightError,SteadyStateError,ArgumentError} || rethrow()
-        warn_once(m, "histval could not be evaluated for the initial state of evaluate_planner_objective ($(sprint(showerror, e)))")
-        nothing
-    end
-    h === nothing && return nothing
-    h isa AbstractMatrix ? vec(h[:, end]) : Vector{Float64}(h)
+"""
+M_.endo_histval as the histval block builds it (unset variables are 0), or nothing without histval. Built from the block alone: a
+Ramsey model's steady state cannot be computed where the block stands (the planner is declared after it).
+"""
+function _op_histval_vector(m::Model)
+    sts = _statements(m, "histval")
+    isempty(sts) && return nothing
+    ws = PFWorkspace(copy(m.params), zeros(m.n_endo), zeros(m.n_exo), nothing, nothing, Tuple{Int,Int,Int,Float64,String}[],
+                     Dict{String,Any}[], Dict{String,Any}[], nothing, nothing, false, false, false)
+    _pf_histval!(m, ws, sts[end])
+    ws.endo_histval
 end
 
 "get_initial_state of evaluate_planner_objective.m: `(yhat_L_SS, yhat_L_0, u)`."
@@ -546,7 +545,7 @@ function _initial_state(m::Model, ys, order_var, nstatic, nspred; histval=nothin
     nonmult = trues(m.n_endo); nonmult[mult] .= false
     y_ss = Vector{Float64}(ys)
     y_0 = zeros(m.n_endo)
-    hv = histval === nothing ? _histval_vector(m) : Vector{Float64}(histval)
+    hv = histval === nothing ? _op_histval_vector(m) : Vector{Float64}(histval)
     if hv !== nothing
         y_ss[nonmult] = hv[nonmult]
         y_0[nonmult] = hv[nonmult]
@@ -559,14 +558,13 @@ function _initial_state(m::Model, ys, order_var, nstatic, nspred; histval=nothin
     if u === nothing
         u = exo_steady(m)
         if !isempty(m.det_shocks)
-            # Dynare's code: positions in the concatenated list of periods index the list of shocks
-            periods = Int[]
-            for e in m.det_shocks; append!(periods, e[2]:e[3]); end
+            # M_.det_shocks holds one entry per exogenous variable and period
+            ent = Tuple{Int,Int,Float64}[(e[1], p, e[4]) for e in m.det_shocks for p in e[2]:e[3]]
+            periods = [e[2] for e in ent]
             any(==(0), periods) && println("evaluate_planner_objective: M_.det_shocks contains values for the predetermined t=0 period. Dynare will ignore them. Use histval to set the value of lagged innovations.")
             any(>(1), periods) && println("evaluate_planner_objective: Shock values for periods not contained in the initial information set (t=1) have been provided. Note that they will be ignored.")
-            for k in findall(==(1), periods)
-                k > length(m.det_shocks) && throw(OptimalPolicyError("evaluate_planner_objective: index exceeds the number of deterministic shocks (Dynare fails here too)"))
-                u[m.det_shocks[k][1]] = m.det_shocks[k][4]
+            for (ix, p, v) in ent
+                p == 1 && (u[ix] = v)
             end
         end
     end

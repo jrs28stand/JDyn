@@ -80,7 +80,10 @@ function build_M(m::Model)
     M.exo_det_nbr = 0.0
     M.param_nbr = Float64(length(m.param_names))
     M.orig_endo_nbr = Float64(orig_endo_nbr(m))
-    M.eq_nbr = Float64(m.n_endo)
+    M.eq_nbr = Float64(length(get_or(m.raw, "model", Any[])) == 0 ? m.n_endo : length(m.raw["model"]))
+    ri = is_ramsey(m) ? ramsey_info(m) : nothing
+    M.ramsey_orig_eq_nbr = ri === nothing ? 0.0 : Float64(ri.orig_eq_nbr)
+    M.ramsey_orig_endo_nbr = ri === nothing ? 0.0 : Float64(ri.orig_endo_nbr)
     for k in ("maximum_lag", "maximum_lead", "maximum_endo_lag", "maximum_endo_lead", "maximum_exo_lag", "maximum_exo_lead",
               "orig_maximum_endo_lag", "orig_maximum_endo_lead", "orig_maximum_exo_lag", "orig_maximum_exo_lead",
               "orig_maximum_lag", "orig_maximum_lead")
@@ -308,11 +311,17 @@ function _stoch_simul(ws, m, oo, var_list, shocks, rng)
     order = _opti(ws, "order", 2)
     pruning = _optb(ws, "pruning", false)
     order > 1 && m.max_deriv_order < order && throw(ModelError("stoch_simul(order=$order) needs derivatives of order $order: run dynare(...; output=\"$(order == 2 ? "second" : "third")\")"))
-    sol = first_order(m)                      # also gives dr.eigval, which Dynare's resol stores at every order
-    dr, p = order == 1 ? (as_dr(sol), sol.params) : (d = k_order(m; order=order, pruning=pruning); (d, d["params"]))
+    solved = pop!(ws.state, :solved_dr, nothing)        # discretionary_policy: the rules are not the perturbation solution
+    if solved !== nothing
+        dr, p, eigv = solved
+    else
+        sol = first_order(m)                      # also gives dr.eigval, which Dynare's resol stores at every order
+        dr, p = order == 1 ? (as_dr(sol), sol.params) : (d = k_order(m; order=order, pruning=pruning); (d, d["params"]))
+        eigv = sol.eigenvalues
+    end
     _store_params!(ws, p)
     _store_dr!(oo, dr, m.n_endo)
-    oo.dr.eigval = _eigcol(sol.eigenvalues)
+    oo.dr.eigval = _eigcol(eigv)
     oo.steady_state = _col(dr["ys"])
     oo.exo_steady_state = _col(exo_steady(m))
     var_list = isempty(var_list) ? orig_endo_names(m) : String.(collect(var_list))
@@ -489,6 +498,7 @@ _pf_option_paths(options) = Dict(Symbol(get(PF_SOLVER_KEYS, String(k), get(PF_SE
 
 function _store_pf!(ws, r)
     oo = ws.oo_
+    ws.state[:ran_pf] = true
     oo.endo_simul = Matrix{Float64}(r.endo_simul)
     oo.exo_simul = Matrix{Float64}(r.exo_simul)
     ds = MStruct()
@@ -633,6 +643,10 @@ function _run_in_place!(ws, st, nss, shocks, rng)
         return
     end
     kind == "conditional_forecast_paths" && return _cf_paths_statement!(ws, st)
+    if kind == "ramsey_model"
+        _ramsey_model_statement!(ws, st)           # src/results_policy.jl
+        return
+    end
     kind in COMPUTE_KINDS || return
     _model_to_M!(ws)
     if kind == "steady"
@@ -650,6 +664,14 @@ function _run_in_place!(ws, st, nss, shocks, rng)
             @warn "perfect_foresight_solver: the simulation failed (oo_.deterministic_simulation.status = false)"
     elseif kind == "perfect_foresight_with_expectation_errors_solver"
         _perfect_foresight_wee!(ws)
+    elseif kind == "ramsey_policy"
+        ramsey_policy!(ws, String.(get_or(st, "symbol_list", String[])); rng=rng)
+    elseif kind == "discretionary_policy"
+        discretionary_policy!(ws, String.(get_or(st, "symbol_list", String[])); rng=rng)
+    elseif kind == "evaluate_planner_objective"
+        evaluate_planner_objective!(ws)
+    elseif kind == "osr"
+        osr!(ws, String.(get_or(st, "symbol_list", String[])); rng=rng)
     elseif kind == "occbin_solver"
         occbin_solver!(ws)
     elseif kind == "occbin_write_regimes_xls"
@@ -691,7 +713,7 @@ end
 "M_.endo_histval from the histval block (Dynare: unset values are 0), as stoch_simul starts from it."
 function _histval!(ws)
     h = try
-        _pf_replay(ws.model, nothing, nothing, (), ()).endo_histval
+        is_ramsey(ws.model) ? _op_histval_vector(ws.model) : _pf_replay(ws.model, nothing, nothing, (), ()).endo_histval
     catch e
         e isa Union{ModelError,PerfectForesightError,SteadyStateError,ArgumentError} || rethrow()
         warn_once(ws.model, "histval could not be evaluated for M_.endo_histval ($(sprint(showerror, e)))")

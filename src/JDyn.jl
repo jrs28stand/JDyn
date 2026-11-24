@@ -43,11 +43,13 @@ include("optimizers.jl")
 include("smoother.jl")
 include("shock_decomposition.jl")
 include("perfect_foresight.jl")
+include("optimal_policy.jl")
 include("plotting.jl")
 include("occbin.jl")
 include("occbin_filter.jl")
 include("occbin_estimation.jl")
 include("results.jl")
+include("results_policy.jl")
 include("results_estimation.jl")
 include("seeds.jl")
 include("forecast.jl")
@@ -67,8 +69,11 @@ export run_preprocessor, load, Model, ModelError, steady_state, SteadyStateError
        DecompositionPlotData, decomposition_table, stack_bars,
        perfect_foresight, PerfectForesightResult, PerfectForesightError, unanticipated_shocks,
        dynare, @dynare, DynareWorkspace, build_M, build_options, MStruct, Cell,
-       stoch_simul!, steady!, check!, perfect_foresight_setup!, perfect_foresight_solver!, occbin_solver!, set_param_value!,
+       stoch_simul!, ramsey_policy!, discretionary_policy!, evaluate_planner_objective!, osr!, steady!, check!, perfect_foresight_setup!, perfect_foresight_solver!, occbin_solver!, set_param_value!,
        estimation!, calib_smoother!, set_dynare_seed!,
+       ramsey_info, is_ramsey, is_discretionary, planner_discount, ramsey_steady_state, planner_objective, evaluate_planner_objective,
+       PlannerObjectiveValue, discretionary_policy, DiscretionaryResult, osr, osr_objective, OSRResult, OptimalPolicyError, OSRError,
+       DiscretionaryPolicyError, variance_of_endogenous_variables,
        forecast, ForecastResult, conditional_forecast, ConditionalForecastResult, conditional_forecast_table, forecast_struct,
        conditional_forecast_struct, forecast!, conditional_forecast!
 
