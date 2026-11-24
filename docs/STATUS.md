@@ -47,10 +47,10 @@ faster than pydyn on the same machine. An interpreted `_steadystate.m` costs abo
 
 - Theoretical moments at order 3 and filtered (HP, band-pass) theoretical moments at order 2 (refused, as in Dynare);
   loglinear models above order 1 (refused, as in Dynare); unit roots with pruning at order 2 (refused, as Dynare).
-- Estimation beyond second order (order 3, `gmf`, `nonlinear_filter_initialization=2`, residual/multinomial resampling, prefilter/trends/missing data with particle filters: refused); Bayesian smoothed distributions over posterior draws (see the smoother section).
+- Estimation beyond second order (order 3, `gmf`, `nonlinear_filter_initialization=2`, residual/multinomial resampling, prefilter/trends/missing data with particle filters: refused).
 - OccBin: forecasts (`occbin.forecast`), particle filters, the loss-function regime guess, `init_regime_history` /
   `init_binding_indicator` of the filters, `smoother_first_period_occbin_update` other than 1 (refused); the Bayesian
-  smoother over posterior draws. OccBin figures are not drawn: the plotted content is available as tables (see below).
+  smoother, IRFs, moments and forecasts over posterior draws (refused). OccBin figures are not drawn: the plotted content is available as tables (see below).
 - Plotting beyond first-order IRFs (OccBin, smoother, decompositions, ...). First-order IRF figures are
   done: Dynare's content rules, tidy CSV export, SVG built in, PNG/PDF through an optional Plots.jl
   extension (see docs/plotting.md).
@@ -139,7 +139,7 @@ k-step arrays, `Variance`, `State_uncertainty`, `Init_State_Vector`). `check_smo
 `dynare()` fills `oo_` for `estimation` and `calib_smoother` exactly as Dynare 7.2 does (`src/results_estimation.jl`; field
 map and validation in docs/RESULTS.md); `estimation!(ws, var_list; options...)` and `calib_smoother!(ws, var_list; options...)`
 re-run them on a workspace. Known gaps: `oo_.dr.{eigval, gx, Gy}` are not written; `optimization_info` iterations/funcCount are JDyn's own;
-`selected_variables_only` and a smoother together with MCMC raise.
+`selected_variables_only` raises.
 `shock_decomposition`, `initial_condition_decomposition`, `realtime_shock_decomposition`, `group_shocks`, `squeeze_shock_decomposition`
 and `decomposition_plot_data` / `decomposition_table` (CSV through `write_csv`) give the figures' content as tables.
 
@@ -166,8 +166,8 @@ and `decomposition_plot_data` / `decomposition_table` (CSV through `write_csv`) 
   `estimate(m)` runs what the `.mod` file's `estimation` statement asks. Unsupported options raise an
   `EstimationError` (or warn once with `allow_unsupported=true`); other `mode_compute` values (1, 3, 12, 13: MATLAB toolboxes;
   2, 6, 10, 101, 102: Dynare's own, not ported yet) raise an `EstimationError`, as do newrat's `optim('Hessian', 0 or 2)`.
-- Not implemented: forecasts over the posterior draws (`forecast` with `mh_replic > 0`, oo_.PointForecast / MeanForecast:
-  refused), posterior IRFs, recursive estimation, other samplers, orders above 1,
+- Posterior analyses over the MCMC draws (convergence diagnostics, posterior IRFs, moments, smoothed variables, forecasts) are in
+  docs/POSTERIOR_PROGRESS.md. Not implemented: recursive estimation, other samplers, orders above 1,
   particle filters, more than one `estimated_params` block.
 - The sampler is checked against Dynare's target density (40 stored draws) and statistically (2 x 4000 draws:
   means within 0.17 posterior std of Dynare's 2 x 20000, modified harmonic mean within 0.19); it is not
@@ -190,7 +190,7 @@ and `decomposition_plot_data` / `decomposition_table` (CSV through `write_csv`) 
   `observation_trends`, Dynare adds the data mean / trend to the mean forecast of the observed variables but not to HPDinf/HPDsup;
   with prefilter it subtracts the steady state of the variable at the observed variable's position in var_list, and fails when an
   observed variable is missing from var_list.
-- Not implemented: `varexo_det` forecasts (refused), forecasts over posterior draws, OccBin forecasts.
+- Not implemented: `varexo_det` forecasts (refused), OccBin forecasts.
 - newrat: the gradient steps are chosen so that the posterior moves by 1e-5, so the 1e-11 rounding differences between JDyn's and
   Dynare's likelihoods change the gradient by about 1e-6 relative and the univariate steps of `mr_gstep` (whose second differences
   are dominated by rounding in both programs) after the first iteration: the first step matches, the iterates then differ, the

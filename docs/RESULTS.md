@@ -179,8 +179,7 @@ OccBin options come from the file's occbin_setup / occbin_solver statements and 
 keywords). Refused with OccBin: prefilter, univariate filters with the PKF, the diffuse filter, loglinear, filter_covariance,
 smoothed_state_uncertainty, filter_step_ahead beyond 1, observation_trends in the smoother.
 
-Not written, and refused where the option asks for them: `selected_variables_only`, a smoother or filter together with an
-MCMC run, `oo_.FilteredVariablesShockDecomposition`, forecasts, posterior IRFs, `bayestopt_`/`estim_params_` (JDyn keeps
+Not written, and refused where the option asks for them: `selected_variables_only`, `oo_.FilteredVariablesShockDecomposition`, `filter_covariance` / `smoothed_state_uncertainty` over posterior draws, `bayestopt_`/`estim_params_` (JDyn keeps
 them in the `Estimation` object, not in the workspace), recursive estimation, the other samplers. `mh_replic > 0` with
 `mode_compute=0` warns and is ignored, as Dynare returns before the sampler there.
 
@@ -220,3 +219,13 @@ minutes): est_schorfheide with the smoother (loglinear, 1e-13) and two est_nk ru
 are filled by `get_companion_matrix` / `pac.initialize` / `var_expectation.initialize`; `M_.params` carries the h / expectation parameters after
 `pac.update.expectation` / `var_expectation.update`. (`oo_.var` is overwritten by a later `stoch_simul` as in Dynare.)
 `oo_.var.<name>.ar` and `oo_.trend_component.<name>.ar` (legacy) are not filled.
+
+## Posterior analyses over MCMC draws (src/mcmc_diagnostics.jl, posterior.jl, posterior_moments.jl, posterior_forecast.jl, posterior_stage.jl)
+
+With `mh_replic > 0` `estimation` fills, as Dynare 7.2 does: `oo_.convergence` (`geweke(b).<SE_name>`, `raftery_lewis(b)`, Brooks-Gelman
+series, inefficiency factors; skipped by `nodiagnostic`), `oo_.PosteriorIRF.dsge` (`bayesian_irf`), `oo_.PosteriorTheoreticalMoments.dsge`
+(`moments_varendo`: covariance, `contemporeaneous_correlation`, correlation, VarianceDecomposition(ME), ConditionalVarianceDecomposition(ME)
+with `Steps`), the posterior distributions of `SmoothedVariables`, `UpdatedVariables`, `SmoothedShocks`, `SmoothedMeasurementErrors`,
+`Constant`, `FilteredVariables`, `Filtered_Variables_<k>_step_ahead`, `Smoother.{Trend, TrendCoeff, Init_State}`,
+`FilteredVariablesKStepAhead(Variances)` (`smoother`, `filtered_vars`, `filter_step_ahead`), and `oo_.MeanForecast`, `PointForecast`,
+`PointForecastME` (`forecast`). Dynare 7.2 quirks reproduced on purpose: see docs/POSTERIOR_PROGRESS.md.

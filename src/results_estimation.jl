@@ -354,9 +354,6 @@ function _estimation!(ws::DynareWorkspace, st, var_list, data, seed, options)
         if mc0 && o["mh_replic"] > 0 && bayes
             @warn "estimation: mode_compute=0 without a mode_file: Dynare returns before the Metropolis-Hastings run, so mh_replic=$(o["mh_replic"]) is not used"
         end
-        if mcmc_wanted && (smoother_flag || wants_filter)
-            throw(EstimationError("smoother / filtered_vars / filter_step_ahead with mh_replic > 0 (the posterior distribution of the smoothed variables, prior_posterior_statistics.m) is not implemented; use the options without MCMC, or smooth(m; estimation=est, parameter_set=\"posterior_mean\", mcmc=...) for one parameter vector"))
-        end
         initial_estimation_checks(est)
         # Dynare sets M_ to the initial values first; the steady state it stores is the one at those values
         sol0 = try
@@ -414,13 +411,14 @@ function _estimation!(ws::DynareWorkspace, st, var_list, data, seed, options)
                 mc = sample_posterior(est; mode=mode, seed=seed)
                 post = posterior_statistics(est, mc)
                 mhm = marginal_density_mhm(mc)
-                nodiag = _optb(ws, "nodiagnostic", false)
-                nodiag || warn_once(m, "estimation: the MCMC convergence diagnostics (oo_.convergence) are not computed")
+                _optb(ws, "nodiagnostic", false) || _posterior_diagnostics!(ws, est, mc)
                 _store_posterior_statistics!(oo, est, mc, post, mhm)
+                _posterior_stage!(ws, m, est, mc, vl)
                 theta = Float64[post[nm].mean for nm in est.names]       # Dynare then sets M_ to the posterior mean
             end
             # the frequentist smoother runs at the mode / posterior mean unless a Bayesian smoother was asked for
-            _optb(ws, "frequentist_smoother", true) && !haskey(o, "nl") && (smooth_at = theta)     # no smoother with a particle filter
+            # (Dynare skips it when the Bayesian smoother ran over the posterior draws)
+            _optb(ws, "frequentist_smoother", true) && !haskey(o, "nl") && !(smoother_flag && mcmc_wanted) && (smooth_at = theta)     # no smoother with a particle filter
         end
         res = nothing
         if smooth_at !== nothing
@@ -614,13 +612,14 @@ calib_smoother!(var_list::AbstractVector; kw...) = calib_smoother!(_current(), v
 
 """
 The `forecast=` option of `estimation` (dynare_estimation_1.m): the classical forecast from the smoother at the mode
-(with `mode_compute=0` only when the smoother ran) into `oo_.forecast`; over posterior draws not implemented.
+(with `mode_compute=0` only when the smoother ran) into `oo_.forecast`; with `mh_replic > 0` the forecasts over the posterior draws
+(`oo_.MeanForecast` ...) come from `_posterior_stage!`.
 """
 function _estimation_forecast!(ws, m, est, theta, res, vl)
     nf = _opti(ws, "forecast", 0)
     nf > 0 || return
     mcmc = _opti(ws, "mh_replic", 0) > 0 && _opti(ws, "mode_compute", 5) != 0
-    mcmc && throw(EstimationError("forecast with mh_replic > 0 (forecasts over the posterior draws) is not implemented"))
+    mcmc && return                          # forecasts over the posterior draws: _posterior_stage!
     sm = res
     if sm === nothing
         _opti(ws, "mode_compute", 5) == 0 && return         # Dynare forecasts at the initial values only with `smoother`

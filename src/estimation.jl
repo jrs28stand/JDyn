@@ -473,14 +473,17 @@ round_half_up(x) = Int(floor(x + 0.5))
 # ====================================================================== the estimation object
 const _COSMETIC_EST = Set(["nograph", "nodisplay", "graph_format", "TeX", "tex", "nodiagnostic", "console_mode", "silent_optimizer",
     "plot_priors", "debug", "noprint", "no_graph.posterior", "graph_save_formats", "dirname", "verbosity", "mode_check.nolik",
-    "mode_check.neighbourhood_size", "mode_check.symmetric_plots", "xls_sheet", "xls_range", "sub_draws", "nodecomposition"])
+    "mode_check.neighbourhood_size", "mode_check.symmetric_plots", "xls_sheet", "xls_range"])
 # options the code acts on
 const _HONOURED_EST = Set(["datafile", "first_obs", "nobs", "loglinear", "logdata", "prefilter", "presample", "lik_init",
     "diffuse_filter", "kalman_algo", "kalman_tol", "diffuse_kalman_tol", "riccati_tol", "prior_trunc", "mode_compute", "mh_replic",
     "mh_nblck", "mh_jscale", "mh_drop", "mh_init_scale_factor", "order", "use_univariate_filters_if_singularity_is_detected",
     "rescale_prediction_error_covariance", "cova_compute", "mh_conf_sig", "optim_opt", "gstep", "Harvey_scale_factor",
     "lyapunov_complex_threshold", "mode_check.status", "nodiagnostic",
-    "smoother", "filtered_vars", "filter_step_ahead", "filter_covariance", "smoothed_state_uncertainty", "forecast", "forecasts.conf_sig"])
+    "smoother", "filtered_vars", "filter_step_ahead", "filter_covariance", "smoothed_state_uncertainty", "forecast", "forecasts.conf_sig",
+    "sub_draws", "nodecomposition", "ar", "conditional_variance_decomposition", "contemporaneous_correlation", "moments_varendo",
+    "bayesian_irf", "irf", "irf_shocks", "relative_irf", "consider_all_endogenous", "consider_all_endogenous_and_auxiliary",
+    "consider_only_observed", "posterior_max_subsample_draws"])
 const _EST_DEFAULTS = Dict{String,Any}("datafile" => nothing, "first_obs" => 1, "nobs" => nothing, "loglinear" => false,
     "logdata" => false, "prefilter" => 0, "presample" => 0, "lik_init" => 1, "diffuse_filter" => false, "kalman_algo" => 0,
     "kalman_tol" => 1e-10, "diffuse_kalman_tol" => 1e-6, "riccati_tol" => 1e-6, "prior_trunc" => 0.0, "mode_compute" => 5,
