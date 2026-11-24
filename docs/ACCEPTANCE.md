@@ -254,3 +254,16 @@ Package functions (`+pkg/f.m`: walsh), `varlist_indices`, `tic/toc/cputime`, `ra
 plotting as a no-op under `dynare()`, `load` with an output, `fullfile/fileparts/pwd/isfile/isfolder/getenv/mkdir`, `save` (function and command
 form), Dynare's `<fname>/Output/<fname>_results.mat`, `MatlabError.user` and `ModelError.cause` (so the file's own `error()` is reported as such),
 Ramsey refusal, `oo_.exo_steady_state` after homotopy.
+
+## dates / dseries (branch dseries)
+
+Before/after on the whole manifest (base a487e5d against the branch): one entry changes class for the better,
+`deterministic_simulations/ramst_dseries.mod` REFUSED -> OK (dated `shocks`, `periods`, `Simulated_time_series`).
+`pfwee_learnt_in_dseries.mod` and `pfwee_learnt_in_dseries_bare_1st_period.mod` go from REFUSED (dates not a number) to
+ERROR / CHECK_FAILED: they now get past the dates and stop in `perfect_foresight_with_expectation_errors`, the same
+failure as the non-dseries `pfwee_*` files. Of the ~200 files that mention dseries/dates, 106 stay REFUSED, 66 OK_WARN,
+11 ERROR, for causes outside the dseries work, by count: PAC (40), heterogeneous agents (13), macro-processor failure of the
+preprocessor (10), `matched_moments_orig` in method-of-moments checks (7), `cellfun` with function handles (6), `shock_paths` (3),
+`estimate.nls`/`sur`/`pooled_ols` (7), `var_expectation.update` (2), `initval_file`/`oo_.initval_series` (2), xlsx data (1).
+Not done: `initval_file`/`histval_file` with series or datafile, xls/xlsx. PAC/VAR-expectation entries (on main, not on this branch)
+were not measurable here; they stop at the PAC objects, which this branch does not have.

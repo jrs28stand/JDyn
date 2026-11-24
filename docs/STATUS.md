@@ -54,7 +54,7 @@ faster than pydyn on the same machine. An interpreted `_steadystate.m` costs abo
 - Plotting beyond first-order IRFs (OccBin, smoother, decompositions, ...). First-order IRF figures are
   done: Dynare's content rules, tidy CSV export, SVG built in, PNG/PDF through an optional Plots.jl
   extension (see docs/plotting.md).
-- Optimal policy (Ramsey, OSR), heterogeneous agents, PAC/VAR models, `dseries`: refused with an error.
+- Optimal policy (Ramsey, OSR), heterogeneous agents, PAC/VAR models: refused with an error.
 
 ## OccBin
 
@@ -199,8 +199,7 @@ maximum_lag + periods + maximum_lead) and `exo_simul` (rows x n_exo) have Dynare
 - Every `stack_solve_algo` is solved by Newton with a sparse LU (Dynare's algorithm 0, UMFPACK); a warning says so.
   Dynare's other linear solvers (LBJ, GMRES, bicgstab) give the same Newton step up to round-off or their own
   iterative tolerance, which JDyn does not reproduce. `robust_lin_solve`, bytecode, block and `solve_algo` are warned about.
-- Refused with an error: `perfect_foresight_controlled_paths`, `shock_paths` blocks, `initval_file`/`histval_file`, dates in
-  `periods`/`learnt_in`, `lmmcp` together with `model(linear)`, deterministic exogenous variables (`varexo_det`), marginal
+- Refused with an error: `perfect_foresight_controlled_paths`, `shock_paths` blocks, `initval_file`/`histval_file`, `lmmcp` together with `model(linear)`, deterministic exogenous variables (`varexo_det`), marginal
   linearization with expectation errors. `shocks(surprise)` blocks are OccBin's (Dynare's perfect foresight does not read
   them) and are ignored here too.
 - Stacked evaluation: one sparse pattern per number of periods, Jacobian filled in place, the factorisation's
@@ -254,3 +253,20 @@ maximum_lag + periods + maximum_lead) and `exo_simul` (rows x n_exo) have Dynare
   pydyn refuses but JDyn loads has no Dynare reference yet.
 - `options_.qz_criterium` set by MATLAB code and a `qz_criterium` statement option: the statement option
   wins regardless of order in the file.
+
+## dates and dseries (MATLAB interpreter, branch dseries)
+
+Native `dates` and `dseries` objects (src/matlab/dates.jl, dseries.jl, objects.jl), handle semantics as in Dynare 7.2,
+checked against Octave running Dynare's toolbox (test/dseries_cases.txt, 132 cases, `test/test_dseries.jl`) and against
+Dynare's embedded `%@test` unit tests (test/dseries_unit_tests.jl: 366 pass, 22 fail, 97 error; the rest are
+Octave/harness artefacts or refused features below).
+- dates: frequencies Y/S/Q/M/W/D, literals, arithmetic, ranges, comparisons, char/strings/year/subperiod/ndat,
+  firstdate/lastdate, pop/append/sort/unique/intersect/union/setdiff.
+- dseries: constructors from data/dates/names/csv/mat/m files, indexing by dates and names, arithmetic with alignment,
+  lag/lead/diff/log/exp/cumsum/merge/vobs/nobs/hpcycle/hptrend/baxter_king_filter/ydiff/qdiff/subsample/insert/remove/
+  rename/tag/save (csv, mat); `plot` is a no-op.
+- .mod side: date literals in `shocks`/`endval`/`periods`/`learnt_in`/`first_simulation_period` for perfect foresight;
+  `Simulated_time_series` is a dseries in the session scope after `perfect_foresight_solver`.
+- Still refused: xls/xlsx, `initval_file`/`histval_file` with series or datafile, `data(first_obs=dates)` in estimation,
+  cumsum/cumprod with a base period, fill_/exist/chain_/lineartrend/projection/one-sided HP filters, weekly/daily
+  ydiff/ygrowth, `save` format m, `ds{regex} = ...` assignment, tags in insert, struct2dseries.
