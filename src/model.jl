@@ -742,11 +742,20 @@ function _exec_statement!(m::Model, st)
     nothing
 end
 
+"""
+    declared_correlation_matrix(m) -> Matrix
+
+Dynare's `M_.Correlation_matrix` as the preprocessor's code leaves it: the identity, with the entries of `corr` statements of `shocks`
+blocks (calibrated ones included; `var a, b = value` covariances do not enter it) and reset by `shocks(overwrite)`.
+"""
+declared_correlation_matrix(m::Model) = get!(() -> Matrix{Float64}(LinearAlgebra.I, m.n_exo, m.n_exo), m.options, "Correlation_matrix")::Matrix{Float64}
+
 "One shocks block, applied in Dynare's order: reset, variances, covariances, correlations."
 function _shocks!(m::Model, st)
     ix, S = m.ix, m.Sigma_e
     if get(st, "overwrite", false) == true
         S .= 0
+        m.options["Correlation_matrix"] = Matrix{Float64}(LinearAlgebra.I, m.n_exo, m.n_exo)
         empty!(m.measurement_errors)
     end
     for (key, pw) in (("variance", 1), ("stderr", 2))
@@ -767,7 +776,11 @@ function _shocks!(m::Model, st)
             end
             i, j = ix[d["name"]], ix[d["name2"]]
             val = _value(m, d[key])
-            key == "correlation" && (val *= sqrt(S[i, i] * S[j, j]))
+            if key == "correlation"
+                C = declared_correlation_matrix(m)
+                C[i, j] = C[j, i] = val
+                val *= sqrt(S[i, i] * S[j, j])
+            end
             S[i, j] = S[j, i] = val
         end
     end

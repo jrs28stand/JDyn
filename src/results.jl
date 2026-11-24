@@ -99,7 +99,7 @@ function build_M(m::Model)
     M.ndynamic = Float64(cnt.npred + cnt.nboth + cnt.nfwrd)
     M.params = _col(m.params)
     M.Sigma_e = copy(m.Sigma_e)
-    M.Correlation_matrix = _corr(m.Sigma_e)
+    M.Correlation_matrix = copy(declared_correlation_matrix(m))
     M.sigma_e_is_diagonal = isdiag(m.Sigma_e)
     M.H = Matrix{Float64}(LinearAlgebra.Diagonal([get(m.measurement_errors, v, 0.0) for v in m.varobs]))
     aux = Any[]
@@ -198,7 +198,7 @@ function _sync_model!(ws)
     elseif !isequal(m.Sigma_e, lastS)
         ws.M_.Sigma_e = copy(m.Sigma_e)
     end
-    ws.M_.Correlation_matrix = _corr(m.Sigma_e)
+    ws.M_.Correlation_matrix = copy(declared_correlation_matrix(m))
     _mark_synced!(ws)
     m
 end

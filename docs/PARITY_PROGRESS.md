@@ -11,7 +11,7 @@ Branch `parity` (base main ce58c84). References: Dynare 7.2 under Octave 8.4; ge
 | 5 | `epilogue` | done as a Julia API (src/epilogue.jl); not hooked into the MATLAB interpreter or shock decompositions. Dynare numbers: bit-identical with `replicate_dynare_bugs=true`, <1e-6 without (static: 1e-14) |
 | 6 | `external_function` | |
 | 7 | heteroskedastic shocks / filter | |
-| 8 | `M_.Correlation_matrix` | |
+| 8 | `M_.Correlation_matrix` | done (exact match with Dynare 7.2 on corr8.mod) |
 
 ## Notes
 - Explicit `solve_algo` 9/13/14 return Dynare's iterate (no polishing to machine precision, no fallback; failure is a `SteadyStateError`,
@@ -33,3 +33,7 @@ Branch `parity` (base main ce58c84). References: Dynare 7.2 under Octave 8.4; ge
   feeds the rounded values to later definitions: a Dynare defect, so exact values are the default; `replicate_dynare_bugs=true` reproduces Dynare
   bit for bit (also the lead-from-`t-lead` quirk of non-recursive definitions). Not done: calling `<mod>.epilogue_dynamic(params, ds)` from the
   MATLAB interpreter, `shock_decomposition(..., with_epilogue)`.
+- `M_.Correlation_matrix`: Dynare 7.2's preprocessor writes it from the `corr` statements of `shocks` blocks, calibrated ones included (the brief's
+  "identity unless estimated" is not what 7.2 does), not from `var a, b = cov` covariances; `shocks(overwrite)` resets it to the identity;
+  estimated correlations replace their entries. Kept in `m.options["Correlation_matrix"]` (`declared_correlation_matrix(m)`); JDyn used to derive it
+  from Sigma_e. test_results_estimation's smo_me case now also compares Correlation_matrix (it was excluded as a known deviation).

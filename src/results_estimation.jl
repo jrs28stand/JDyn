@@ -272,7 +272,12 @@ function _apply_theta!(ws, est::Estimation, theta)
     _model_to_M!(ws)
     ws.M_.H = Matrix{Float64}(H)
     ws.state[:H] = copy(ws.M_.H)                 # dynare() rebuilds M_ at the end of the file and keeps this H
-    ws.M_.Correlation_matrix = _corr(m.Sigma_e)
+    C = copy(declared_correlation_matrix(m))          # estimated correlations replace their entries (set_all_parameters.m)
+    Cs = _corr(m.Sigma_e)
+    for (_, (k1, k2), _) in est.groups.cx
+        C[k1, k2] = C[k2, k1] = Cs[k1, k2]
+    end
+    ws.M_.Correlation_matrix = C
     ws
 end
 
