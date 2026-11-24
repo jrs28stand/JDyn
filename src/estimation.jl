@@ -1563,16 +1563,29 @@ function estimate(m::Model; seed=nothing, rng=nothing, kw...)
     if o["mode_compute"] != 0
         mode = posterior_mode(est; rng=rng)
         lp = mode.log_posterior
+    elseif get(o, "mode_file", nothing) !== nothing && !samples_without_mode(est)
+        mode = mode_from_file(est, String(o["mode_file"]))         # mode_compute=0 with mode_file: Dynare's mode and Hessian (src/mcmc_stage.jl)
+        lp = mode.log_posterior
     end
     mc = nothing
     post = nothing
     mhm = NaN
-    if o["mh_replic"] > 0 && is_bayesian(est.prior)
-        (mode !== nothing && mode.inv_hessian !== nothing) ||
-            throw(EstimationError("mh_replic > 0 needs a posterior mode and its Hessian (mode_compute != 0 and cova_compute != 0)"))
-        mc = sample_posterior(est; mode=mode, seed=seed)
+    if o["mh_replic"] > 0 && is_bayesian(est.prior) || (sampling_method(est) in SMC_METHODS && is_bayesian(est.prior))
+        method = sampling_method(est)
+        if method in SMC_METHODS
+            smc = sample_smc(est; seed=seed)                         # hssmc / dsmh: the particles as one chain, no modified harmonic mean
+            mc = as_mcmc(smc)
+            mhm = smc.log_marginal_density
+        else
+            samples_without_mode(est) || (mode !== nothing && mode.inv_hessian !== nothing) ||
+                throw(EstimationError("mh_replic > 0 needs a posterior mode and its Hessian (mode_compute != 0 and cova_compute != 0, or a mode_file)"))
+            spec = get(o, "posterior_sampler_options", nothing)
+            plain = method == RWMH && spec === nothing && _tune_target(o) === nothing && String(get(o, "mcmc_jumping_covariance", "hessian")) == "hessian" &&
+                    _mcmc_kind(est, nothing) == :julia && mode !== nothing && mode.inv_hessian !== nothing
+            mc = plain ? sample_posterior(est; mode=mode, seed=seed) : sample_mcmc(est; mode=mode, seed=seed, rng=_mcmc_kind(est, nothing))
+            mhm = marginal_density_mhm(mc)
+        end
         post = posterior_statistics(est, mc)
-        mhm = marginal_density_mhm(mc)
     end
     lap = mode === nothing ? NaN : mode.laplace
     sm = nothing

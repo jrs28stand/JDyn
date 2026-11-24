@@ -227,3 +227,29 @@ end
     @test haskey(r.oo_, "posterior_mean") && haskey(r.oo_["MarginalDensity"], "ModifiedHarmonicMean")
     @test isfile(joinpath(d, "smp_schorfheide", "metropolis", "smp_schorfheide_mh_history_0.mat"))
 end
+
+@testset "estimate(m): mode_file and the new samplers through the library function" begin
+    d = sdir()
+    m = with_logger(NullLogger()) do
+        JDyn.load(joinpath(d, "smp_nk.mod"); extra_args=["-DCASE=23"])          # identity jumping covariance, mode file, 2 chains x 150
+    end
+    res = with_logger(NullLogger()) do
+        JDyn.estimate(m; allow_unsupported=true)
+    end
+    @test res.mode.x ≈ vec(matread(joinpath(SD, "post_nk_mode0.mat"))["xparam1"])
+    @test size(res.mcmc.draws) == (2, 150, 12)
+    ref = matread(joinpath(SD, "oct23", "smp_nk_mh1_blck1.mat"))
+    @test maximum(abs.(res.mcmc.draws[1, :, :] .- ref["x2"])) > 1e-6          # Julia's own generators unless mcmc_rng is :octave (set_mcmc_rng!)
+    JDyn.set_mcmc_rng!(m, :octave)
+    res = with_logger(NullLogger()) do
+        JDyn.estimate(m; allow_unsupported=true)
+    end
+    @test maximum(abs.(res.mcmc.draws[1, :, :] .- ref["x2"])) < 1e-12
+    mh = with_logger(NullLogger()) do
+        JDyn.load(joinpath(d, "smp_schorfheide.mod"); extra_args=["-DCASE=12"])
+    end
+    r2 = with_logger(NullLogger()) do
+        JDyn.estimate(mh; allow_unsupported=true)
+    end
+    @test isfinite(r2.marginal_density_mhm) && size(r2.mcmc.draws, 1) == 1
+end
