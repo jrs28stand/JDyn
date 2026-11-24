@@ -73,7 +73,7 @@ rhoa, beta_pdf, 0.7, 0.1;
 rhor, uniform_pdf, 0.5, 0.25;
 sig, 1.4, weibull_pdf, 1.5, 0.5;
 pibar, beta_pdf, 0.6, 0.2, -1, 3;
-@#if VARIANT == 1
+@#if VARIANT == 1 || VARIANT == 11
 dsge_prior_weight, 0.9, gamma_pdf, 1, 0.4;
 @#endif
 end;
@@ -88,4 +88,8 @@ estimation(datafile=est_nk_data, first_obs=5, nobs=100, dsge_var, mode_compute=4
 @#endif
 @#if VARIANT == 2
 estimation(datafile=est_nk_data, first_obs=2, dsge_var=Inf, dsge_varlag=1, mode_compute=0, mh_replic=0, nodisplay);
+@#endif
+@#if VARIANT == 11
+estimation(datafile=est_nk_data, first_obs=5, nobs=100, dsge_var, dsge_varlag=2, mode_compute=4, mh_replic=300, mh_nblocks=2, mh_jscale=0.8, mh_drop=0.3,
+           bayesian_irf, irf=8, sub_draws=40, nodisplay, nograph);
 @#endif

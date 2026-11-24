@@ -288,7 +288,7 @@ function _estimation_var_list_est(est::Estimation)
 end
 
 "`oo_.PosteriorIRF.dsge.{Mean, Median, Var, deciles, HPDinf, HPDsup}.<variable>_<shock>` (columns; deciles periods x 9)."
-function store_posterior_irf!(oo::MStruct, r::PosteriorIRF)
+function store_posterior_irf!(oo::MStruct, r::PosteriorIRF; field::AbstractString="dsge")
     P = get(oo, "PosteriorIRF", nothing)
     P isa MStruct || (P = MStruct(); oo.PosteriorIRF = P)
     D = MStruct()
@@ -300,6 +300,6 @@ function store_posterior_irf!(oo::MStruct, r::PosteriorIRF)
         end
         D[f] = S
     end
-    P.dsge = D
+    P[field] = D                                  # "dsge", or "bvardsge" for the DSGE-VAR responses
     oo
 end

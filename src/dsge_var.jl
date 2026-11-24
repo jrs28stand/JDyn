@@ -226,3 +226,135 @@ function endogenous_log_prior(Y::AbstractMatrix, Pstar::AbstractMatrix, mf, H::A
     d = Fhat - Ftheta
     0.5 * n * log(Tsamp / (2 * pi)) - 0.5 * log(det(Shat)) - 0.5 * Tsamp * (d' * (Shat \ d))
 end
+
+"`oo_.dsge_var.posterior_mode.{PHI_tilde, SIGMA_u_tilde, iXX, prior}` at `theta` (dynare_estimation_1.m)."
+function _store_dsge_var!(oo, est::Estimation, theta::AbstractVector)
+    r = dsge_var_posterior(est, theta)
+    pr = MStruct()
+    for f in (:SIGMA_u_star, :PHI_star, :ArtificialSampleSize, :DF, :iGXX_star)
+        setproperty!(pr, f, getfield(r.prior, f) isa Number ? Float64(getfield(r.prior, f)) : Matrix{Float64}(getfield(r.prior, f)))
+    end
+    pm = MStruct()
+    pm.PHI_tilde = Matrix{Float64}(r.PHI_tilde); pm.SIGMA_u_tilde = Matrix{Float64}(r.SIGMA_u_tilde)
+    pm.iXX = Matrix{Float64}(r.iXX); pm.prior = pr
+    d = MStruct(); d.posterior_mode = pm
+    oo.dsge_var = d
+    nothing
+end
+
+# ---------------------------------------------------------------------------------------------------- bayesian_irf of the DSGE-VAR
+"`rand_inverse_wishart.m` (the random numbers: `randn(v, m)` in column order)."
+function rand_inverse_wishart(rng, m::Int, v::Int, Hinv_upper_chol::AbstractMatrix)
+    X = randn(rng, v, m) * Hinv_upper_chol
+    F = svd(X)
+    SSi = 1 ./ (F.S .^ 2)
+    (F.V .* SSi') * F.V'
+end
+
+"`rand_matrix_normal.m`: `randn(n*p, 1)` then `kron(Omega_lower_chol, Sigma_lower_chol)`."
+function rand_matrix_normal(rng, n::Int, p::Int, M::AbstractMatrix, Omega_lower_chol, Sigma_lower_chol)
+    B1 = randn(rng, n * p)
+    B2 = kron(Omega_lower_chol, Sigma_lower_chol) * B1
+    reshape(B2, n, p) + M
+end
+
+"`qr2.m`: the Q factor of the full QR with the signs chosen so that the diagonal of R is non-negative."
+function qr2_Q(A::AbstractMatrix)
+    F = qr(A)
+    Q = Matrix(F.Q); R = F.R
+    for i in 1:min(size(R)...)
+        R[i, i] < 0 && (Q[:, i] = -Q[:, i])
+    end
+    Q
+end
+
+"""
+    dsge_var_irf_draw(est, theta, rng) -> Array (periods x nvobs x nexo)
+
+One draw of the DSGE-VAR impulse responses of `PosteriorIRF_core1.m` at the parameter vector `theta`: the VAR parameters are drawn
+from their posterior (inverse Wishart for the covariance matrix, matrix normal for the coefficients, redrawn while the VAR is
+explosive), and the rotation of the structural shocks is the QR factor of the DSGE model's impact matrix on the observables.
+"""
+function dsge_var_irf_draw(est::Estimation, theta::AbstractVector, rng, periods::Int)
+    o = est.options
+    m = est.model
+    nlag = Int(o["dsge_varlag"])
+    nvobs = length(est.varobs)
+    nexo = length(m.exo_names)
+    k = nvobs * nlag + 1
+    TT = est.nobs + nlag
+    lam = dvar_weight(est, theta)
+    r = dsge_var_posterior(est, theta)
+    SIG, PHI, iXX = r.SIGMA_u_tilde, r.PHI_tilde, r.iXX
+    DPW = floor(Int, TT * (1 + lam))
+    Sinv_upper = cholesky(Hermitian(inv(SIG * TT * (lam + 1)))).U
+    comp = Matrix(diagm(-nvobs => ones(nvobs * (nlag - 1))))
+    nl = nlag * nvobs
+    local SIGdraw
+    explosive = true
+    while explosive
+        SIGdraw = rand_inverse_wishart(rng, nvobs, DPW - k, Sinv_upper)
+        PHIdraw = rand_matrix_normal(rng, k, nvobs, PHI, cholesky(Hermitian(SIGdraw)).L, cholesky(Hermitian(iXX)).L)
+        comp[1:nvobs, :] = PHIdraw[1:nl, :]'
+        explosive = any(abs.(eigvals(comp)) .> 1.000000001)
+    end
+    lam > 0 || throw(EstimationError("bayesian_irf with dsge_var needs a positive dsge_prior_weight (Dynare's OMEGAstar is undefined)"))
+    _, _, Hs, _ = solve(est, theta)
+    Q, _ = covariances(est, theta)
+    A0 = Hs[est.obs_decl, :] * Diagonal(sqrt.(diag(Q)))                   # ghu * sqrt(Sigma_e), observed rows (declaration order)
+    OMEGA = qr2_Q(Matrix(A0'))
+    SIGtrOMEGA = cholesky(Hermitian(SIGdraw)).L * OMEGA'
+    irfs = zeros(periods, nvobs * nexo)
+    PHIpower = Matrix{Float64}(I, nl, nl)
+    irfs[1, :] = vec((PHIpower[1:nvobs, 1:nvobs] * SIGtrOMEGA))
+    for t in 2:periods
+        PHIpower = comp * PHIpower
+        irfs[t, :] = vec(PHIpower[1:nvobs, 1:nvobs] * SIGtrOMEGA)
+    end
+    out = zeros(periods, nvobs * nexo)
+    for j in 1:nvobs*nexo
+        maximum(irfs[:, j]) - minimum(irfs[:, j]) > 1e-10 && (out[:, j] = irfs[:, j])
+    end
+    reshape(out, periods, nvobs, nexo)
+end
+
+"""
+    posterior_irf_dsgevar(est, params; periods, irf_shocks, variables, mh_conf_sig, rng, keep_draws=false) -> PosteriorIRF
+
+`oo_.PosteriorIRF.bvardsge`: the posterior distribution of the DSGE-VAR impulse responses over the parameter draws `params` (one
+row each, those of the DSGE impulse responses), one VAR draw per parameter draw from `rng` (Dynare's global `randn`).
+"""
+function posterior_irf_dsgevar(est::Estimation, params::AbstractMatrix; periods=nothing, relative_irf=nothing, irf_shocks=nothing, variables=nothing,
+                               mh_conf_sig=nothing, rng=nothing, keep_draws::Bool=false, var_list=nothing)
+    dsge_var_active(est) || throw(EstimationError("the model is not a DSGE-VAR (no dsge_prior_weight parameter)"))
+    o = est.options; m = est.model
+    p = periods === nothing ? get(o, "irf", 0) : periods
+    periods = (p === nothing || p == 0 || (p isa AbstractVector && isempty(p))) ? 40 : Int(p)
+    mh_conf_sig = mh_conf_sig === nothing ? Float64(o["mh_conf_sig"]) : Float64(mh_conf_sig)
+    vl = variables !== nothing ? String.(variables) : var_list !== nothing ? String.(var_list) : String[]
+    isempty(vl) && (vl = String.(_estimation_var_list_est(est)))
+    isempty(vl) && (vl = copy(est.varobs))
+    length(vl) <= length(est.varobs) || throw(EstimationError("bayesian_irf with dsge_var: the variable list has more variables than the VAR (Dynare indexes the VAR responses by the list's position)"))
+    shocks = irf_shock_indices(m, irf_shocks === nothing ? _irf_shock_names(get(o, "irf_shocks", nothing)) : irf_shocks)
+    rng === nothing && (rng = Random.default_rng())
+    B = size(params, 1)
+    nexo = length(m.exo_names)
+    stock = zeros(B, periods, length(vl), nexo)
+    for b in 1:B
+        d = dsge_var_irf_draw(est, view(params, b, :), rng, periods)
+        stock[b, :, :, :] = d[:, 1:length(vl), :]
+    end
+    names = String[]; cols = Tuple{Int,Int}[]
+    for i in shocks, (j, v) in enumerate(vl)
+        push!(names, "$(v)_$(m.exo_names[i])"); push!(cols, (j, i))
+    end
+    ns = length(cols)
+    M, Md, V, HI, HS = (zeros(periods, ns) for _ in 1:5)
+    D = zeros(periods, 9, ns)
+    for (s, (j, i)) in enumerate(cols), t in 1:periods
+        a, b, c, hpd, d = posterior_moments(view(stock, :, t, j, i), mh_conf_sig)
+        M[t, s], Md[t, s], V[t, s], HI[t, s], HS[t, s] = a, b, c, hpd[1], hpd[2]
+        D[t, :, s] = d
+    end
+    PosteriorIRF(names, vl, [m.exo_names[i] for i in shocks], M, Md, V, HI, HS, D, mh_conf_sig, Matrix{Float64}(params), keep_draws ? stock : nothing)
+end
