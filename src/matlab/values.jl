@@ -443,6 +443,7 @@ function _cat_parts(parts, dim, what)
 end
 
 function mhcat(vals)
+    any(v -> v isa MObject, vals) && return obj_cat(vals, 2)
     nz = [v for v in vals if !_is00(v)]
     isempty(nz) && return zeros(0, 0)
     length(nz) == 1 && return nz[1]
@@ -475,6 +476,7 @@ function mhcat(vals)
 end
 
 function mvcat(vals)
+    any(v -> v isa MObject, vals) && return obj_cat(vals, 1)
     nz = [v for v in vals if !_is00(v)]
     isempty(nz) && return zeros(0, 0)
     length(nz) == 1 && return nz[1]

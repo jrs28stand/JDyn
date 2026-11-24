@@ -761,6 +761,8 @@ function _shocks!(m::Model, st)
     end
     for d in get_or(st, "deterministic_shocks", [])
         for v in d["values"]
+            # dated periods are resolved against first_simulation_period when the perfect foresight statements are replayed
+            (v["period1"] isa AbstractString && startswith(v["period1"], "dates(")) && continue
             push!(m.det_shocks, (ix[d["var"]], Int(_numval(v["period1"])), Int(_numval(v["period2"])), _value(m, v["value"])))
         end
     end

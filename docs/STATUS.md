@@ -57,7 +57,7 @@ faster than pydyn on the same machine. An interpreted `_steadystate.m` costs abo
 - Optimal policy: not done are `ramsey_constraints` (Dynare's inequality constraints, `solve_algo=10`), perfect-foresight Ramsey
   welfare with `ramsey_policy` after `perfect_foresight_solver` beyond Dynare's backward recursion, `osr(analytic_derivation)`,
   `osr` with `opt_algo` 1, 2, 3 (MATLAB toolboxes), `stoch_simul` orders above 3 for Ramsey models, `mult_elimination` as a
-  separate option (the preprocessor does it). All refuse with an error. Heterogeneous agents, `dseries`: refused with an error. Semi-structural toolbox: see "Semi-structural models" below for what is and is not done (`pac.estimate.*`, legacy `get_companion_matrix_legacy`, `pac.print`/`var_expectation.print`).
+  separate option (the preprocessor does it). All refuse with an error. Heterogeneous agents: refused with an error; `dseries`/`dates`: see "dates and dseries" below. Semi-structural toolbox: see "Semi-structural models" below for what is and is not done (`pac.estimate.*`, legacy `get_companion_matrix_legacy`, `pac.print`/`var_expectation.print`).
 
 ## Optimal policy (src/optimal_policy.jl, src/results_policy.jl; docs/RAMSEY_PROGRESS.md)
 
@@ -216,8 +216,7 @@ maximum_lag + periods + maximum_lead) and `exo_simul` (rows x n_exo) have Dynare
 - Every `stack_solve_algo` is solved by Newton with a sparse LU (Dynare's algorithm 0, UMFPACK); a warning says so.
   Dynare's other linear solvers (LBJ, GMRES, bicgstab) give the same Newton step up to round-off or their own
   iterative tolerance, which JDyn does not reproduce. `robust_lin_solve`, bytecode, block and `solve_algo` are warned about.
-- Refused with an error: `perfect_foresight_controlled_paths`, `shock_paths` blocks, `initval_file`/`histval_file`, dates in
-  `periods`/`learnt_in`, `lmmcp` together with `model(linear)`, deterministic exogenous variables (`varexo_det`), marginal
+- Refused with an error: `perfect_foresight_controlled_paths`, `shock_paths` blocks, `initval_file`/`histval_file`, `lmmcp` together with `model(linear)`, deterministic exogenous variables (`varexo_det`), marginal
   linearization with expectation errors. `shocks(surprise)` blocks are OccBin's (Dynare's perfect foresight does not read
   them) and are ignored here too.
 - Stacked evaluation: one sparse pattern per number of periods, Jacobian filled in place, the factorisation's
@@ -303,3 +302,20 @@ nonlinear least-squares estimator), `pac.print` / `var_expectation.print` (they 
 (legacy matrices from the model Jacobian), `pac.update.parameters` / `var_expectation.update_parameters` called directly, `pac.check`.
 Dynare 7.2 quirk reproduced: `var_expectation.update_parameters` uses `expr.params` (parameter indices) as coefficients.
 Dynare 7.2 defect: `pac.mce.parameters` with a parameter-valued bgp flag in `optim_additive` uses an undefined variable; JDyn raises that error.
+
+## dates and dseries (MATLAB interpreter, branch dseries)
+
+Native `dates` and `dseries` objects (src/matlab/dates.jl, dseries.jl, objects.jl), handle semantics as in Dynare 7.2,
+checked against Octave running Dynare's toolbox (test/dseries_cases.txt, 132 cases, `test/test_dseries.jl`) and against
+Dynare's embedded `%@test` unit tests (test/dseries_unit_tests.jl: 366 pass, 22 fail, 97 error; the rest are
+Octave/harness artefacts or refused features below).
+- dates: frequencies Y/S/Q/M/W/D, literals, arithmetic, ranges, comparisons, char/strings/year/subperiod/ndat,
+  firstdate/lastdate, pop/append/sort/unique/intersect/union/setdiff.
+- dseries: constructors from data/dates/names/csv/mat/m files, indexing by dates and names, arithmetic with alignment,
+  lag/lead/diff/log/exp/cumsum/merge/vobs/nobs/hpcycle/hptrend/baxter_king_filter/ydiff/qdiff/subsample/insert/remove/
+  rename/tag/save (csv, mat); `plot` is a no-op.
+- .mod side: date literals in `shocks`/`endval`/`periods`/`learnt_in`/`first_simulation_period` for perfect foresight;
+  `Simulated_time_series` is a dseries in the session scope after `perfect_foresight_solver`.
+- Still refused: xls/xlsx, `initval_file`/`histval_file` with series or datafile, `data(first_obs=dates)` in estimation,
+  cumsum/cumprod with a base period, fill_/exist/chain_/lineartrend/projection/one-sided HP filters, weekly/daily
+  ydiff/ygrowth, `save` format m, `ds{regex} = ...` assignment, tags in insert, struct2dseries.
