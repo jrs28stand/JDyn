@@ -345,7 +345,7 @@ them (Dynare's `IVF_shock_observable_mapping`). Each period is solved with `csol
 `solver.solve_tolf` on sum(|residual|)) from zero shocks, as Dynare's `dynare_solve` with `solve_algo = 3`.
 """
 function inversion_filter(ob::Occbin, data::AbstractMatrix, obs_idx::AbstractVector{<:Integer}, err_index::AbstractVector{<:Integer},
-                          o::Dict{String,Any}=copy(OCCBIN_FILTER_DEFAULTS); rng=Random.default_rng())
+                          o::Dict{String,Any}=copy(OCCBIN_FILTER_DEFAULTS); rng=Random.default_rng(), solver=nothing)
     T, nobs = size(data)
     n = ob.n
     sim = _occ_sim(o, "likelihood")
@@ -366,7 +366,8 @@ function inversion_filter(ob::Occbin, data::AbstractMatrix, obs_idx::AbstractVec
         function match(err)
             key = Vector{Float64}(err)
             haskey(cache, key) && return cache[key]
-            flag, res = _occ_solve(ob, reshape(key, 1, :), y0, sim; exo_pos=ep)
+            flag, res = solver === nothing ? _occ_solve(ob, reshape(key, 1, :), y0, sim; exo_pos=ep) :
+                        filter_solve(solver, reshape(key, 1, :), y0, ep)       # src/obc_filter.jl: obc_method = news
             r = if flag != 0
                 (fill(100.0, length(oi)), fill(NaN, length(oi), length(ep)), nothing, nothing, nothing)
             else

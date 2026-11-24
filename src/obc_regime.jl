@@ -412,9 +412,10 @@ end
 """
 `_regime_step(rg, init, shock; maxit=60, method=:auto, z0=nothing) -> (status, z, w, info)`: regime indicators `z` (`N x nc`), wedges `w`
 and `info = (used, iterations, message)` for one shock period (no path). `method`: `:auto` (guess and verify, then the fallbacks),
-`:guess_verify` (no fallbacks), `:milp` (the integer programme over regime indicators only). `status` is one of `OBC_STATUSES`.
+`:guess_verify` (no fallbacks), `:milp` (the integer programme over regime indicators only). `milp = false` skips the integer programmes
+(the inversion filter's fail-fast mode: the cheap checks and the linear-programme proof of non-existence only; src/obc_filter.jl). `status` is one of `OBC_STATUSES`.
 """
-function _regime_step(rg::RegimeOBC, init::AbstractVector, shock::AbstractVector; maxit::Int=60, method::Symbol=:auto, z0=nothing)
+function _regime_step(rg::RegimeOBC, init::AbstractVector, shock::AbstractVector; maxit::Int=60, method::Symbol=:auto, z0=nothing, milp::Bool=true)
     T, N, k, nc = rg.T, rg.N, length(rg.cv), rg.nc
     xs = vcat(init[rg.st], shock)
     Ycv = reshape(rg.Bx * xs, k, N)
@@ -444,7 +445,7 @@ function _regime_step(rg::RegimeOBC, init::AbstractVector, shock::AbstractVector
     fail(st, msg, used) = (st, falses(N, nc), zeros(length(rg.cols) * T), (used=used, iterations=0, message=msg))
     if method != :milp
         try
-            got = _solve_lcp(rg, init, shock)               # throws ObcError with a proof when no solution exists
+            got = _solve_lcp(rg, init, shock; milp=milp)    # throws ObcError with a proof when no solution exists
             if got !== nothing
                 zl, wl, pl = got
                 vb, vr = _regime_violations(rg, zl, pl)
@@ -455,6 +456,7 @@ function _regime_step(rg::RegimeOBC, init::AbstractVector, shock::AbstractVector
             return fail(err.status, err.msg, :lcp)
         end
     end
+    milp || return fail(:no_solution, "integer programme not attempted (milp = false)", :milp)
     try
         zm = _regime_milp(rg, init, shock, a)
         wm = _regime_wedges(rg, zm, a)
@@ -648,7 +650,7 @@ function single_spell_solutions(rg::RegimeOBC, init::AbstractVector, shock::Abst
 end
 
 # solve through the equivalent complementarity problem: (z, w, pcv) or nothing; throws ObcError(:no_solution) with a proof when the relaxation is infeasible
-function _solve_lcp(rg::RegimeOBC, init::AbstractVector, shock::AbstractVector)
+function _solve_lcp(rg::RegimeOBC, init::AbstractVector, shock::AbstractVector; milp::Bool=true)
     tie = _tie(rg)
     (tie === nothing || !tie.mirror) && return nothing
     M, q, G, info = obc_lcp(rg, init, shock)
@@ -660,6 +662,10 @@ function _solve_lcp(rg::RegimeOBC, init::AbstractVector, shock::AbstractVector)
         M1, q1 = M[1:T, :], q[1:T]
         y, st, _ = solve_active_set(M1, q1; tol=1e-8)
         if !(st == :ok && _verify_lcp(M, q, y, T, 1e-8))
+            if !milp
+                stl, _ = highs_lp(zeros(T), -M, fill(-Inf, N), q, zeros(T), fill(Inf, T))
+                throw(ObcError(:no_solution, 0, stl == :infeasible ? proof : "integer programme not attempted (milp = false)"))
+            end
             y, st, inf = solve_news(M1, q1; tol=1e-8, Mb=M[T+1:N, :], qb=q[T+1:N], n_c=1,
                                     time_limit=REGIME_MILP_TIME_LIMIT[])
             if st != :ok
@@ -671,6 +677,7 @@ function _solve_lcp(rg::RegimeOBC, init::AbstractVector, shock::AbstractVector)
     else
         st, _ = highs_lp(zeros(2T), -hcat(M, G), fill(-Inf, N), q, zeros(2T), vcat(fill(Inf, T), ones(T)))      # y >= 0, 0 <= z <= 1, q + M y + G z >= 0
         st == :infeasible && throw(ObcError(:no_solution, 0, proof))
+        milp || throw(ObcError(:no_solution, 0, "integer programme not attempted (milp = false)"))
         sc = max(maximum(abs, q), 1e-12)
         dg = abs.(diag(M[1:T, :]))
         pos = filter(>(0), dg)

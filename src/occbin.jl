@@ -432,11 +432,23 @@ function simulate(ob::Occbin, shocks_in::AbstractMatrix; periods::Integer=100, c
                   reset_regime_in_new_period::Bool=false, exo_pos=nothing, algo_truncation::Integer=1,
                   replicate_dynare_bugs::Bool=false, obc_method=:occbin, obc_horizon=40, obc_tol::Real=1e-10,
                   obc_raise::Bool=true, obc_solver_options=NamedTuple(), obc_fast_path::Bool=true,
-                  obc_order=1, obc_cubature::Bool=false, obc_periods_of_uncertainty=16, obc_qmc_level=10, obc_cubature_regions=1)
+                  obc_order=1, obc_cubature::Bool=false, obc_periods_of_uncertainty=16, obc_qmc_level=10, obc_cubature_regions=1,
+                  obc_check_ahead=nothing, obc_selection=:occbin)
     method = _obc_method(obc_method)
+    selection = _obc_selection(obc_selection)
+    selection != :occbin && method != :news && throw(ArgumentError("obc_selection = $selection needs obc_method = news"))
+    _obc_int_option(obc_cubature_regions, "obc_cubature_regions") == 1 ||
+        throw(ArgumentError("obc_cubature_regions must be 1: several regions are not implemented"))
     if _obc_order(obc_order) != 1 || obc_cubature       # src/obc_ho.jl: order 2 and / or cubature (news only)
         method == :news || throw(ArgumentError("obc_order = 2 and obc_cubature need obc_method = news"))
-        return _simulate_obc_ho(ob, shocks_in; horizon=_obc_horizon(obc_horizon), tol=obc_tol, periods=periods, check_ahead_periods=check_ahead_periods,
+        # what the loop does not support is refused, not ignored
+        obc_raise || throw(ArgumentError("obc_raise = false is not supported with obc_order = 2 or obc_cubature (a failing period raises an ObcError)"))
+        obc_fast_path || throw(ArgumentError("obc_fast_path = false is not supported with obc_order = 2 or obc_cubature"))
+        isempty(obc_solver_options) || throw(ArgumentError("obc_solver_options are not supported with obc_order = 2 or obc_cubature"))
+        selection == :occbin || throw(ArgumentError("obc_selection = $selection is not implemented with obc_order = 2 or obc_cubature"))
+        # gap periods beyond the horizon: obc_check_ahead; else an explicit check_ahead_periods (OccBin's default, 200, is not meant for this); else 40 (pydyn's default)
+        ca = obc_check_ahead !== nothing ? _obc_int_option(obc_check_ahead, "obc_check_ahead"; min=0) : (check_ahead_periods != 200 ? check_ahead_periods : 40)
+        return _simulate_obc_ho(ob, shocks_in; horizon=_obc_horizon(obc_horizon), tol=obc_tol, periods=periods, check_ahead_periods=ca,
                                 max_check_ahead_periods=max_check_ahead_periods, init=init, exo_pos=exo_pos, order=_obc_order(obc_order),
                                 cubature=obc_cubature, periods_of_uncertainty=_obc_int_option(obc_periods_of_uncertainty, "obc_periods_of_uncertainty"),
                                 qmc_level=_obc_int_option(obc_qmc_level, "obc_qmc_level"; min=0), regions=_obc_int_option(obc_cubature_regions, "obc_cubature_regions"),
@@ -449,7 +461,7 @@ function simulate(ob::Occbin, shocks_in::AbstractMatrix; periods::Integer=100, c
     if method != :occbin                            # src/obc.jl: the same loop with an LCP solver instead of the regime iteration
         return _simulate_obc(ob, shocks_in; method=method, horizon=_obc_horizon(obc_horizon), tol=obc_tol, raise=obc_raise,
                              periods=periods, check_ahead_periods=check_ahead_periods, max_check_ahead_periods=max_check_ahead_periods,
-                             init=init, exo_pos=exo_pos, solver_options=obc_solver_options, fast_path=obc_fast_path,
+                             init=init, exo_pos=exo_pos, solver_options=obc_solver_options, fast_path=obc_fast_path, selection=selection,
                              ignored=(maxit=maxit, curb_retrench=curb_retrench, periodic_solution=periodic_solution,
                                       periodic_solution_threshold=periodic_solution_threshold, periodic_solution_strict=periodic_solution_strict,
                                       init_regime=init_regime, init_binding_indicator=init_binding_indicator,

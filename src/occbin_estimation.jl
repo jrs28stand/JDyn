@@ -10,13 +10,15 @@
 #     filter (`smoother_inversion_filter`); the linear smoother is kept in `res.occbin.linear_*`.
 
 "Options of the estimation statement and Dynare checks for an OccBin model (called by the Estimation constructor)."
-function _setup_occbin!(est::Estimation, overrides)
+function _setup_occbin!(est::Estimation, overrides; obc=NamedTuple())
     m = est.model
     if isempty(m.occbin_constraints)
         overrides === nothing || throw(EstimationError("occbin options were given but the model has no occbin_constraints block"))
+        any(!isnothing, values(obc)) && throw(EstimationError("obc_* options were given but the model has no occbin_constraints block"))
         return est
     end
     o = est.options
+    overrides, live_obc = _split_obc_overrides(overrides)          # obc_method, obc_horizon, obc_selection in `occbin=Dict(...)` (src/obc_filter.jl)
     oc = occbin_filter_options(m, overrides; what="OccBin estimation")
     ivf = Bool(oc["likelihood.inversion_filter"])
     o["loglinear"] && throw(EstimationError("loglinear is not available with OccBin (the piecewise-linear solution is in levels)"))
@@ -34,6 +36,8 @@ function _setup_occbin!(est::Estimation, overrides)
             throw(EstimationError("The IVF requires exactly as many shocks as observables."))
     end
     o["occbin"] = oc
+    o["obc"] = _obc_est_settings(m, live_obc; obc...)
+    o["obc"].method == :news && !ivf && throw(EstimationError(_PKF_NEWS_MSG))
     est
 end
 
@@ -106,7 +110,7 @@ function occbin_filter(est::Estimation, theta::AbstractVector; rng=dynare_rng(es
     ob = occbin_at(est, theta)
     if Bool(oc["likelihood.inversion_filter"])
         err = oc["likelihood.IVF_shock_observable_mapping"]
-        ivf = inversion_filter(ob, est.data, est.obs_decl, err, oc; rng=rng)
+        ivf = inversion_filter(ob, est.data, est.obs_decl, err, oc; rng=rng, solver=_obc_solver(est, ob))
         if ivf.error_code == 0
             code, pen = inversion_filter_loglik!(ivf, est.data, est.obs_decl, Q, err; presample=est.options["presample"])
             if code != 0
@@ -115,6 +119,7 @@ function occbin_filter(est::Estimation, theta::AbstractVector; rng=dynare_rng(es
         end
         return ivf
     end
+    obc_settings(est).method == :occbin || throw(EstimationError(_PKF_NEWS_MSG))
     ctx = _pkf_context(est, ob, Q, Hm)
     a, P = _pkf_initial_state(est, ctx)
     di = est.data_index === nothing ? nothing : est.data_index
@@ -181,6 +186,7 @@ function _occbin_smooth(m::Model, data=nothing; occbin=nothing, estimation=nothi
         _flag(get(kw, Symbol(k), false)) && throw(SmootherError("$k is not implemented for the OccBin smoother"))
     end
     est = estimation
+    occbin, live_obc = _split_obc_overrides(occbin)              # obc_* entries of the overrides (src/obc_filter.jl)
     oc = (est !== nothing && occbin === nothing && occbin_options(est) !== nothing) ? occbin_options(est) :
          occbin_filter_options(m, occbin; what="OccBin smoother")
     lin = _smooth_linear(m, data; estimation=est, kw...)
@@ -206,9 +212,17 @@ function _occbin_smooth(m::Model, data=nothing; occbin=nothing, estimation=nothi
               oc["likelihood.IVF_shock_observable_mapping"] : findall(diag(lin.Sigma_e) .!= 0)
         length(err) == length(obs) || throw(SmootherError("The IVF requires exactly as many shocks as observables."))
         any(!iszero, lin.me_cov) && throw(SmootherError("IVF-filter: Measurement errors are not allowed with the inversion filter."))
-        ivf = inversion_filter(ob, lin.data .+ ob.ys[obs]', obs, err, oc; rng=dynare_rng(m))
+        sol = if est !== nothing
+            _obc_solver(est, ob)
+        else                                           # no estimation object: the native options_.occbin.obc_* lines
+            s = _obc_est_settings(m, live_obc)
+            s.method == :occbin ? nothing : news_filter_solver(ob; horizon=s.horizon, selection=s.selection)
+        end
+        ivf = inversion_filter(ob, lin.data .+ ob.ys[obs]', obs, err, oc; rng=dynare_rng(m), solver=sol)
         sm = inversion_filter_smoother(ivf, ob.ys, err, ob.n_exo; endo_names=m.endo_names, exo_names=m.exo_names)
     else
+        (est !== nothing ? obc_settings(est).method : _obc_est_settings(m, live_obc).method) == :occbin ||
+            throw(SmootherError(_PKF_NEWS_MSG))
         ktol = Float64(something(get(lin.options, "kalman_tol", nothing), 1e-10))
         sm = occbin_smoother(ob, permutedims(lin.data), lin.Sigma_e, lin.me_cov, obs, oc; lik_init=lik_init, qz_criterium=qz,
                              Harvey_scale_factor=Float64(something(get(lin.options, "Harvey_scale_factor", nothing), 10.0)), kalman_tol=ktol)
@@ -270,6 +284,11 @@ function _occbin_overrides(ws)
         haskey(OCCBIN_FILTER_DEFAULTS, k) || continue
         v isa AbstractArray && length(v) == 1 && (v = first(v))
         v isa AbstractArray && isempty(v) && (v = nothing)
+        out[k] = v
+    end
+    for (k, v) in _flat_options(oc)                               # obc_method, obc_horizon, obc_selection (src/obc_filter.jl)
+        k in ("obc_method", "obc_horizon", "obc_selection") || continue
+        v isa AbstractArray && length(v) == 1 && (v = first(v))
         out[k] = v
     end
     isempty(out) ? nothing : out

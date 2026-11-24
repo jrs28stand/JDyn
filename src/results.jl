@@ -524,8 +524,7 @@ function occbin_solver!(ws::DynareWorkspace; options...)
         v = flat[key]
         kw[sym] = T === Bool ? _asbool(v) : T === Int ? Int(round(_asnum(v))) : _asnum(v)
     end
-    haskey(flat, "obc_method") && (kw[:obc_method] = _obc_method(flat["obc_method"]))       # src/obc.jl
-    haskey(flat, "obc_horizon") && (kw[:obc_horizon] = _obc_horizon(flat["obc_horizon"]))
+    merge!(kw, _obc_flat_options(flat))              # obc_method, obc_horizon, obc_order, obc_cubature, ... (src/obc_filter.jl)
     r = simulate(ob; kw...)
     sim = MStruct()
     sim.piecewise = Matrix{Float64}(r.piecewise)

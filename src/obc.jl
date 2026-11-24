@@ -603,16 +603,21 @@ continue the last path, as OccBin does.
 """
 function _simulate_obc(ob::Occbin, shocks_in::AbstractMatrix; method::Symbol, horizon::Integer, tol::Real, raise::Bool,
                        periods::Integer, check_ahead_periods::Integer, max_check_ahead_periods::Real, init, exo_pos,
-                       ignored::NamedTuple, solver_options=NamedTuple(), fast_path::Bool=true)
+                       ignored::NamedTuple, solver_options=NamedTuple(), fast_path::Bool=true, selection::Symbol=:occbin)
     k, n, n_exo, m = ob.k, ob.n, ob.n_exo, ob.model
     if method == :news                      # constraints that are not all complementary pairs: the regime formulation (src/obc_regime.jl);
                                             # obc_solver_options = (formulation = :regime,) asks for it on a complementarity model too
         cons = get!(() -> obc_constraints(ob), _OBC_CONS_CACHE, ob)
         (all(c -> c.class == :complementarity, cons) && get(solver_options, :formulation, :auto) != :regime) ||
-            return _simulate_regime(ob, shocks_in; method=method, horizon=horizon, tol=tol, raise=raise, periods=periods,
+            return selection == :occbin ?
+                   _simulate_regime(ob, shocks_in; method=method, horizon=horizon, tol=tol, raise=raise, periods=periods,
                                     check_ahead_periods=check_ahead_periods, max_check_ahead_periods=max_check_ahead_periods,
-                                    init=init, exo_pos=exo_pos, ignored=ignored, solver_options=solver_options, fast_path=fast_path)
+                                    init=init, exo_pos=exo_pos, ignored=ignored, solver_options=solver_options, fast_path=fast_path) :
+                   throw(ArgumentError("obc_selection = $selection is not implemented for the regime formulation (constraints that are not " *
+                                       "one complementary pair each); use obc_selection = occbin"))
     end
+    selection != :occbin && (method == :news && length(obc_constraints(ob)) == 1 ||
+        throw(ArgumentError("obc_selection = $selection needs obc_method = news and a model with one constraint")))
     changed = [String(key) for (key, v) in pairs(ignored) if !isequal(v, getfield(_OBC_IGNORED_DEFAULTS, key))]
     isempty(changed) || warn_once(m, "obc_method = $method: OccBin options of the regime iteration are not used (ignored): " * join(sort(changed), ", "))
     solve = OBC_SOLVERS[method]
@@ -680,6 +685,11 @@ function _simulate_obc(ob::Occbin, shocks_in::AbstractMatrix; method::Symbol, ho
                     end
                 end
             end
+            if st == :ok && selection != :occbin && any(!iszero, y)         # obc_selection: choose among the single-spell solutions (src/obc_filter.jl)
+                Mfull = size(ext.Mb, 1) > 0 ? vcat(sys.M, ext.Mb) : sys.M
+                qfull = size(ext.Mb, 1) > 0 ? vcat(q, ext.q0b .+ ext.Qxb * xin) : q
+                y, _ = _select_spell(Mfull, qfull, nc * T, y, selection, max(tol, 1e-8))
+            end
             init_last, u_last, Zvalid = copy(y0), copy(u), false
             ynext = ob.P * y0 .+ ob.Q * u .+ sys.Wn * y     # only the next state; the full path is built when it is needed
         else                                       # no new shock: the path solved last continues (OccBin's shift)
@@ -724,14 +734,12 @@ function _simulate_obc(ob::Occbin, shocks_in::AbstractMatrix; method::Symbol, ho
                  diag, m.endo_names, m.exo_names, ss_out, news)
 end
 
-"`obc_method` / `obc_horizon` set by native MATLAB lines of the .mod file (`options_.occbin.obc_method = 'minnorm';`)."
+"`obc_*` options set by native MATLAB lines of the .mod file (`options_.occbin.obc_method = 'minnorm';`, `options_.occbin.obc_order = 2;`, ...)."
 function _obc_mod_options(m::Model)
     out = Dict{Symbol,Any}()
     o = get(m.matlab_options, "occbin", nothing)
     o isa MStruct || return out
-    haskey(o, "obc_method") && (out[:obc_method] = _obc_method(o["obc_method"]))
-    haskey(o, "obc_horizon") && (out[:obc_horizon] = _obc_horizon(o["obc_horizon"]))
-    out
+    _obc_flat_options(_flat_options(o))              # obc_method, obc_horizon, obc_selection, obc_order, obc_cubature, ... (src/obc_filter.jl)
 end
 
 "`oo_.occbin.news` from an `ObcNews`."
