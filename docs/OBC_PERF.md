@@ -154,3 +154,59 @@ benchmark: `nice julia --project=/home/claude/work/benchenv bench/obc_bench.jl -
 1. Replace the `M[alpha, alpha]` copy plus LU in the active set by an updating factorisation or a cached factorisation per binding set (binding sets repeat): minnorm per period 6-15 us -> about 3-6 us.
 2. Make `ss` (the per-period rule for the filters) lazy for the news methods and skip `_tmax`/`bi` construction when no one reads it: about 1-2 us per period for minnorm, little for OccBin.
 3. Reduce OccBin's remaining cost (check loop is dynamic dispatch on abstractly typed closures): compile the constraint conditions into one typed vectorised function per model returning all four values; estimated further 1.5-2x on OccBin P1.
+
+## News port (branch `obc-news`): `news` and the regime formulation, P1 and P2
+
+Run `bench/results/obc_bench_news.md` (2026-11-24 12:44, commit d4972af, `nice julia --project=. bench/obc_bench.jl --tag news --models zlb,zlb2,nkm,sw --parts p1,p2 --reps 5`).
+Same protocol as above (one process, warm-up, `GC.gc()` before each call, 5 interleaved repeats, min / median, 1000 shock periods, horizon 40, check-ahead 40, seed 20261124, load average 1.5 to 2.8 on 2 shared cores: treat differences below about 15% as noise).
+Methods: `minnorm` (fast path), `minnorm_pure` (Lemke + descent), `news` (active set in front of the HiGHS integer programme), `news_pure` (`obc_fast_path=false`: every binding period through the integer programme), `regime` (the regime formulation, forced with `obc_solver_options = (formulation = :regime,)` on the complementarity models; the only news method that applies to sw). Integer programmes inside the regime formulation's fallbacks were limited to 0.5 s in the benchmark (30 s by default).
+sw is run at s = 0.25 (pydyn's choice; above that OccBin and the regime formulation fail on about a tenth of the states, see OBC_PERF.md of pydyn) with one of the 1000 draws replaced (a failing one, reported in the raw file); the earlier JDyn runs above used s = 1 with redraws.
+
+### P1: microseconds per shock period (min / median)
+
+| model (s, share binding) | method | µs/period | nothing binds | something binds | KiB/period | max path diff vs OccBin | same regime histories as OccBin |
+|---|---|---|---|---|---|---|---|
+| zlb (s=1.0, 30.4%) | occbin | 47.1 / 66.9 | 37.8 / 53.4 | 66.8 / 95.4 | 27.7 | 0.0e+00 | true |
+|  | minnorm | 7.1 / 7.2 | 5.6 / 5.8 | 8.6 / 9.1 | 7.4 | 2.5e-16 | true |
+|  | minnorm_pure | 28.5 / 30.2 | 6.5 / 6.9 | 77.1 / 82.0 | 44.2 | 2.5e-16 | true |
+|  | news | 7.7 / 8.3 | 6.1 / 6.6 | 9.3 / 10.0 | 8.7 | 2.5e-16 | true |
+|  | news_pure | 1753.2 / 1835.1 | 9.0 / 9.4 | 5744.4 / 6013.1 | 141.2 | 2.5e-16 | true |
+|  | regime | 26.2 / 42.0 | 19.2 / 31.2 | 40.1 / 63.7 | 6.5 | 2.5e-16 | true |
+| zlb2 (s=1.0, 33.8%) | occbin | 126.9 / 153.4 | 90.8 / 111.1 | 191.5 / 233.9 | 46.4 | 0.0e+00 | true |
+|  | minnorm | 12.8 / 14.4 | 9.3 / 10.6 | 17.1 / 18.7 | 12.8 | 3.9e-16 | true |
+|  | minnorm_pure | 127.0 / 135.7 | 11.4 / 11.8 | 351.6 / 375.6 | 153.9 | 3.9e-16 | true |
+|  | news | 13.8 / 14.8 | 10.7 / 11.5 | 18.1 / 19.3 | 14.9 | 3.9e-16 | true |
+|  | news_pure | 31815.7 / 32714.6 | 14.6 / 17.1 | 94098.6 / 96753.1 | 601.9 | 3.9e-16 | true |
+|  | regime | 86.5 / 94.6 | 53.6 / 57.5 | 147.0 / 164.3 | 10.9 | 3.9e-16 | true |
+| nkm (s=3.0, 31.4%) | occbin | 80.5 / 93.2 | 56.5 / 66.0 | 123.3 / 140.5 | 49.6 | 0.0e+00 | true |
+|  | minnorm | 9.7 / 10.9 | 6.5 / 7.7 | 12.5 / 14.4 | 10.8 | 2.0e-05 | false |
+|  | minnorm_pure | 41.5 / 45.0 | 7.4 / 8.1 | 103.0 / 111.4 | 61.3 | 2.0e-05 | false |
+|  | news | 9.9 / 10.5 | 7.2 / 7.5 | 12.8 / 13.3 | 12.0 | 2.0e-05 | false |
+|  | news_pure | 7660.2 / 8157.9 | 9.1 / 10.7 | 21992.5 / 23418.8 | 196.5 | 2.0e-05 | false |
+|  | regime | 50.3 / 53.6 | 31.1 / 32.2 | 83.5 / 90.5 | 10.3 | 2.5e-12 | true |
+| sw (s=0.25, 2.6%) | occbin | 52.1 / 82.9 | 50.0 / 79.6 | 92.4 / 145.6 | 39.4 | 0.0e+00 | true |
+|  | regime | 25.4 / 29.6 | 21.6 / 24.7 | 47.3 / 54.1 | 10.9 | 3.8e-13 | true |
+
+### P2: milliseconds per parameter set (min / median), horizon 40
+
+| model | RegimeOBC set-up (N = 2H) | `obc_system` (M, q) | diagnostics on M | ready: occbin | ready: minnorm | ready: news (LCP + diagnostics) |
+|---|---|---|---|---|---|---|
+| zlb | 0.45 / 0.53 | 0.29 / 0.34 | 11.08 / 11.49 | 0.21 / 0.21 | 0.48 / 0.54 | 11.68 / 11.96 |
+| zlb2 | 0.83 / 0.86 | 0.47 / 0.54 | 12.25 / 13.27 | 0.24 / 0.29 | 0.70 / 0.78 | 12.95 / 14.05 |
+| nkm | 0.52 / 0.60 | 0.52 / 0.56 | 11.75 / 12.24 | 0.47 / 0.51 | 0.95 / 1.02 | 12.77 / 13.19 |
+| sw | 0.77 / 0.78 | - | - | 0.59 / 0.61 | - | - |
+
+Reading
+- The LCP news method with its fast path costs the same as `minnorm` (zlb 7.7 vs 7.1 µs, zlb2 13.8 vs 12.8, nkm 9.9 vs 9.7 µs per period): the same precomputed blocks and
+  next-state-only loop; the extra work is the beyond-horizon check done once for the fast-path answer. Against OccBin: 6.1x (zlb), 9.2x (zlb2), 8.1x (nkm) by the minima.
+- Forced through the integer programme (`news_pure`) a binding period costs 5.7 ms (zlb), 94 ms (zlb2, 2 x 40 binaries) and 22 ms (nkm), against 9 to 18 µs through the
+  fast path: the integer programme is a guarantee and a fallback, not a speed path. (`minnorm_pure`, Lemke, is 77 / 352 / 103 µs per binding period.)
+- The regime formulation is 1.8x (zlb), 1.5x (zlb2), 1.6x (nkm) and 2.1x (sw) faster than OccBin by the minima (absolute times differ from the tables above because of load: compare
+  ratios inside a table only). It is slower than the LCP formulation (3.4x on zlb, 6.3x on zlb2): it checks OccBin's conditions in levels along the path.
+- nkm (approximate class): `minnorm`, `news` and `news_pure` differ from OccBin by 2.0e-5 and have a different regime history in one of the 1000 periods, period 786 of this
+  seeded sample: OccBin binds in periods 2-3 only (regime `[0 1 0]`, starts `[1 2 4]`), the LCP binds in periods 1-3 (`[1 0]`, `[1 4]`), because the unconstrained gap of period 1 is +4.7e-5
+  and the wedges that enforce periods 2-3 spill into period 1 (wedge 1.3e-5). This is the known knife-edge of that model (the linearised residual and OccBin's condition differ by the term in `mp`,
+  `approx` = 0.57%). The regime formulation, which uses OccBin's own condition, agrees with OccBin on all 1000 periods (2.5e-12).
+- P2: the set-up of the LCP formulation (`obc_system`) is 0.3 to 0.5 ms; the regime formulation's 0.45 to 0.83 ms; the diagnostics on M (S-matrix linear programme and the exact
+  P-matrix recursion up to 16 rows) take 11 to 12 ms per parameter set, computed once per `ObcSystem` when `news` is used (not decomposed further).
+- Not run for the news methods: P3, P4, R1 (not asked for).

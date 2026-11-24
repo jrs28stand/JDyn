@@ -29,6 +29,46 @@ Decisions of this port
 6. Only the paths of the variables read by the bind/relax conditions, and the state variables, enter the regime formulation's step (as in pydyn's perf work).
 7. Shocks-free periods continue the last path (OccBin's shift) in both formulations, as `minnorm` does; pydyn re-solves them (same answer when unique).
 
+Results (all run 2026-11-24, fresh processes, `nice`, 2 shared cores)
+
+| File | Checks | Result |
+|---|---|---|
+| test/test_obc.jl (minnorm; the two assertions that `news` throws now assert that it runs) | 264 | 264 pass |
+| test/test_obc_news.jl (new) | 547 | 547 pass |
+| test/test_occbin.jl | 37 | 37 pass |
+| test/test_occbin_options.jl | 456 | 456 pass |
+| test/test_occbin_estimation.jl | 203 | 203 pass |
+| test/test_results.jl (reads `occbin_solver!`) | 41 | 41 pass |
+
+Not run: the other test files (none touches the OBC code); test/test_plotting.jl is known to fail on this machine (hard-coded path). The baseline before any change (same
+commit as the branch point) passed the same four OccBin/OBC files (264, 37, 456, 203; the baseline log kept only the tail of each file, the counts above are from the
+runs after the changes).
+
+What the new tests show
+- `news` = OccBin on every complementarity model of test_obc.jl (nk_zlb, nk_zlb2, obc_zlb, obc_zlb2, borrcon, borrcon_0_std_shocks, NKM_0_std_shocks, borrcon_sim, borrcon_curb,
+  occ_borrcon), with the fast path and forced through the integer programme (`obc_fast_path=false`; every integer-programme point was polished and verified): file shocks and a
+  seeded 200-period simulation, paths to 1e-11 (observed 1.1e-16 to 5.1e-15 on all, 1.2e-13 on NKM) and identical regime histories. On NKM (approximate class) no knife-edge
+  difference showed in the 200-period test; one shows in 1000 periods (OBC_PERF.md: period 786 of the benchmark sample, 2.0e-5, different regime in that period; the regime
+  formulation agrees with OccBin there).
+- obc_zlb.mat (Dynare 7.2 + GLPK): `M` (60 x 20 incl. the beyond-horizon rows) 1.1e-14, `q` 1e-12 bound, wedges by the integer programme 6.9e-17, path 1.2e-17, regime start equal.
+- Regime formulation: `R` of `RegimeOBC` equals `M` up to the signs (1e-10 bound) on nk_zlb, nk_zlb2, obc_zlb2, borrcon; equals the LCP formulation and OccBin on obc_zlb,
+  obc_zlb2, nk_zlb2 (150 random periods, 1e-11); the integer programme over regime indicators equals guess-and-verify on obc_zlb; bf_ppf and bf (200 random periods): 4.4e-15,
+  identical histories, 62 binding periods; rbc_occbin with the file's 169 shock periods and horizon 130: 8.9e-16, identical histories (89 periods binding), and with horizon 40 it
+  stops with `horizon_too_short` in period 1.
+- Smets-Wouters benchmark: tie found with direction (1, -1); M neither S nor P, `largest_p` = 10 (max_exact 12); diagonal of the LCP's M between 0.81272 and 0.94539;
+  `eb = -4`: single-spell solutions (0, 9) and (0, 13), OccBin and `news` both return the 9-period one (regime `[1 0]`, starts `[1 10]`, paths 3.0e-12 apart); `eb = -6`: OccBin error 313,
+  `news` `no_solution` with the infeasibility proof; `eb = -3`, `em = 0.5`: G non-zero (max 0.161), single-spell solutions (0, 6) and (0, 15), the solution found passes OccBin's test.
+
+Cross-port agreement with pydyn (pydyn run read-only from /home/claude/pydyn, the same .mod files)
+- obc_zlb, `M` at horizon 20 (20 x 20 block): sum -34.677370158582 in both, max abs difference 7e-17; against the Dynare 7.2 file obc_zlb.mat (60 x 20) 1.1e-14 in JDyn.
+- obc_zlb2 (two constraints), `M` at horizon 20 (40 x 40): sum -7.646438365687 in both, Frobenius norm 7.9575622846472465 in both, max abs difference 5.6e-17.
+- sw: tie direction (1, -1) in both; diagonal range of the LCP's M (horizon 40): JDyn (0.8127218444712031, 0.9453859491513863), pydyn (0.812721844471204, 0.9453859491513862);
+  `largest_p` 10 and is_s / is_p false in both (max_exact 12); single-spell solutions for `eb = -4`: [(0, 9), (0, 13)] in both; for `eb = -3, em = 0.5`: [(0, 6), (0, 15)] in both;
+  max |G| 0.1609429427537928 (pydyn) and 0.16094294275379284 (JDyn).
+No place was found where JDyn and pydyn disagree in a number. Differences of design, none changing results: pydyn re-solves periods without a shock, JDyn continues the last path
+(OccBin's shift) as `minnorm` does; pydyn's `verify_lcp` uses a tolerance relative to max(1, |q|), JDyn's `obc_verify` an absolute one (1e-10); pydyn's regime history covers all N rows, JDyn's
+minnorm loop cut it at OccBin's path length when the horizon exceeded it (fixed here: no result changed in the tests).
+
 Rerun the tests (about 12 minutes, 2 shared cores; the first call precompiles JDyn, 3-4 minutes):
 ```
 cd /home/claude/work/jdyn-news && source /root/jl/jdyn_env.sh
