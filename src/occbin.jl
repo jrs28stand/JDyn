@@ -402,15 +402,6 @@ end
 _exo_index(m::Model, p::AbstractString) = (haskey(m.ix, p) ? m.ix[p] : throw(ArgumentError("unknown exogenous variable $p")))
 _exo_index(m::Model, p::Integer) = (1 <= p <= m.n_exo ? Int(p) : throw(ArgumentError("exo_pos $p out of range")))
 
-# benchmark hook (bench/obc_bench.jl): when OBC_TICKS[] is a vector, the simulation loops append time_ns() at the start of
-# every shock period and once after the loop; results are not affected
-const OBC_TICKS = Ref{Union{Nothing,Vector{UInt64}}}(nothing)
-@inline function _obc_tick()
-    t = OBC_TICKS[]
-    t === nothing || push!(t, time_ns())
-    nothing
-end
-
 # ---------------------------------------------------------------------- simulation
 """
     simulate(ob::Occbin, shocks; periods=100, check_ahead_periods=200, maxit=30, init=nothing, curb_retrench=false,

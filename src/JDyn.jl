@@ -45,8 +45,10 @@ include("shock_decomposition.jl")
 include("perfect_foresight.jl")
 include("plotting.jl")
 include("occbin.jl")
+include("highs.jl")
 include("obc_solvers.jl")
 include("obc.jl")
+include("obc_regime.jl")
 include("occbin_filter.jl")
 include("occbin_estimation.jl")
 include("results.jl")
@@ -74,7 +76,7 @@ export run_preprocessor, load, Model, ModelError, steady_state, SteadyStateError
        forecast, ForecastResult, conditional_forecast, ConditionalForecastResult, conditional_forecast_table, forecast_struct,
        conditional_forecast_struct, forecast!, conditional_forecast!,
        obc_constraints, obc_classification, obc_system, obc_gaps, obc_q, obc_verify, ObcConstraint, ObcSystem, ObcNews, ObcError,
-       solve_minnorm, solve_news, solve_active_set
+       solve_minnorm, solve_news, solve_active_set, m_diagnostics, obc_diagnostics, RegimeOBC, regime_obc, obc_lcp, single_spell_solutions, highs_lp, highs_milp
 
 include("precompile.jl")
 

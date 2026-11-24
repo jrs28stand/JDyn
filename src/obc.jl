@@ -3,7 +3,8 @@
 #   occbin   (default) the piecewise-linear guess-and-verify solver of src/occbin.jl, untouched
 #   minnorm  MacroModelling.jl's approach: the smallest anticipated wedges on the constraint equation that enforce the
 #            constraint over a horizon (src/obc_solvers.jl)
-#   news     Holden's DynareOBC (the same wedges, the LCP as a mixed-integer programme): not implemented yet
+#   news     Holden's DynareOBC (the same wedges, the LCP as a mixed-integer programme, HiGHS) with diagnostics on M, for
+#            constraints that are all complementary pairs; the regime formulation of src/obc_regime.jl for the others
 #
 # All methods read the same specification as OccBin: the occbin_constraints block and the bind/relax equation tags.
 # The 7.2 preprocessor merges the two tagged versions of an equation into one, multiplied by the parameter
@@ -12,6 +13,17 @@
 #   1. builds one constraint object per constraint and classifies it (the post-processor),
 #   2. builds the stacked complementarity problem g = q + M y over a horizon of T periods,
 #   3. runs OccBin's simulation loop with the regime iteration replaced by an LCP solver.
+
+# ---------------------------------------------------------------------- DEBUG / BENCHMARK ONLY: timing hook
+# bench/obc_bench.jl sets `OBC_TICKS[]` to a vector: the simulation loops (OccBin's in src/occbin.jl, the `obc_method` ones here) then
+# append `time_ns()` at the start of every shock period and once after the loop. Off (`nothing`) by default: the cost is one load of
+# the Ref and a branch per shock period (not timed separately), and results are never affected.
+const OBC_TICKS = Ref{Union{Nothing,Vector{UInt64}}}(nothing)
+@inline function _obc_tick()
+    t = OBC_TICKS[]
+    t === nothing || push!(t, time_ns())
+    nothing
+end
 
 # ---------------------------------------------------------------------- errors
 """
@@ -539,13 +551,31 @@ function obc_gaps(sys::ObcSystem, y::AbstractVector, init::AbstractVector, u::Ab
     Z[1:L, :], g
 end
 
+"""
+    obc_diagnostics(sys::ObcSystem; max_exact=16) -> NamedTuple
+    obc_diagnostics(ob::Occbin; horizon=40, max_exact=16)
+
+Existence and uniqueness diagnostics (`m_diagnostics`) on the `M` of the stacked complementarity problem: S-matrix test (a linear
+programme), exact P-matrix test (Tsatsomeros-Li recursion) up to `max_exact` rows, positive definite symmetric part (sufficient for P),
+`largest_p`. Cached per `ObcSystem` (they depend on the parameters only). For the regime formulation see the method on `RegimeOBC`.
+"""
+function obc_diagnostics(sys::ObcSystem; max_exact::Integer=16)
+    get!(sys.ext, -Int(max_exact)) do
+        m_diagnostics(sys.M; n_c=length(sys.cons), max_exact=max_exact)
+    end
+end
+obc_diagnostics(ob::Occbin; horizon::Integer=40, max_exact::Integer=16) = obc_diagnostics(obc_system(ob; horizon=horizon, method=:news); max_exact=max_exact)
+
 # ---------------------------------------------------------------------- simulation
 """
     ObcNews
 
 What the `minnorm` / `news` methods add to a simulation (Dynare-style `oo_.occbin.news`): `method`, `horizon`,
 `constraints` (names), `wedges[t, :]` the wedge path used in shock period `t` (stacked by constraint then period,
-`horizon` entries per constraint; in the units of `s_y * ref_resid`), `status[t]` and the solver's `info[t]`.
+`horizon` entries per constraint; in the units of `s_y * ref_resid`; the regime formulation has one block of `horizon` wedges per
+switched equation), `status[t]` and the solver's `info[t]`. `formulation` is `:lcp` (every constraint a complementary pair: Holden's
+LCP, `M` and `q`) or `:regime` (the regime formulation, src/obc_regime.jl); `diagnostics` is the `m_diagnostics` of `M` for
+`method = :news` (`nothing` otherwise, and for the regime formulation unless the tied-wedge reduction applies).
 """
 struct ObcNews
     method::Symbol
@@ -554,7 +584,10 @@ struct ObcNews
     wedges::Matrix{Float64}
     status::Vector{Symbol}
     info::Vector{Any}
+    formulation::Symbol
+    diagnostics::Any
 end
+ObcNews(a1, a2, a3, a4, a5, a6) = ObcNews(a1, a2, a3, a4, a5, a6, :lcp, nothing)
 
 # OccBin options that do not apply to the LCP methods (guesses and iteration controls of the regime iteration)
 const _OBC_IGNORED_DEFAULTS = (maxit=30, curb_retrench=false, periodic_solution=false, periodic_solution_threshold=1,
@@ -572,9 +605,17 @@ function _simulate_obc(ob::Occbin, shocks_in::AbstractMatrix; method::Symbol, ho
                        periods::Integer, check_ahead_periods::Integer, max_check_ahead_periods::Real, init, exo_pos,
                        ignored::NamedTuple, solver_options=NamedTuple(), fast_path::Bool=true)
     k, n, n_exo, m = ob.k, ob.n, ob.n_exo, ob.model
+    if method == :news                      # constraints that are not all complementary pairs: the regime formulation (src/obc_regime.jl)
+        cons = get!(() -> obc_constraints(ob), _OBC_CONS_CACHE, ob)
+        all(c -> c.class == :complementarity, cons) ||
+            return _simulate_regime(ob, shocks_in; method=method, horizon=horizon, tol=tol, raise=raise, periods=periods,
+                                    check_ahead_periods=check_ahead_periods, max_check_ahead_periods=max_check_ahead_periods,
+                                    init=init, exo_pos=exo_pos, ignored=ignored, solver_options=solver_options, fast_path=fast_path)
+    end
     changed = [String(key) for (key, v) in pairs(ignored) if !isequal(v, getfield(_OBC_IGNORED_DEFAULTS, key))]
     isempty(changed) || warn_once(m, "obc_method = $method: OccBin options of the regime iteration are not used (ignored): " * join(sort(changed), ", "))
     solve = OBC_SOLVERS[method]
+    is_news = method == :news
     sys = obc_system(ob; horizon=horizon, method=method)
     nc, T = length(sys.cons), sys.T
     solve(sys.M, sys.q0; tol=tol)                 # probe: q0 > 0, so a solver returns at once; a placeholder throws here
@@ -616,8 +657,15 @@ function _simulate_obc(ob::Occbin, shocks_in::AbstractMatrix; method::Symbol, ho
             st = :not_converged
             if fast_path                           # contract section 5: the shared active-set fast path first
                 y, st, info = solve_active_set(sys.M, q; tol=tol)
+                # news imposes the gaps beyond the horizon in its own programme: a fast-path answer that violates them goes there too
+                if st == :ok && is_news && size(ext.Mb, 1) > 0 && minimum(ext.q0b .+ ext.Qxb * xin .+ ext.Mb * y) < -tol
+                    st = :not_converged
+                end
             end
-            st == :ok || ((y, st, info) = solve(sys.M, q; tol=tol, solver_options...))
+            if st != :ok
+                extra = is_news ? (; Mb=ext.Mb, qb=ext.q0b .+ ext.Qxb * xin, n_c=nc) : (;)
+                (y, st, info) = solve(sys.M, q; tol=tol, extra..., solver_options...)
+            end
             st in OBC_STATUSES || error("OBC solver returned an unknown status $st")
             piv = hasproperty(info, :pivots) ? info.pivots : 0
             if st == :ok
@@ -647,8 +695,8 @@ function _simulate_obc(ob::Occbin, shocks_in::AbstractMatrix; method::Symbol, ho
         wedges[sp, :] = y
         push!(status, st)
         push!(infos, info)
-        bi = falses(L, k)
-        for j in 1:nc, t in 1:min(T, L)
+        bi = falses(max(L, T), k)                   # rows of the regime history: the whole spell, also when the horizon exceeds OccBin's path length
+        for j in 1:nc, t in 1:T
             bi[t, j] = y[(j-1)*T+t] > tol
         end
         push!(history, [_map_regime(view(bi, :, j)) for j in 1:k])
@@ -670,7 +718,7 @@ function _simulate_obc(ob::Occbin, shocks_in::AbstractMatrix; method::Symbol, ho
         yl = ob.P * yl + (t <= S ? ob.Q * shocks[t, :] : zeros(n))
         linear[t, :] = yl
     end
-    news = ObcNews(method, T, [c.name for c in sys.cons], wedges, status, infos)
+    news = ObcNews(method, T, [c.name for c in sys.cons], wedges, status, infos, :lcp, is_news ? obc_diagnostics(sys) : nothing)
     OccbinResult(piecewise .+ ob.ys', linear .+ ob.ys', Matrix{Float64}(shocks_in), history, ob.ys, iters, exo_idx, falses(S),
                  diag, m.endo_names, m.exo_names, ss_out, news)
 end
@@ -693,5 +741,17 @@ function _news_struct(nw::ObcNews)
     s.constraints = Cell(Any[c for c in nw.constraints], (1, length(nw.constraints)))
     s.wedges = Matrix{Float64}(nw.wedges)
     s.status = Cell(Any[String(x) for x in nw.status], (length(nw.status), 1))
+    s.formulation = String(nw.formulation)
+    d = nw.diagnostics
+    if d !== nothing
+        ds = MStruct()
+        ds.is_s = d.is_s
+        ds.is_p = d.is_p === nothing ? "undecided" : d.is_p
+        ds.symmetric_part_positive_definite = d.symmetric_part_positive_definite
+        ds.largest_p = Float64(d.largest_p)
+        ds.min_diag = d.min_diag
+        ds.max_exact = Float64(d.max_exact)
+        s.diagnostics = ds
+    end
     s
 end
