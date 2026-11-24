@@ -272,3 +272,61 @@ end
     println("  NKM likelihood evaluation: OccBin ", round(1000t0, digits=1), " ms, news ", round(1000t1, digits=1), " ms (", round(t0 / t1, digits=1), "x)")
     @test t1 < t0
 end
+
+@testset "estimation end to end: posterior mode and Metropolis-Hastings, OccBin vs news (small NKM)" begin
+    # pydyn's protocol (docs/OBC_ESTIMATION.md of pydyn): csminwel (mode_compute = 4) from the prior mean, then random-walk Metropolis-Hastings with
+    # the same random numbers. Measured on the full runs (script not in the repository): modes 5.6e-6 apart, log posterior 1518.4359618 both, 99 / 118
+    # evaluations; 2 x 2000 draws identical draw for draw, acceptance 0.331 / 0.338 both, 5 and 2 evaluations of 2000 differing by 0.024 / 0.045.
+    r, md = oref("occest_nkms_lik"), oref("occest_nkms_mode")
+    data = odata(r)
+    eo, en = mkest(NKMS, data; mode_compute=4), mkest(NKMS, data; mode_compute=4, obc_method="news")
+    to = @elapsed mo = with_logger(NullLogger()) do; JDyn.posterior_mode(eo; compute_hessian=false); end
+    tn = @elapsed mn = with_logger(NullLogger()) do; JDyn.posterior_mode(en; compute_hessian=false); end
+    @test mo.success && mn.success
+    @test isapprox(mo.log_posterior, 1518.4359618; atol=1e-6) && isapprox(mn.log_posterior, mo.log_posterior; atol=1e-6)
+    sd = sqrt.(diag(inv(md["hh"])))
+    @test all(abs.(mo.x .- mn.x) .< 1e-3 .* sd)
+    println("  mode search (small NKM): OccBin ", round(to, digits=1), " s, ", mo.nfev, " evaluations, ", mo.iterations, " iterations; news ", round(tn, digits=1), " s, ",
+            mn.nfev, " evaluations, ", mn.iterations, " iterations (", round(to / tn, digits=1), "x)")
+    @test tn < to
+    # a short chain pair: same seed, proposal, starting points
+    x, cov = vec(md["xparam1"]), inv(md["hh"])
+    mco = with_logger(NullLogger()) do; JDyn.sample_posterior(eo; replic=150, nblocks=2, mode=x, cov=cov, jscale=1.3, seed=20261124); end
+    mcn = with_logger(NullLogger()) do; JDyn.sample_posterior(en; replic=150, nblocks=2, mode=x, cov=cov, jscale=1.3, seed=20261124); end
+    @test mco.draws == mcn.draws && mco.accepted == mcn.accepted && mco.acceptance_rate == mcn.acceptance_rate
+    @test all(0.1 .< mcn.acceptance_rate .< 0.7)
+    println("  chains (2 x 150): identical draws, acceptance ", mcn.acceptance_rate)
+    # no vector in the chains fails in one solver only: replay the news likelihood at the visited vectors
+    vs = [mco.draws[c, i, :] for c in 1:2 for i in 1:3:150]
+    for th in vs
+        a, b = JDyn._dsge_likelihood(eo, th), JDyn._dsge_likelihood(en, th)
+        @test (a[2] == 0) == (b[2] == 0)
+        a[2] == 0 && @test abs(a[1] - b[1]) < 0.13                                  # knife-edge periods of the approximate class: <= 0.125 seen
+    end
+end
+
+@testset "estimation end to end: bf (regime solver), short Metropolis-Hastings, OccBin vs news" begin
+    # full runs: 2 x 1000 draws, jscale 0.15, prior variance: identical draws, acceptance 0.331 / 0.354, likelihood differences <= 2.3e-13 at all 1000 evaluations
+    # per chain, 55-63 of them fail with Dynare's code 304 in both; wall time OccBin 33-35 s vs news 12-13 s (2.5-3x: the failing evaluations cost the same)
+    dd = matread(joinpath(EDIR, "occest_bf_data.mat"))
+    data = hcat(Float64.(vec(dd["q"])), Float64.(vec(dd["r"])))
+    m = load_copy(joinpath(EDIR, "bf.mod"))
+    eo, en = mkest(m, data), mkest(m, data; obc_method="news")
+    cov = Matrix(Diagonal(eo.prior.p2 .^ 2))
+    to = @elapsed mco = with_logger(NullLogger()) do; JDyn.sample_posterior(eo; replic=150, nblocks=2, mode=eo.x0, cov=cov, jscale=0.15, seed=20261124); end
+    tn = @elapsed mcn = with_logger(NullLogger()) do; JDyn.sample_posterior(en; replic=150, nblocks=2, mode=eo.x0, cov=cov, jscale=0.15, seed=20261124); end
+    @test mco.draws == mcn.draws && mco.accepted == mcn.accepted
+    @test all(0.15 .< mcn.acceptance_rate .< 0.6)
+    # replay at the visited states. Whether a trial point fails (304) is not reproducible even for one solver called twice at the same vector (the filter's
+    # root search restarts from random points drawn from the model's Dynare generator, which advances with every call; repeated calls at one vector changed the outcome at 4 of 100 states), so only the finite evaluations
+    # are compared and the disagreements in "fails or not" are counted
+    nmis = 0
+    for k in 1:3:150, c in 1:2
+        th = mco.draws[c, k, :]
+        a, b = JDyn._dsge_likelihood(eo, th), JDyn._dsge_likelihood(en, th)
+        (a[2] == 0) == (b[2] == 0) || (nmis += 1)
+        a[2] == 0 && b[2] == 0 && @test abs(a[1] - b[1]) < 1e-9
+    end
+    @test nmis <= 10
+    println("  bf chains (2 x 150): OccBin ", round(to, digits=1), " s, news ", round(tn, digits=1), " s; acceptance ", mcn.acceptance_rate)
+end
