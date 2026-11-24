@@ -1,0 +1,29 @@
+IVF nkm: max |log posterior - Dynare| = 1.750777300912887e-11
+IVF rbc: max |log posterior - Dynare| = 5.684341886080801e-13
+IVF nkms: max |log posterior - Dynare| = 4.092726157978177e-12
+Test Summary:                      | Pass  Total   Time
+OccBin inversion filter likelihood |   51     51  14.9s
+PKF nkm: max |log posterior - Dynare| = 3.526565706124529e-10
+PKF rbc: max |log posterior - Dynare| = 7.958078640513122e-13
+PKF nkms: max |log posterior - Dynare| = 3.183231456205249e-12
+Test Summary:                             | Pass  Total   Time
+OccBin piecewise Kalman filter likelihood |   53     53  20.2s
+Test Summary:                        | Pass  Total  Time
+OccBin filter options against Dynare |    6      6  1.0s
+OccBin smoother NKM: smoothed 7.638334409421077e-14, shocks 4.903855099769316e-13
+OccBin shock decomposition NKM: 2.0088097851811426e-15
+Test Summary:                                | Pass  Total   Time
+OccBin smoother and shock decomposition: NKM |   27     27  14.8s
+Test Summary:                    | Pass  Total  Time
+OccBin smoother: two constraints |   24     24  3.4s
+OccBin Laplace: 1515.1669898334078 (Dynare 1515.166990), Hessian rel. diff 8.972644302612569e-10
+Test Summary:                                | Pass  Total  Time
+OccBin estimation: Hessian, Laplace, sampler |    4      4  4.4s
+Test Summary:  | Pass  Total  Time
+OccBin options |   14     14  3.4s
+Test Summary: | Pass  Total  Time
+regime table  |    4      4  0.2s
+Test Summary:                                             | Pass  Total   Time
+dynare(): OccBin estimation(smoother) fills oo_ as Dynare |   12     12  14.0s
+Test Summary:                                                   | Pass  Total  Time
+dynare(): occbin_solver regime history and occbin_write_regimes |    8      8  6.0s

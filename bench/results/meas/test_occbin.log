@@ -1,0 +1,9 @@
+rbc_occbin: max |piecewise - Dynare| = 8.881784197001252e-16, max |linear - Dynare| = 4.440892098500626e-16
+Test Summary:                 | Pass  Total   Time
+OccBin: rbc_occbin simulation |   21     21  19.5s
+borrcon_sim: max |piecewise - Dynare| = 2.220446049250313e-16
+Test Summary:                              | Pass  Total  Time
+OccBin: borrowing constraint (borrcon_sim) |    8      8  1.0s
+borrcon_curb: max |piecewise - Dynare| = 2.220446049250313e-16
+Test Summary:                               | Pass  Total  Time
+OccBin: borrowing constraint (borrcon_curb) |    8      8  1.0s

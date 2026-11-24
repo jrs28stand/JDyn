@@ -1,0 +1,21 @@
+Test Summary:                                                     | Pass  Total   Time
+OccBin options: borrowing constraint (one constraint, two shocks) |  123    123  48.2s
+Test Summary:                                                | Pass  Total  Time
+OccBin options from the .mod file (borrcon, simul_* options) |    9      9  2.0s
+Test Summary:                                   | Pass  Total  Time
+OccBin: two constraints, cycling regime guesses |  189    189  3.9s
+Test Summary:                                               | Pass  Total  Time
+OccBin: error_bind and error_relax of the constraints block |   27     27  1.3s
+Test Summary:                     | Pass  Total  Time
+OccBin IRFs (Dynare's occbin.irf) |   49     49  5.2s
+Test Summary:                                  | Pass  Total  Time
+OccBin: one constraint, cycling regime guesses |   49     49  0.8s
+Test Summary:                                                   | Pass  Total  Time
+OccBin: Dynare 7.2 defects, corrected by default and replicable |   10     10  0.5s
+
+largest differences from Dynare 7.2 (OccBin tests):
+  errors     3.11e-15
+  irf        8.88e-16
+  options    7.77e-16
+  periodic   3.11e-15
+  periodic1  7.77e-16

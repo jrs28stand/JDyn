@@ -1,0 +1,68 @@
+┌ Warning: obc_method = news: OccBin options of the regime iteration are not used (ignored): curb_retrench, maxit
+└ @ JDyn /home/claude/work/jdyn-meas/src/model.jl:761
+┌ Warning: obc_method = news: OccBin options of the regime iteration are not used (ignored): curb_retrench, maxit
+└ @ JDyn /home/claude/work/jdyn-meas/src/model.jl:761
+┌ Warning: obc_method = news: OccBin options of the regime iteration are not used (ignored): curb_retrench, maxit
+└ @ JDyn /home/claude/work/jdyn-meas/src/model.jl:761
+Test Summary:                | Pass  Total  Time
+HiGHS wrapper (src/highs.jl) |    7      7  1.8s
+Test Summary:                                 | Pass  Total   Time
+news solver and diagnostics on small problems |  362    362  10.5s
+nk_zlb.mod                file shocks: max |news - occbin| = 1.1102230246251565e-16, periods binding: 7
+nk_zlb.mod                random 200: max |news - occbin| = 4.440892098500626e-16, periods binding: 45
+Test Summary:              | Pass  Total   Time
+news = OccBin (nk_zlb.mod) |   12     12  32.0s
+nk_zlb2.mod               file shocks: max |news - occbin| = 1.5265566588595902e-16, periods binding: 7
+nk_zlb2.mod               random 200: max |news - occbin| = 6.661338147750939e-16, periods binding: 59
+Test Summary:               | Pass  Total  Time
+news = OccBin (nk_zlb2.mod) |   12     12  6.2s
+obc_zlb.mod               file shocks: max |news - occbin| = 1.6653345369377348e-16, periods binding: 1
+obc_zlb.mod               random 200: max |news - occbin| = 6.661338147750939e-16, periods binding: 66
+Test Summary:               | Pass  Total  Time
+news = OccBin (obc_zlb.mod) |   12     12  1.7s
+obc_zlb2.mod              file shocks: max |news - occbin| = 3.3306690738754696e-16, periods binding: 4
+obc_zlb2.mod              random 200: max |news - occbin| = 1.1102230246251565e-15, periods binding: 70
+Test Summary:                | Pass  Total   Time
+news = OccBin (obc_zlb2.mod) |   12     12  15.4s
+borrcon.mod               file shocks: max |news - occbin| = 2.220446049250313e-16, periods binding: 3
+borrcon.mod               random 200: max |news - occbin| = 4.9960036108132044e-15, periods binding: 152
+Test Summary:               | Pass  Total  Time
+news = OccBin (borrcon.mod) |   12     12  9.4s
+borrcon_0_std_shocks.mod  file shocks: max |news - occbin| = 2.220446049250313e-16, periods binding: 3
+borrcon_0_std_shocks.mod  random 200: max |news - occbin| = 4.440892098500626e-16, periods binding: 106
+Test Summary:                            | Pass  Total  Time
+news = OccBin (borrcon_0_std_shocks.mod) |   12     12  3.9s
+NKM_0_std_shocks.mod      random 200: max |news - occbin| = 1.176836406102666e-13, periods binding: 55
+Test Summary:                        | Pass  Total  Time
+news = OccBin (NKM_0_std_shocks.mod) |    6      6  3.2s
+borrcon_sim.mod           file shocks: max |news - occbin| = 2.220446049250313e-16, periods binding: 3
+borrcon_sim.mod           random 200: max |news - occbin| = 4.9960036108132044e-15, periods binding: 152
+Test Summary:                   | Pass  Total  Time
+news = OccBin (borrcon_sim.mod) |   12     12  6.4s
+borrcon_curb.mod          file shocks: max |news - occbin| = 2.220446049250313e-16, periods binding: 3
+borrcon_curb.mod          random 200: max |news - occbin| = 4.9960036108132044e-15, periods binding: 152
+Test Summary:                    | Pass  Total  Time
+news = OccBin (borrcon_curb.mod) |   12     12  6.5s
+occ_borrcon.mod           random 200: max |news - occbin| = 5.10702591327572e-15, periods binding: 141
+Test Summary:                   | Pass  Total  Time
+news = OccBin (occ_borrcon.mod) |    6      6  3.5s
+obc_zlb M (horizon 20, 60 rows) vs obc_zlb.mat: max abs difference 1.0602629885170245e-14
+obc_zlb wedges (news, integer programme) vs GLPK: 6.938893903907228e-17
+obc_zlb path (news, pure integer programme) vs Dynare's OccBin: 1.214306433183765e-17
+Test Summary:                     | Pass  Total  Time
+news against test/obc/obc_zlb.mat |    9      9  0.8s
+Test Summary:                                         | Pass  Total   Time
+regime formulation: R equals M, equals LCP and OccBin |   18     18  10.3s
+bf_ppf.mod  regime formulation, random 200: max |news - occbin| = 4.385380947269368e-15, periods binding: 62
+bf.mod      regime formulation, random 200: max |news - occbin| = 4.385380947269368e-15, periods binding: 62
+Test Summary:                                       | Pass  Total  Time
+regime formulation on Dynare's multi-equation files |   14     14  4.0s
+rbc_occbin regime formulation (horizon 130): max |news - occbin| = 8.881784197001252e-16, periods binding: 89
+Test Summary:                                                                | Pass  Total  Time
+regime formulation: Dynare's rbc_occbin (two constraints, 169 shock periods) |    4      4  0.6s
+sw LCP M (horizon 40): diagonal range (0.8127218444712031, 0.9453859491513863), is_s false, is_p false, largest_p 10
+sw eb = -4: single-spell solutions [(0, 9), (0, 13)]; news vs OccBin max path difference 3.0269120543380268e-12
+Test Summary:                                                          | Pass  Total  Time
+Smets-Wouters benchmark: tied wedges, multiple equilibria, no solution |   16     16  3.5s
+Test Summary:                                         | Pass  Total  Time
+news: results struct, timing hook, refusals, defaults |    9      9  6.3s

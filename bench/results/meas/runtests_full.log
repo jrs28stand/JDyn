@@ -1,0 +1,795 @@
+=== test_matlab.jl
+  extra semantics: 376 cases, 58 refused (Unsupported)
+Test Summary: | Pass  Total   Time
+semantics     |  515    515  39.1s
+Test Summary: | Pass  Total  Time
+.mod files    |   38     38  9.2s
+  nk_baseline steady state per call (interpreted): 2455 us
+Test Summary:                  | Pass  Total  Time
+steady-state files and helpers |   23     23  5.4s
+Test Summary: | Pass  Total  Time
+review        |   89     89  6.5s
+Test Summary:                                                                | Pass  Total  Time
+interpreter fixes of the second review (REVIEW2 R02-R10, R19, R20, R22, R32) |   20     20  0.1s
+Test Summary:                                                                 | Pass  Total  Time
+built-ins added for the Dynare test suite (values checked against Octave 8.4) |   32     32  3.9s
+Test Summary:                                                                     | Pass  Total  Time
+steady_state_model runs with MATLAB semantics in a bare module (REVIEW2 R22, R13) |   13     13  2.2s
+Test Summary:                                | Pass  Total  Time
+mutator list is complete for the Dynare tree |    1      1  0.9s
+1 | examples/optimal_policy/nk_ramsey_steady_file.mod | refused | 0.3 s | ModelError: ramsey_model (optimal policy) is not supported by JDyn: the Ramsey problem's steady state and policy rule are not computed
+2 | examples/reporting/collard_2001_reporting.mod | identical | 0.1 s | 
+3 | examples/stochastic_simulations/collard_2001_analytical_steady_state.mod | identical | 0.1 s | 
+4 | examples/stochastic_simulations/collard_2001_theoretical_moments.mod | identical | 0.1 s | 
+5 | examples/stochastic_simulations/nk_baseline.mod | identical | 0.3 s | 
+6 | tests/AIM/fs2000_b1L1L.mod | identical | 0.1 s | 
+7 | tests/AIM/fs2000_b1L1L_AIM.mod | identical | 0.3 s | 
+8 | tests/arima/mod1.mod | identical | 0.1 s | 
+9 | tests/arima/mod2.mod | identical | 0.1 s | 
+10 | tests/bgp/fs2000/fs2000.mod | identical | 0.2 s | 
+11 | tests/bgp/nk-1/nk.mod | identical | 0.1 s | 
+12 | tests/bgp/ramsey-1/ramsey.mod | identical | 0.1 s | 
+13 | tests/bgp/solow-1/solow.mod | identical | 0.1 s | 
+14 | tests/block_bytecode/ireland.mod | identical | 0.3 s | 
+15 | tests/conditional_variance_decomposition/example3.mod | identical | 0.1 s | 
+16 | tests/decision_rules/ar_qz_test.mod | identical | 0.1 s | 
+17 | tests/decision_rules/example1.mod | identical | 0.5 s | 
+18 | tests/decision_rules/example1_use_dll.mod | identical | 0.3 s | 
+19 | tests/decision_rules/k_order/burnside_k_order.mod | identical | 0.8 s | 
+20 | tests/decision_rules/second_order/burnside_1.mod | identical | 0.2 s | 
+21 | tests/decision_rules/second_order/ds1.mod | identical | 0.1 s | 
+22 | tests/decision_rules/second_order/ds2.mod | identical | 0.1 s | 
+23 | tests/decision_rules/third_order/FV2011.mod | identical | 0.5 s | 
+24 | tests/deterministic_simulations/Irreversible_investment.mod | identical | 0.3 s | 
+25 | tests/deterministic_simulations/Irreversible_investment_leadlag.mod | identical | 0.2 s | 
+26 | tests/deterministic_simulations/Solow_no_varexo.mod | identical | 0.1 s | 
+27 | tests/deterministic_simulations/homotopy_endval_steady_linearization.mod | identical | 0.1 s | 
+28 | tests/deterministic_simulations/homotopy_exclude_varexo.mod | identical | 0.1 s | 
+29 | tests/deterministic_simulations/homotopy_linearization_condpaths.mod | identical | 0.1 s | 
+30 | tests/deterministic_simulations/homotopy_marginal_linearization.mod | identical | 0.1 s | 
+31 | tests/deterministic_simulations/homotopy_marglinearization_condpaths.mod | identical | 0.1 s | 
+32 | tests/deterministic_simulations/initialization.mod | identical | 0.1 s | 
+33 | tests/deterministic_simulations/initval_endval_blocks/histval_initval_test.mod | identical | 0.1 s | 
+34 | tests/deterministic_simulations/initval_endval_blocks/initval_endval_test.mod | identical | 0.1 s | 
+35 | tests/deterministic_simulations/lbj/rbc.mod | identical | 0.2 s | 
+36 | tests/deterministic_simulations/linear_state_space_arma_condpaths.mod | identical | 0.1 s | 
+37 | tests/deterministic_simulations/multiple_lead_lags/AR2.mod | identical | 0.1 s | 
+38 | tests/deterministic_simulations/multiple_lead_lags/AR2_forward.mod | identical | 0.1 s | 
+39 | tests/deterministic_simulations/multiple_lead_lags/sim_base.mod | identical | 0.1 s | 
+40 | tests/deterministic_simulations/multiple_lead_lags/sim_endo_lead_lag_aux_vars.mod | identical | 0.1 s | 
+41 | tests/deterministic_simulations/multiple_lead_lags/sim_exo_lead_lag_aux_vars.mod | identical | 0.1 s | 
+42 | tests/deterministic_simulations/multiple_lead_lags/sim_lead_lag.mod | identical | 0.1 s | 
+43 | tests/deterministic_simulations/multiple_lead_lags/sim_lead_lag_aux_vars.mod | identical | 0.1 s | 
+44 | tests/deterministic_simulations/pfwee_homotopy_linearization.mod | identical | 0.1 s | 
+45 | tests/deterministic_simulations/pfwee_homotopy_linearization_condpaths.mod | identical | 0.1 s | 
+46 | tests/deterministic_simulations/purely_backward/ar1.mod | identical | 0.1 s | 
+47 | tests/deterministic_simulations/purely_forward/ar1.mod | identical | 0.1 s | 
+48 | tests/deterministic_simulations/purely_forward/nk.mod | identical | 0.1 s | 
+49 | tests/deterministic_simulations/ramst_mshocks.mod | identical | 0.1 s | 
+50 | tests/deterministic_simulations/ramst_mshocks_relative_to_initval.mod | identical | 0.1 s | 
+51 | tests/deterministic_simulations/ramst_mshocks_vec.mod | identical | 0.1 s | 
+52 | tests/deterministic_simulations/ramst_pf_controlled_paths.mod | identical | 0.1 s | 
+53 | tests/deterministic_simulations/ramst_pf_controlled_paths_lbj.mod | identical | 0.1 s | 
+54 | tests/deterministic_simulations/ramst_pf_controlled_paths_ssa7.mod | identical | 0.1 s | 
+55 | tests/deterministic_simulations/ramst_pfwee_controlled_paths.mod | identical | 0.1 s | 
+56 | tests/deterministic_simulations/ramst_shock_paths_controlled.mod | identical | 0.1 s | 
+57 | tests/deterministic_simulations/rbc_det.mod | identical | 0.2 s | 
+58 | tests/deterministic_simulations/rbc_det1.mod | identical | 0.1 s | 
+59 | tests/deterministic_simulations/rbc_det2.mod | identical | 0.1 s | 
+60 | tests/deterministic_simulations/rbc_det3.mod | identical | 0.1 s | 
+61 | tests/deterministic_simulations/rbc_det4.mod | identical | 0.2 s | 
+62 | tests/deterministic_simulations/rbc_det5.mod | identical | 0.2 s | 
+63 | tests/deterministic_simulations/rbc_det6.mod | identical | 0.2 s | 
+64 | tests/deterministic_simulations/rbc_det_exo_lag_2a.mod | identical | 0.2 s | 
+65 | tests/deterministic_simulations/simul_ZLB_purely_forward.mod | identical | 0.2 s | 
+66 | tests/dsge-var/simul_hybrid.mod | identical | 0.1 s | 
+67 | tests/dynare-command-options/ramst.mod | identical | 0.1 s | 
+68 | tests/ecb/backward-models/irf/solow_2.mod | identical | 0.1 s | 
+69 | tests/ep/linearmodel0.mod | identical | 0.1 s | 
+70 | tests/ep/linearmodel1.mod | identical | 0.1 s | 
+71 | tests/ep/rbc_mc.mod | identical | 0.1 s | 
+72 | tests/epilogue/example1.mod | identical | 0.1 s | 
+73 | tests/equation_tags/example1_with_tags.mod | identical | 0.1 s | 
+74 | tests/estimation/univariate/nls/dynamicmodel1.mod | identical | 0.1 s | 
+75 | tests/estimation/univariate/nls/dynamicmodel2.mod | identical | 0.1 s | 
+76 | tests/estimation/univariate/nls/staticmodel.mod | identical | 0.1 s | 
+77 | tests/exogenous-observed-variables/preprocessor.mod | identical | 0.1 s | 
+78 | tests/expectations/expectation.mod | identical | 0.1 s | 
+79 | tests/expectations/expectation_nested.mod | identical | 0.1 s | 
+80 | tests/expectations/expectation_ss.mod | identical | 0.1 s | 
+81 | tests/expectations/expectation_ss_old.mod | identical | 0.2 s | 
+82 | tests/external_function/benchmark.mod | identical | 0.1 s | 
+83 | tests/forecast/forecast_test_AR1.mod | identical | 0.1 s | 
+84 | tests/forecast/fs2000_forecast.mod | identical | 0.2 s | 
+85 | tests/histval_initval_file/ramst_data_generate.mod | identical | 0.3 s | 
+86 | tests/histval_initval_file/ramst_initval_file_with_dseries.mod | identical | 0.2 s | 
+87 | tests/histval_initval_file/sim_exo_lead_lag.mod | identical | 0.1 s | 
+88 | tests/histval_initval_file/sim_exo_lead_lag_initvalf.mod | identical | 0.1 s | 
+89 | tests/irfs/example1_unit_std.mod | identical | 0.1 s | 
+90 | tests/kalman_filter_smoother/gen_data.mod | identical | 0.1 s | 
+91 | tests/kalman_filter_smoother/test_compute_Pinf_Pstar_data.mod | identical | 0.1 s | 
+92 | tests/kalman_skewed/skew_in_shocks_block.mod | identical | 0.1 s | 
+93 | tests/lmmcp/SMOPEC.mod | identical | 0.1 s | 
+94 | tests/lmmcp/purely_backward.mod | identical | 0.1 s | 
+95 | tests/lmmcp/purely_forward.mod | identical | 0.1 s | 
+96 | tests/lmmcp/rbcii.mod | identical | 0.1 s | 
+97 | tests/log_transform/example1.mod | identical | 0.1 s | 
+98 | tests/loglinear/example4_loglinear_lagged_exogenous.mod | identical | 0.1 s | 
+99 | tests/loglinear/example4_loglinear_lagged_exogenous_a.mod | identical | 0.1 s | 
+100 | tests/macro_processor/example1_macro.mod | identical | 0.3 s | 
+101 | tests/macro_processor/test_ifndef.mod | identical | 0.1 s | 
+102 | tests/minimal_state_space_system/as2007_minimal.mod | identical | 0.1 s | 
+103 | tests/model-inversion/bk-1/solow_ces.mod | identical | 0.3 s | 
+104 | tests/model-inversion/bk-2/solow_ces.mod | identical | 0.1 s | 
+105 | tests/model-inversion/bk-9/msm1.mod | identical | 0.1 s | 
+106 | tests/model-inversion/bk-9/msm2.mod | identical | 0.1 s | 
+107 | tests/model-inversion/bk-diff-2/varmodel.mod | identical | 0.1 s | 
+108 | tests/model-inversion/bk-diff-3/varmodel.mod | identical | 0.1 s | 
+109 | tests/moments/example1_one_sided_hp_test.mod | identical | 0.1 s | 
+110 | tests/moments/example1_order2_pruning.mod | identical | 0.1 s | 
+111 | tests/moments/example1_var_decomp.mod | identical | 0.1 s | 
+112 | tests/moments/test_AR1_spectral_density.mod | identical | 0.1 s | 
+113 | tests/on-the-fly/ex1.mod | identical | 0.2 s | 
+114 | tests/on-the-fly/ex2.mod | identical | 0.1 s | 
+115 | tests/on-the-fly/ex3.mod | identical | 0.1 s | 
+116 | tests/on-the-fly/ex4.mod | identical | 0.1 s | 
+117 | tests/on-the-fly/ex5.mod | identical | 0.1 s | 
+118 | tests/on-the-fly/ex6.mod | identical | 0.2 s | 
+119 | tests/partial_information/Partial_steady_state_model.mod | identical | 0.2 s | 
+120 | tests/partitioning/partitions.mod | identical | 0.1 s | 
+121 | tests/preprocessor_checks/comments.mod | identical | 0.1 s | 
+122 | tests/risky_ss/example1.mod | identical | 0.1 s | 
+123 | tests/risky_ss/example1_korder.mod | identical | 0.1 s | 
+124 | tests/risky_ss/example1_risky_2.mod | identical | 0.1 s | 
+125 | tests/risky_ss/example1_risky_3.mod | identical | 0.1 s | 
+126 | tests/solve_algo_12_14/simul_backward_reference.mod | identical | 0.2 s | 
+127 | tests/stat_functions/example1_abs_sign.mod | identical | 0.1 s | 
+128 | tests/stat_functions/ramst_normcdf_and_friends_bytecode.mod | identical | 0.2 s | 
+129 | tests/stat_functions/ramst_normcdf_and_friends_mfile.mod | identical | 0.2 s | 
+130 | tests/stat_functions/ramst_normcdf_and_friends_use_dll.mod | identical | 0.2 s | 
+131 | tests/steady_state/example1_block_trust_region.mod | identical | 0.1 s | 
+132 | tests/steady_state/example1_trust_region.mod | identical | 0.1 s | 
+133 | tests/steady_state/homotopy/homotopy1_test.mod | identical | 0.1 s | 
+134 | tests/steady_state/homotopy/homotopy2_test.mod | identical | 0.1 s | 
+135 | tests/steady_state/homotopy/homotopy3_test.mod | identical | 0.5 s | 
+136 | tests/steady_state/homotopy/homotopy_from_initval_to_endval.mod | identical | 0.1 s | 
+137 | tests/steady_state/ramst_solve_algo_0.mod | identical | 0.1 s | 
+138 | tests/steady_state/walsh1_old_ss.mod | identical | 0.2 s | 
+139 | tests/steady_state_operator/block.mod | identical | 0.1 s | 
+140 | tests/steady_state_operator/bytecode_test.mod | identical | 0.1 s | 
+141 | tests/steady_state_operator/standard.mod | identical | 0.1 s | 
+142 | tests/steady_state_operator/use_dll.mod | identical | 0.1 s | 
+143 | tests/stochastic-backward-models/solow_cd.mod | identical | 0.1 s | 
+144 | tests/stochastic-backward-models/solow_cd_with_steadystate.mod | identical | 0.1 s | 
+145 | tests/stochastic-backward-models/solow_ces.mod | identical | 0.1 s | 
+146 | tests/stochastic_purely_backward/rs.mod | identical | 0.1 s | 
+147 | tests/stochastic_simulations/example1.mod | identical | 0.1 s | 
+148 | tests/stochastic_simulations/example1_irf_shocks.mod | identical | 0.1 s | 
+149 | tests/stochastic_simulations/example1_noprint.mod | identical | 0.1 s | 
+150 | tests/stochastic_simulations/example1long.mod | identical | 0.2 s | 
+151 | tests/stochastic_simulations/example2_simul_replic.mod | identical | 0.2 s | 
+152 | tests/stochastic_simulations/example2long.mod | identical | 0.2 s | 
+153 | tests/stochastic_simulations/example2long_use_dll.mod | identical | 0.2 s | 
+154 | tests/stochastic_simulations/example_seeds.mod | identical | 0.1 s | 
+155 | tests/stochastic_simulations/fs2000_k_order_simul.mod | identical | 0.4 s | 
+156 | tests/stochastic_simulations/pruning/AnSchorfheide_pruned_state_space.mod | identical | 1.0 s | 
+157 | tests/stochastic_simulations/pruning/fs2000_pruning.mod | identical | 0.5 s | 
+corpus: identical 156, refused 1
+Test Summary: | Pass  Total   Time
+corpus        |  315    315  22.8s
+=== test_first_order.jl
+collard_2001_simulated_moments: max |ys - Dynare| = 1.604028755236575e-6, residual 1.7763568394002505e-15 (Dynare's 1.050768586141615e-6)
+collard_2001_simulated_moments: max |d ghx| = 7.438494264988549e-15, max |d ghu| = 7.327471962526033e-15
+Test Summary:                               | Pass  Broken  Total  Time
+first order: collard_2001_simulated_moments |   10       1     11  2.5s
+rbc_occbin: max |ys - Dynare| = 0.0, residual 4.440892098500626e-16 (Dynare's 4.440892098500626e-16)
+rbc_occbin: max |d ghx| = 3.9968028886505635e-15, max |d ghu| = 4.884981308350689e-15
+Test Summary:           | Pass  Broken  Total  Time
+first order: rbc_occbin |    9       1     10  0.2s
+schorfheide_2000_sim: max |ys - Dynare| = 0.0, residual 8.881784197001252e-16 (Dynare's 8.881784197001252e-16)
+schorfheide_2000_sim: max |d ghx| = 7.993605777301127e-15, max |d ghu| = 7.271960811294775e-15
+schorfheide_2000_sim: 28 IRFs, max |diff| = 5.169475958410885e-16
+Test Summary:                     | Pass  Total  Time
+first order: schorfheide_2000_sim |   37     37  0.6s
+=== test_examples.jl
+estimation/gali_2015                                         | matches Dynare                         | ys 0.0e+00, rules 2.9e-14
+estimation/rbc_irf_matching                                  | solved, no reference                   | ys 0.0e+00
+estimation/schorfheide_2000                                  | matches Dynare                         | ys 0.0e+00, rules 9.0e-14
+heterogeneity/hank_one_asset                                 | not supported                          | heterogeneous agents
+macroprocessor/bkk_1992                                      | matches Dynare                         | ys 2.0e-09, rules at Dynare's ys, rules 3.6e-12
+occbin/rbc_occbin                                            | matches Dynare                         | ys 0.0e+00, rules 4.9e-15
+optimal_policy/nk_ramsey_osr                                 | load failed                            | ModelError: ramsey_model (optimal policy) is not supported by JDyn: the Ramsey problem's steady state and policy rule are not computed
+perfect_foresight/perfect_foresight_expectation_errors       | matches Dynare                         | perfect foresight path 2.1e-14 (5 Newton steps)
+perfect_foresight/perfect_foresight_rbc                      | matches Dynare                         | perfect foresight path 2.8e-14 (4 Newton steps)
+reporting/collard_2001_reporting                             | matches Dynare                         | ys 0.0e+00, rules 2.2e-14, order 2 6.4e-14
+semistructural/pac_model                                     | not supported                          | PAC / semi-structural models (dseries)
+stochastic_simulations/aguiar_gopinath_2007_trend            | matches Dynare                         | ys 2.9e-07, rules at Dynare's ys, rules 5.9e-12
+stochastic_simulations/collard_2001_analytical_steady_state  | matches Dynare                         | ys 7.1e-15, rules 9.8e-15, order 2 6.4e-14
+stochastic_simulations/collard_2001_simulated_moments        | matches Dynare                         | ys 1.6e-06, rules at Dynare's ys, rules 7.4e-15, order 2 4.3e-14
+stochastic_simulations/collard_2001_theoretical_moments      | matches Dynare                         | ys 0.0e+00, rules 2.2e-14, order 2 6.5e-14
+stochastic_simulations/nk_baseline                           | matches Dynare                         | ys 8.9e-16, rules 3.5e-10
+stochastic_simulations/schorfheide_2000_nonstationary        | matches Dynare                         | ys 0.0e+00, rules 7.1e-15, order 2 6.7e-15
+Test Summary:   | Pass  Total   Time
+Dynare examples |   31     31  10.9s
+=== test_loop.jl
+parameter loop: max |d ys|, |d ghx|, |d ghu|, |d irf| = [0.0, 9.547918011776346e-15, 3.630429290524262e-14, 3.1363800445660672e-15]
+Test Summary:                    | Pass  Total  Time
+parameter loop without reloading |   25     25  1.6s
+nk_baseline with a Julia steady-state function: max diff = 2.7008155711882864e-9
+Test Summary:                                             | Pass  Total  Time
+steady-state function updates parameters (Julia function) |   10     10  1.1s
+nk_baseline with its _steadystate.m: max diff = 3.2784939207886055e-9
+Test Summary:                                                      | Pass  Total  Time
+steady-state file updates parameters (_steadystate.m, interpreted) |   10     10  0.8s
+collard helper (Julia function): max |d ys| = 1.5987211554602254e-14, max |d ghx| = 1.1546319456101628e-14
+Test Summary:                                          | Pass  Total  Time
+helper function in steady_state_model (Julia function) |    4      4  0.3s
+collard helper (.m helper): max |d ys| = 7.105427357601002e-15, max |d ghx| = 1.1546319456101628e-14
+Test Summary:                                     | Pass  Total  Time
+helper function in steady_state_model (.m helper) |    4      4  0.2s
+set_param! + steady state + first order: 15 vars 0.052 ms; 28 vars 0.380 ms; 42 vars 1.618 ms
+Test Summary: | Pass  Total  Time
+timing        |    1      1  2.2s
+=== test_moments.jl
+Test Summary:                      | Pass  Total   Time
+theoretical moments against Dynare |  276    276  12.4s
+Test Summary:                                    | Pass  Total  Time
+theoretical moments with Dynare's decision rules |   66     66  1.7s
+Test Summary:                                          | Pass  Total  Time
+default variable list, options and auxiliary variables |    9      9  2.1s
+Test Summary:                                    | Pass  Total  Time
+unit root gives NaN for non-stationary variables |   21     21  2.1s
+Test Summary:                    | Pass  Total  Time
+simulated moments against Dynare |  180    180  4.0s
+Test Summary:                                                       | Pass  Total  Time
+stoch_simul_moments reproduces Dynare's simulation (mom_collard-s1) |    5      5  2.3s
+Test Summary:                                                              | Pass  Total  Time
+stoch_simul_moments reproduces Dynare's simulation (mom_schorfheide-s1_hp) |    5      5  1.0s
+Test Summary:                                               | Pass  Total  Time
+lyapunov_symm (independent checks) and unit-root projection |    9      9  1.2s
+Test Summary:                   | Pass  Total  Time
+filters against direct formulas |    6      6  1.2s
+Test Summary:                                 | Pass  Total  Time
+variance decomposition with correlated shocks |    5      5  0.8s
+Test Summary:                                             | Pass  Total  Time
+conditional variance decomposition with measurement error |   10     10  2.7s
+Test Summary:              | Pass  Total  Time
+unsupported requests raise |    4      4  1.4s
+largest relative differences (|diff| / max |reference|) by quantity:
+                                           0.00e+00
+  autocorr                                 1.97e-13
+  conditional_variance_decomposition       1.20e-14
+  conditional_variance_decomposition_ME    1.21e-14
+  corr                                     1.93e-13
+  gamma_y vd                               1.01e-14
+  mean                                     0.00e+00
+  sim autocorr                             2.36e-11
+  sim corr                                 7.91e-12
+  sim kurtosis                             9.82e-11
+  sim mean                                 7.43e-16
+  sim skewness                             2.51e-10
+  sim std                                  6.00e-12
+  sim var                                  6.00e-12
+  sim vd                                   5.76e-12
+  stoch_simul var                          2.24e-12
+  stoch_simul vd                           1.25e-11
+  var                                      3.22e-13
+  variance                                 3.22e-13
+  variance decomposition                   1.01e-14
+  vd with ME                               5.11e-14
+=== test_auxiliary.jl
+Test Summary:                            | Pass  Total  Time
+auxiliary variables created as in Dynare |    3      3  0.1s
+aux_a: max |d ys| = 0.0
+Test Summary:                          | Pass  Total  Time
+steady state fills auxiliary variables |    1      1  0.2s
+aux_a: max |d ghx| = 2.3092638912203256e-14, |d ghu| = 2.7977620220553945e-14, |d irf| = 3.0531133177191805e-15, |d sim| = 7.105427357601002e-15
+Test Summary:              | Pass  Total  Time
+first-order rules and IRFs |    6      6  0.4s
+Test Summary:                        | Pass  Total  Time
+local variables equal hand expansion |    4      4  0.2s
+Test Summary:                                          | Pass  Total  Time
+steady-state function need not set auxiliary variables |    1      1  0.3s
+Test Summary:                                   | Pass  Total  Time
+numerical steady state with auxiliary variables |    1      1  0.2s
+Test Summary:             | Broken  Total  Time
+perfect foresight example |      1      1  0.0s
+=== test_loglinear.jl
+Test Summary:           | Pass  Total  Time
+log mask follows Dynare |    2      2  0.2s
+loglinear: max |d ghx| = 4.894418204060003e-13, |d ghu| = 4.107825191113079e-13
+Test Summary:                  | Pass  Total  Time
+rules and steady state in logs |    6      6  0.4s
+loglinear: max |d sim| = 3.552713678800501e-14
+Test Summary:       | Pass  Total  Time
+IRFs and simulation |   11     11  0.2s
+Test Summary: | Pass  Total  Time
+moments       |    5      5  1.3s
+Test Summary:     | Pass  Total  Time
+levels on request |    2      2  0.3s
+Test Summary:                        | Pass  Total  Time
+non-positive steady state is refused |    2      2  0.3s
+=== test_review.jl
+Test Summary:           | Pass  Total  Time
+comparisons are numeric |    1      1  0.1s
+Test Summary:       | Pass  Total  Time
+chained comparisons |    1      1  0.1s
+Test Summary:                  | Pass  Total  Time
+max/min derivatives: max(k, 0) |    1      1  0.1s
+Test Summary:                  | Pass  Total  Time
+max/min derivatives: min(k, 1) |    1      1  0.1s
+Test Summary:                  | Pass  Total  Time
+max/min derivatives: max(0, k) |    1      1  0.1s
+Test Summary:                                                      | Pass  Total  Time
+shock blocks follow Dynare's order: shocks; var e1; stderr 2; end; |    1      1  0.1s
+Test Summary:                                                                                   | Pass  Total  Time
+shock blocks follow Dynare's order: shocks(overwrite); var e1; stderr 2; var e2; stderr 3; end; |    1      1  0.4s
+Test Summary:                                                     | Pass  Total  Time
+shock blocks follow Dynare's order: shocks; var e1,e2 = 0.1; end; |    1      1  0.0s
+Test Summary:            | Pass  Total  Time
+native parameter updates |    1      1  0.0s
+Test Summary:                                                           | Pass  Total  Time
+purely backward and forward models: c = a*c(-1) + e; k = 0.9*k(-1) + c; |    2      2  0.1s
+Test Summary:                                                           | Pass  Total  Time
+purely backward and forward models: c = a*c(+1) + e; k = 0.9*k(+1) + c; |    2      2  0.1s
+Test Summary:                                              | Pass  Total  Time
+numerical steady state with auxiliary variables (bkk_1992) |    3      3  0.7s
+Test Summary:                       | Pass  Total  Time
+initval may refer to earlier values |    1      1  0.1s
+Test Summary:            | Pass  Total  Time
+model without statements |    1      1  0.1s
+Test Summary:                        | Pass  Total  Time
+variable named like a temporary term |    1      1  0.1s
+Test Summary:                        | Pass  Total  Time
+qz_criterium honoured by first_order |    5      5  1.3s
+Test Summary:                   | Pass  Total  Time
+unsupported solver options warn |    3      3  0.4s
+Test Summary:              | Pass  Total  Time
+qz_zero_threshold honoured |    1      1  0.1s
+Test Summary:                                      | Pass  Total  Time
+stoch_simul options the moments do not act on warn |    3      3  1.4s
+=== test_plotting.jl
+FAILED: LoadError: SystemError: opening file "/root/jl/src/Dynare.jl/test/models/example1/example1.mod": No such file or directory
+in expression starting at /home/claude/work/jdyn-meas/test/test_plotting.jl:5
+=== test_korder.jl
+Test Summary:          | Pass  Total  Time
+k_order decision rules |   37     37  4.6s
+Test Summary:                       | Pass  Total  Time
+simulation and IRFs, orders 2 and 3 |   19     19  1.7s
+  GIRF irf2_pruned                         6.66e-16
+  GIRF irf2_unpruned                       1.33e-15
+  GIRF irf3_pruned                         5.00e-16
+  GIRF irf3_unpruned                       5.55e-16
+  GIRF irf_dynare (Dynare's irf.m)         4.44e-16
+  GIRF irf_dynare_order2 (Dynare's irf.m)  4.08e-16
+  GIRF irf_dynare_unpruned (Dynare's irf.m) 2.22e-16
+  order 1 vs first_order                   3.38e-14
+  rules order 2                            4.26e-14
+  rules order 2, aux_a                     7.03e-13
+  rules order 3                            1.23e-13
+  simulation aux_a order 1                 4.97e-14
+  simulation aux_a order 2 pruned          5.33e-14
+  simulation y1                            3.61e-15
+  simulation y2_pruned                     4.36e-15
+  simulation y2_unpruned                   4.88e-15
+  simulation y3_pruned                     5.33e-15
+  simulation y3_unpruned                   5.33e-15
+Test Summary:   | Total  Time
+max differences |     0  0.0s
+=== test_moments_order2.jl
+Test Summary:                                                   | Pass  Total  Time
+order-2 theoretical moments against Dynare (own decision rules) |  195    195  6.8s
+Test Summary:                                            | Pass  Total  Time
+order-2 theoretical moments with Dynare's decision rules |   45     45  0.5s
+Test Summary:                                | Pass  Total  Time
+simulated moments at order 2 (Dynare's path) |   51     51  2.2s
+Test Summary:                                | Pass  Total  Time
+stoch_simul_moments at the .mod file's order |    5      5  0.8s
+Test Summary:                    | Pass  Total  Time
+pruned second order: closed form |    8      8  0.8s
+Test Summary:                | Pass  Total  Time
+unsupported order-2 requests |    4      4  2.2s
+order 2 moments: largest relative differences (|diff| / max |reference|):
+  autocorr                                 1.67e-13
+  conditional_variance_decomposition       4.03e-14
+  conditional_variance_decomposition_ME    5.37e-14
+  corr                                     1.68e-13
+  gamma_y vd                               1.76e-14
+  mean                                     2.24e-15
+  mean correction                          4.14e-13
+  sim autocorr                             2.09e-11
+  sim corr                                 7.58e-12
+  sim kurtosis                             8.65e-11
+  sim mean                                 6.36e-16
+  sim path                                 2.64e-14
+  sim skewness                             2.14e-10
+  sim var                                  5.96e-12
+  sim vd                                   6.61e-12
+  stoch_simul var                          3.55e-13
+  stoch_simul vd                           4.85e-14
+  var                                      3.16e-13
+  variance                                 3.16e-13
+  variance decomposition                   1.76e-14
+  vd with ME                               6.12e-14
+=== test_occbin.jl
+rbc_occbin: max |piecewise - Dynare| = 8.881784197001252e-16, max |linear - Dynare| = 4.440892098500626e-16
+Test Summary:                 | Pass  Total   Time
+OccBin: rbc_occbin simulation |   21     21  11.8s
+borrcon_sim: max |piecewise - Dynare| = 2.220446049250313e-16
+Test Summary:                              | Pass  Total  Time
+OccBin: borrowing constraint (borrcon_sim) |    8      8  0.7s
+borrcon_curb: max |piecewise - Dynare| = 2.220446049250313e-16
+Test Summary:                               | Pass  Total  Time
+OccBin: borrowing constraint (borrcon_curb) |    8      8  0.6s
+=== test_occbin_options.jl
+Test Summary:                                                     | Pass  Total   Time
+OccBin options: borrowing constraint (one constraint, two shocks) |  123    123  27.1s
+Test Summary:                                                | Pass  Total  Time
+OccBin options from the .mod file (borrcon, simul_* options) |    9      9  1.0s
+Test Summary:                                   | Pass  Total  Time
+OccBin: two constraints, cycling regime guesses |  189    189  3.6s
+Test Summary:                                               | Pass  Total  Time
+OccBin: error_bind and error_relax of the constraints block |   27     27  1.2s
+Test Summary:                     | Pass  Total  Time
+OccBin IRFs (Dynare's occbin.irf) |   49     49  4.5s
+Test Summary:                                  | Pass  Total  Time
+OccBin: one constraint, cycling regime guesses |   49     49  0.8s
+Test Summary:                                                   | Pass  Total  Time
+OccBin: Dynare 7.2 defects, corrected by default and replicable |   10     10  0.9s
+
+largest differences from Dynare 7.2 (OccBin tests):
+  errors     3.11e-15
+  irf        8.88e-16
+  options    7.77e-16
+  periodic   3.11e-15
+  periodic1  7.77e-16
+=== test_estimation.jl
+Test Summary: | Pass  Broken  Total   Time
+estimation    | 2262       1   2263  39.1s
+
+Maximum differences against Dynare (estimation):
+  Hessian (relative)                                        6.09e-06
+  log posterior at Dynare draws                             3.59e-10
+  loglik est_nk v0                                          1.41e-11
+  loglik est_nk v1                                          8.64e-12
+  loglik est_nk v2                                          1.36e-12
+  loglik est_nk v3                                          1.55e-11
+  loglik est_nk v4                                          6.82e-12
+  loglik est_nk v8                                          1.36e-12
+  loglik est_nk v9                                          5e-12
+  loglik est_schorfheide v0                                 7.84e-12
+  loglik est_ur v0                                          8.53e-14
+  loglik est_ur v1                                          7.11e-14
+  loglik est_ur v2                                          2.84e-14
+  loglik est_ur v5                                          1.14e-13
+  loglik est_ur v6                                          1.42e-13
+  logprior est_nk v0                                        6.22e-14
+  logprior est_nk v1                                        6.22e-14
+  logprior est_nk v2                                        6.22e-14
+  logprior est_nk v3                                        6.22e-14
+  logprior est_nk v4                                        6.22e-14
+  logprior est_nk v8                                        6.22e-14
+  logprior est_nk v9                                        6.39e-14
+  logprior est_schorfheide v0                               5.83e-13
+  logprior est_ur v0                                        1.78e-15
+  logprior est_ur v1                                        1.78e-15
+  logprior est_ur v2                                        1.78e-15
+  logprior est_ur v5                                        1.78e-15
+  logprior est_ur v6                                        1.78e-15
+  nk v6 mode: log posterior                                 1.05e-08
+  ┌ Warning: Aggregate variance and sum of variances by shocks differ by more than 0.01 %
+└ @ JDyn /home/claude/work/jdyn-meas/src/moments.jl:314
+┌ Warning: Aggregate variance and sum of variances by shocks differ by more than 0.01 %
+└ @ JDyn /home/claude/work/jdyn-meas/src/moments.jl:314
+┌ Warning: Aggregate variance and sum of variances by shocks differ by more than 0.01 %
+└ @ JDyn /home/claude/work/jdyn-meas/src/moments.jl:314
+┌ Warning: negative variance in the theoretical moments (a root of the model lies outside the unit circle but inside qz_criterium): standard deviations and correlations of those variables are NaN
+└ @ JDyn /home/claude/work/jdyn-meas/src/moments.jl:144
+┌ Warning: negative variance in the theoretical moments (a root of the model lies outside the unit circle but inside qz_criterium): standard deviations and correlations of those variables are NaN
+└ @ JDyn /home/claude/work/jdyn-meas/src/moments.jl:144
+[ Info: Dynare test tree or preprocessor missing: acceptance smoke test skipped
+┌ Info: nl_e2e_v1: worst oo_ difference 4.582290102916886e-9 at oo_.posterior.optimization.log_density
+│   probs =
+│    1-element Vector{String}:
+└     "oo_.posterior.optimization.log_density: max diff 4.582290102916886e-9"
+┌ Info: nl_e2e_v2: worst oo_ difference 4.511639417614788e-8 at oo_.posterior.optimization.log_density
+│   probs =
+│    1-element Vector{String}:
+└     "oo_.posterior.optimization.log_density: max diff 4.511639417614788e-8"
+┌ Info: nl_e2e_v3: worst oo_ difference 1.6052520646070434e-8 at oo_.posterior.optimization.Variance
+│   probs =
+│    12-element Vector{String}:
+│     "oo_.posterior_std_at_mode.parameters.delt: max diff 6.531297075710544e-13"
+│     "oo_.posterior_std_at_mode.parameters.tet: max diff 4.224280972763006e-13"
+│     "oo_.posterior_std_at_mode.parameters.bet: max diff 1.9965573519551555e-13"
+│     "oo_.posterior_std_at_mode.parameters.alp: max diff 2.535652562213591e-12"
+│     ⋮
+│     "oo_.posterior_std_at_mode.mea" ⋯ 26 bytes ⋯ " diff 1.1000652022337756e-13"
+│     "oo_.posterior.optimization.log_density: max diff 2.7048372430726886e-9"
+└     "oo_.posterior.optimization.Variance: max diff 1.6052520646070434e-8"
+┌ Info: nl_e2e_v4: worst oo_ difference 0.0 at 
+│   probs =
+│    3-element Vector{String}:
+│     "oo_.posterior_mode: missing"
+│     "oo_.posterior_std_at_mode: missing"
+└     "oo_.posterior: missing"
+┌ Warning: obc_method = minnorm: OccBin options of the regime iteration are not used (ignored): curb_retrench, maxit
+└ @ JDyn /home/claude/work/jdyn-meas/src/model.jl:761
+┌ Warning: obc_method = minnorm: OccBin options of the regime iteration are not used (ignored): curb_retrench, maxit
+└ @ JDyn /home/claude/work/jdyn-meas/src/model.jl:761
+┌ Warning: obc_method = minnorm: OccBin options of the regime iteration are not used (ignored): curb_retrench, maxit
+└ @ JDyn /home/claude/work/jdyn-meas/src/model.jl:761
+┌ Warning: obc_method = news: OccBin options of the regime iteration are not used (ignored): curb_retrench, maxit
+└ @ JDyn /home/claude/work/jdyn-meas/src/model.jl:761
+┌ Warning: obc_method = news: OccBin options of the regime iteration are not used (ignored): curb_retrench, maxit
+└ @ JDyn /home/claude/work/jdyn-meas/src/model.jl:761
+┌ Warning: obc_method = news: OccBin options of the regime iteration are not used (ignored): curb_retrench, maxit
+└ @ JDyn /home/claude/work/jdyn-meas/src/model.jl:761
+nk v6 mode: max |x - x_dynare| / std                      0.000185
+  prior hyper-parameters                                    6.66e-16
+  prior log density                                         1.14e-13
+  schorfheide MCMC (2 x 4000): max |mean - Dynare| / std    0.172
+  schorfheide mode: log posterior                           2.3e-08
+  schorfheide mode: max |x - x_dynare| / std                4.91e-05
+  schorfheide modified harmonic mean (2 x 4000)             0.186
+  ur v3 mode: max |x - x_dynare| / std                      1.37e-08
+  ur v4 mode: max |x - x_dynare| / std                      2.75e-09
+=== test_perfect_foresight.jl
+Test Summary:     | Pass  Total   Time
+Perfect foresight |  307    307  27.0s
+Test Summary:                                                            | Pass  Total  Time
+perfect_foresight_rbc and expectation errors (Dynare's shipped examples) |    8      8  0.7s
+=== test_smoother.jl
+  SW case 1 (stationary, 160 periods, filtered_vars, filter_step_ahead=[1 4]): 0.023 s for first_order + smoother; relative differences 2.6e-12 / 2.2e-12
+  SW case 2 (stationary, 160 periods, filtered_vars, filter_step_ahead=[1 4]): 0.018 s for first_order + smoother; relative differences 2.6e-09 / 1.8e-08
+  SW case 3 (stationary, 160 periods, filtered_vars, filter_step_ahead=[1 4]): 0.014 s for first_order + smoother; relative differences 4.7e-10 / 7.5e-10
+Test Summary: | Pass  Total     Time
+smoother      |  466    466  1m22.1s
+
+Maximum differences against Dynare (smoother):
+  diffuse smoother against brute force (kappa = 1e6)                1.78e-06
+  multivariate diffuse smoother (corrected) against Dynare's univariate9.33e-15
+  smoother at estimated parameters (sd_nk)                          1.33e-14
+  smoother at estimation start (est_*)                              3.62e-14
+  smoother with filter_initial_state (sd_nk)                        5.77e-15
+  smoother with observation_trends (sd_ur)                          5.33e-15
+  smoother, Smets-Wouters scale, diffuse (absolute; values of order 100)5.08e-07
+  smoother, Smets-Wouters scale, stationary (relative to the largest value)1.83e-08
+  smoother, correlated measurement errors: univariate against multivariate5.5e-15
+  smoother, replicate_dynare_bugs: smo_fs                           4.44e-15
+  smoother, replicate_dynare_bugs: smo_me                           1.07e-14
+  smoother, replicate_dynare_bugs: smo_ur                           1.38e-14
+=== test_shock_decomposition.jl
+Test Summary:        | Pass  Total   Time
+shock decompositions |  215    215  30.0s
+
+Maximum differences against Dynare (shock decompositions):
+  initial_condition_decomposition (smo_*)                   7.11e-15
+  plot numbers of realtime results                          4.88e-15
+  plot_shock_decomposition numbers                          1.78e-14
+  realtime_shock_decomposition                              5.33e-15
+  shock_decomposition (smo_*)                               1.49e-14
+  shock_decomposition at the posterior mode (sd_nk)         6.88e-15
+=== test_results.jl
+Test Summary:                                | Pass  Total  Time
+MStruct and Cell read like MATLAB from Julia |    5      5  0.1s
+Test Summary:                                    | Pass  Total  Time
+dynare(): perfect_foresight_rbc (oo_.endo_simul) |   10     10  4.0s
+Test Summary:                                                         | Pass  Total  Time
+dynare(): collard_2001 stoch_simul (oo_.dr, oo_.endo_simul, oo_.irfs) |   11     11  1.8s
+Test Summary:                                           | Pass  Total  Time
+re-running commands on the workspace (no preprocessing) |   13     13  2.0s
+Test Summary:                                                         | Pass  Total  Time
+steady-state file sets parameters again on every re-run (nk_baseline) |    2      2  1.1s
+=== test_review_findings.jl
+Test Summary:                           | Pass  Total  Time
+review findings (first pass; all fixed) |   41     41  8.9s
+=== test_review2_findings.jl
+Test Summary:               | Pass  Total   Time
+second-pass review findings |   79     79  17.2s
+=== test_results_estimation.jl
+Test Summary:                                                   | Pass  Total   Time
+estimation: mode_compute=0, smoother only (est_small variant 1) |    8      8  10.2s
+Test Summary:                                       | Pass  Total  Time
+estimation without a smoother (est_small variant 2) |    4      4  0.8s
+Test Summary:                        | Pass  Total  Time
+calib_smoother (est_small variant 4) |    4      4  2.1s
+Test Summary:                                                                  | Pass  Total  Time
+estimation with mode_compute=4 (variants 0, 5, 6): optimiser-limited agreement |   12     12  1.8s
+Test Summary:                                                                | Pass  Total  Time
+estimation with a short Metropolis-Hastings run (variant 3): field structure |    3      3  1.1s
+Test Summary:                                                              | Pass  Total  Time
+smoother with measurement errors and loglinear-free model (smo_me, CASE=2) |    3      3  1.4s
+Test Summary:                                             | Pass  Total  Time
+posterior density: Dynare's kernel estimate on 512 points |    2      2  0.0s
+Test Summary:                                 | Pass  Total  Time
+estimation! / calib_smoother! re-run in place |    5      5  3.5s
+Test Summary:                                | Pass  Total  Time
+estimation!: unsupported options are refused |    2      2  1.8s
+=== test_perf_seeds.jl
+Test Summary:              | Pass  Total  Time
+FFT against the direct sum |   18     18  0.3s
+Test Summary:                                                    | Pass  Total  Time
+random draws are reproducible and follow set_dynare_seed / seed= |   13     13  6.5s
+Test Summary:                                             | Pass  Total  Time
+re-running commands on the workspace uses the same stream |    6      6  1.6s
+Test Summary:                                                        | Pass  Total  Time
+order-1 simulate: allocation-free loop equals the textbook recursion |    1      1  0.6s
+Test Summary:                                           | Pass  Total  Time
+filtered theoretical moments with a large grid are fast |    1      1  0.5s
+=== test_forecast.jl
+Test Summary:                                                                     | Pass  Total   Time
+forecast after stoch_simul and conditional_forecast with calibration (fc_cal.mod) |   36     36  19.6s
+Test Summary:                                      | Pass  Total  Time
+forecast and conditional_forecast after estimation |   29     29  4.1s
+=== test_optimizers.jl
+  newrat first iterate: f diff 9.776340914413595e-5, x relative diff 1.2395249100949146e-5
+  newrat on est_opt_nk: log posterior diff 3.2739915809543163e-6, mode diff 0.003272744798059659 std
+Test Summary:           | Pass  Total  Time
+newrat (mode_compute=5) |   13     13  3.9s
+Test Summary:                               | Pass  Total  Time
+simplex (mode_compute=8): Dynare's iterates |    4      4  2.4s
+  cmaes on est_opt_nk: log posterior diff 2.3817392502678558e-11, mode diff 1.8606891473431612e-5 std
+  fminsearch on est_opt_sch: log posterior diff 6.293703336268663e-10, mode diff 6.59914354573268e-5 std
+Test Summary:                                                         | Pass  Total   Time
+CMA-ES (mode_compute=9) and fminsearch (mode_compute=7): same optimum |    8      8  11.5s
+=== test_occbin_estimation.jl
+IVF nkm: max |log posterior - Dynare| = 1.750777300912887e-11
+IVF rbc: max |log posterior - Dynare| = 5.684341886080801e-13
+IVF nkms: max |log posterior - Dynare| = 4.092726157978177e-12
+Test Summary:                      | Pass  Total   Time
+OccBin inversion filter likelihood |   51     51  10.2s
+PKF nkm: max |log posterior - Dynare| = 3.526565706124529e-10
+PKF rbc: max |log posterior - Dynare| = 7.958078640513122e-13
+PKF nkms: max |log posterior - Dynare| = 3.183231456205249e-12
+Test Summary:                             | Pass  Total   Time
+OccBin piecewise Kalman filter likelihood |   53     53  11.0s
+Test Summary:                        | Pass  Total  Time
+OccBin filter options against Dynare |    6      6  0.8s
+OccBin smoother NKM: smoothed 7.638334409421077e-14, shocks 4.903855099769316e-13
+OccBin shock decomposition NKM: 2.0088097851811426e-15
+Test Summary:                                | Pass  Total  Time
+OccBin smoother and shock decomposition: NKM |   27     27  8.3s
+Test Summary:                    | Pass  Total  Time
+OccBin smoother: two constraints |   24     24  3.3s
+OccBin Laplace: 1515.1669898334078 (Dynare 1515.166990), Hessian rel. diff 8.972644302612569e-10
+Test Summary:                                | Pass  Total  Time
+OccBin estimation: Hessian, Laplace, sampler |    4      4  2.9s
+Test Summary:  | Pass  Total  Time
+OccBin options |   14     14  4.9s
+Test Summary: | Pass  Total  Time
+regime table  |    4      4  0.2s
+Test Summary:                                             | Pass  Total  Time
+dynare(): OccBin estimation(smoother) fills oo_ as Dynare |   12     12  8.6s
+Test Summary:                                                   | Pass  Total  Time
+dynare(): occbin_solver regime history and occbin_write_regimes |    8      8  1.9s
+=== test_acceptance_smoke.jl
+Test Summary:                              | Total  Time
+acceptance smoke (Dynare's own test files) |     0  0.0s
+=== test_nonlinear_estimation.jl
+Test Summary:               | Pass  Total     Time
+nonlinear filters (order 2) |  579    579  2m26.7s
+
+nonlinear estimation, worst differences against Dynare:
+  filter per period                       3.97051280742744e-10
+  likelihood (relative to sum |lik|)      7.281834951646599e-10
+  reduced form                            5.0019706670520777e-11
+  simplex mode (relative)                 0.0
+  smooth resampling                       2.4848784251444933e-16
+=== test_obc.jl
+Test Summary:                                    | Pass  Total  Time
+OBC: classification of Dynare 7.2's OccBin files |   23     23  9.4s
+Test Summary:                     | Pass  Total  Time
+OBC: worked cases (gap and wedge) |    6      6  0.5s
+Test Summary:                                                        | Pass  Total  Time
+OBC: M and q against a stacked system (1e-10) and Dynare 7.2 (1e-12) |   21     21  5.2s
+Test Summary:                  | Pass  Total  Time
+OBC: solvers on small problems |  107    107  1.1s
+nk_zlb.mod                file shocks: max |minnorm - occbin| = 1.1102230246251565e-16, periods binding: 7
+nk_zlb.mod                random 200: max |minnorm - occbin| = 4.440892098500626e-16, periods binding: 45, fast path used in 45 periods
+Test Summary:                      | Pass  Total  Time
+OBC: minnorm = OccBin (nk_zlb.mod) |    9      9  1.2s
+nk_zlb2.mod               file shocks: max |minnorm - occbin| = 1.5265566588595902e-16, periods binding: 7
+nk_zlb2.mod               random 200: max |minnorm - occbin| = 6.661338147750939e-16, periods binding: 59, fast path used in 59 periods
+Test Summary:                       | Pass  Total  Time
+OBC: minnorm = OccBin (nk_zlb2.mod) |    9      9  1.0s
+obc_zlb.mod               file shocks: max |minnorm - occbin| = 1.6653345369377348e-16, periods binding: 1
+obc_zlb.mod               random 200: max |minnorm - occbin| = 6.661338147750939e-16, periods binding: 66, fast path used in 66 periods
+Test Summary:                       | Pass  Total  Time
+OBC: minnorm = OccBin (obc_zlb.mod) |    9      9  0.5s
+obc_zlb2.mod              file shocks: max |minnorm - occbin| = 3.3306690738754696e-16, periods binding: 4
+obc_zlb2.mod              random 200: max |minnorm - occbin| = 1.1102230246251565e-15, periods binding: 70, fast path used in 70 periods
+Test Summary:                        | Pass  Total  Time
+OBC: minnorm = OccBin (obc_zlb2.mod) |    9      9  0.8s
+borrcon.mod               file shocks: max |minnorm - occbin| = 2.220446049250313e-16, periods binding: 3
+borrcon.mod               random 200: max |minnorm - occbin| = 4.9960036108132044e-15, periods binding: 152, fast path used in 152 periods
+Test Summary:                       | Pass  Total  Time
+OBC: minnorm = OccBin (borrcon.mod) |    9      9  0.8s
+borrcon_0_std_shocks.mod  file shocks: max |minnorm - occbin| = 2.220446049250313e-16, periods binding: 3
+borrcon_0_std_shocks.mod  random 200: max |minnorm - occbin| = 4.440892098500626e-16, periods binding: 106, fast path used in 106 periods
+Test Summary:                                    | Pass  Total  Time
+OBC: minnorm = OccBin (borrcon_0_std_shocks.mod) |    9      9  1.6s
+NKM_0_std_shocks.mod      random 200: max |minnorm - occbin| = 1.1901590823981678e-13, periods binding: 53, fast path used in 53 periods
+Test Summary:                                | Pass  Total  Time
+OBC: minnorm = OccBin (NKM_0_std_shocks.mod) |    5      5  0.8s
+borrcon_sim.mod           file shocks: max |minnorm - occbin| = 2.220446049250313e-16, periods binding: 3
+borrcon_sim.mod           random 200: max |minnorm - occbin| = 4.9960036108132044e-15, periods binding: 152, fast path used in 152 periods
+Test Summary:                           | Pass  Total  Time
+OBC: minnorm = OccBin (borrcon_sim.mod) |    9      9  0.8s
+borrcon_curb.mod          file shocks: max |minnorm - occbin| = 2.220446049250313e-16, periods binding: 3
+borrcon_curb.mod          random 200: max |minnorm - occbin| = 4.9960036108132044e-15, periods binding: 152, fast path used in 152 periods
+Test Summary:                            | Pass  Total  Time
+OBC: minnorm = OccBin (borrcon_curb.mod) |    9      9  0.7s
+occ_borrcon.mod           random 200: max |minnorm - occbin| = 5.10702591327572e-15, periods binding: 141, fast path used in 141 periods
+Test Summary:                           | Pass  Total  Time
+OBC: minnorm = OccBin (occ_borrcon.mod) |    5      5  0.7s
+Test Summary:             | Pass  Total  Time
+OBC: IRFs with obc_method |    4      4  2.9s
+Test Summary: | Pass  Total  Time
+OBC: refusals |   10     10  1.2s
+Test Summary:                            | Pass  Total  Time
+OBC: native lines and the live workspace |   11     11  1.6s
+=== test_obc_news.jl
+Test Summary:                | Pass  Total  Time
+HiGHS wrapper (src/highs.jl) |    7      7  0.6s
+Test Summary:                                 | Pass  Total  Time
+news solver and diagnostics on small problems |  362    362  7.3s
+nk_zlb.mod                file shocks: max |news - occbin| = 1.1102230246251565e-16, periods binding: 7
+nk_zlb.mod                random 200: max |news - occbin| = 4.440892098500626e-16, periods binding: 45
+Test Summary:              | Pass  Total  Time
+news = OccBin (nk_zlb.mod) |   12     12  2.1s
+nk_zlb2.mod               file shocks: max |news - occbin| = 1.5265566588595902e-16, periods binding: 7
+nk_zlb2.mod               random 200: max |news - occbin| = 6.661338147750939e-16, periods binding: 59
+Test Summary:               | Pass  Total  Time
+news = OccBin (nk_zlb2.mod) |   12     12  5.6s
+obc_zlb.mod               file shocks: max |news - occbin| = 1.6653345369377348e-16, periods binding: 1
+obc_zlb.mod               random 200: max |news - occbin| = 6.661338147750939e-16, periods binding: 66
+Test Summary:               | Pass  Total  Time
+news = OccBin (obc_zlb.mod) |   12     12  1.1s
+obc_zlb2.mod              file shocks: max |news - occbin| = 3.3306690738754696e-16, periods binding: 4
+obc_zlb2.mod              random 200: max |news - occbin| = 1.1102230246251565e-15, periods binding: 70
+Test Summary:                | Pass  Total   Time
+news = OccBin (obc_zlb2.mod) |   12     12  12.1s
+borrcon.mod               file shocks: max |news - occbin| = 2.220446049250313e-16, periods binding: 3
+borrcon.mod               random 200: max |news - occbin| = 4.9960036108132044e-15, periods binding: 152
+Test Summary:               | Pass  Total  Time
+news = OccBin (borrcon.mod) |   12     12  6.8s
+borrcon_0_std_shocks.mod  file shocks: max |news - occbin| = 2.220446049250313e-16, periods binding: 3
+borrcon_0_std_shocks.mod  random 200: max |news - occbin| = 4.440892098500626e-16, periods binding: 106
+Test Summary:                            | Pass  Total  Time
+news = OccBin (borrcon_0_std_shocks.mod) |   12     12  3.3s
+NKM_0_std_shocks.mod      random 200: max |news - occbin| = 1.176836406102666e-13, periods binding: 55
+Test Summary:                        | Pass  Total  Time
+news = OccBin (NKM_0_std_shocks.mod) |    6      6  2.3s
+borrcon_sim.mod           file shocks: max |news - occbin| = 2.220446049250313e-16, periods binding: 3
+borrcon_sim.mod           random 200: max |news - occbin| = 4.9960036108132044e-15, periods binding: 152
+Test Summary:                   | Pass  Total  Time
+news = OccBin (borrcon_sim.mod) |   12     12  6.4s
+borrcon_curb.mod          file shocks: max |news - occbin| = 2.220446049250313e-16, periods binding: 3
+borrcon_curb.mod          random 200: max |news - occbin| = 4.9960036108132044e-15, periods binding: 152
+Test Summary:                    | Pass  Total  Time
+news = OccBin (borrcon_curb.mod) |   12     12  6.3s
+occ_borrcon.mod           random 200: max |news - occbin| = 5.10702591327572e-15, periods binding: 141
+Test Summary:                   | Pass  Total  Time
+news = OccBin (occ_borrcon.mod) |    6      6  5.8s
+obc_zlb M (horizon 20, 60 rows) vs obc_zlb.mat: max abs difference 1.0602629885170245e-14
+obc_zlb wedges (news, integer programme) vs GLPK: 6.938893903907228e-17
+obc_zlb path (news, pure integer programme) vs Dynare's OccBin: 1.214306433183765e-17
+Test Summary:                     | Pass  Total  Time
+news against test/obc/obc_zlb.mat |    9      9  0.3s
+Test Summary:                                         | Pass  Total   Time
+regime formulation: R equals M, equals LCP and OccBin |   18     18  10.5s
+bf_ppf.mod  regime formulation, random 200: max |news - occbin| = 4.385380947269368e-15, periods binding: 62
+bf.mod      regime formulation, random 200: max |news - occbin| = 4.385380947269368e-15, periods binding: 62
+Test Summary:                                       | Pass  Total  Time
+regime formulation on Dynare's multi-equation files |   14     14  2.4s
+rbc_occbin regime formulation (horizon 130): max |news - occbin| = 8.881784197001252e-16, periods binding: 89
+Test Summary:                                                                | Pass  Total  Time
+regime formulation: Dynare's rbc_occbin (two constraints, 169 shock periods) |    4      4  0.6s
+sw LCP M (horizon 40): diagonal range (0.8127218444712031, 0.9453859491513863), is_s false, is_p false, largest_p 10
+sw eb = -4: single-spell solutions [(0, 9), (0, 13)]; news vs OccBin max path difference 3.0269120543380268e-12
+Test Summary:                                                          | Pass  Total  Time
+Smets-Wouters benchmark: tied wedges, multiple equilibria, no solution |   16     16  3.0s
+Test Summary:                                         | Pass  Total  Time
+news: results struct, timing hook, refusals, defaults |    9      9  0.8s
+failed: test_plotting.jl

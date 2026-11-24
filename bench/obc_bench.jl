@@ -478,7 +478,8 @@ function r1(backs, loaded::Dict{Symbol,Loaded}, H; nstates=parse(Int, OPTS["r1st
         x = ob.P * x + ob.Q * (randn(rng, nx) .* L.sd)
         t > 200 && (t - 200) % 5 == 0 && push!(states, copy(x))
     end
-    length(states) == nstates || error("expected $nstates states")
+    nstates <= length(states) || error("at most $(length(states)) states")
+    states = states[1:nstates]
     draws = randn(MersenneTwister(SEED + 3), nstates, nx) .* L.sd'
     meths = methods_of(L.spec)
     results = Dict{Tuple{Float64,Symbol},Vector{Any}}()           # (s, method) => per state: (:ok, regime_history, y1) or (:fail, label)

@@ -1,0 +1,10 @@
+Test Summary:                                | Pass  Total  Time
+MStruct and Cell read like MATLAB from Julia |    5      5  0.5s
+Test Summary:                                    | Pass  Total   Time
+dynare(): perfect_foresight_rbc (oo_.endo_simul) |   10     10  12.7s
+Test Summary:                                                         | Pass  Total  Time
+dynare(): collard_2001 stoch_simul (oo_.dr, oo_.endo_simul, oo_.irfs) |   11     11  3.9s
+Test Summary:                                           | Pass  Total  Time
+re-running commands on the workspace (no preprocessing) |   13     13  4.0s
+Test Summary:                                                         | Pass  Total  Time
+steady-state file sets parameters again on every re-run (nk_baseline) |    2      2  7.2s

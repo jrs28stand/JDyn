@@ -1,0 +1,58 @@
+┌ Warning: obc_method = minnorm: OccBin options of the regime iteration are not used (ignored): curb_retrench, maxit
+└ @ JDyn /home/claude/work/jdyn-meas/src/model.jl:761
+┌ Warning: obc_method = minnorm: OccBin options of the regime iteration are not used (ignored): curb_retrench, maxit
+└ @ JDyn /home/claude/work/jdyn-meas/src/model.jl:761
+┌ Warning: obc_method = minnorm: OccBin options of the regime iteration are not used (ignored): curb_retrench, maxit
+└ @ JDyn /home/claude/work/jdyn-meas/src/model.jl:761
+Test Summary:                                    | Pass  Total   Time
+OBC: classification of Dynare 7.2's OccBin files |   23     23  23.7s
+Test Summary:                     | Pass  Total  Time
+OBC: worked cases (gap and wedge) |    6      6  0.7s
+Test Summary:                                                        | Pass  Total   Time
+OBC: M and q against a stacked system (1e-10) and Dynare 7.2 (1e-12) |   21     21  11.8s
+Test Summary:                  | Pass  Total  Time
+OBC: solvers on small problems |  107    107  1.5s
+nk_zlb.mod                file shocks: max |minnorm - occbin| = 1.1102230246251565e-16, periods binding: 7
+nk_zlb.mod                random 200: max |minnorm - occbin| = 4.440892098500626e-16, periods binding: 45, fast path used in 45 periods
+Test Summary:                      | Pass  Total  Time
+OBC: minnorm = OccBin (nk_zlb.mod) |    9      9  7.3s
+nk_zlb2.mod               file shocks: max |minnorm - occbin| = 1.5265566588595902e-16, periods binding: 7
+nk_zlb2.mod               random 200: max |minnorm - occbin| = 6.661338147750939e-16, periods binding: 59, fast path used in 59 periods
+Test Summary:                       | Pass  Total  Time
+OBC: minnorm = OccBin (nk_zlb2.mod) |    9      9  1.0s
+obc_zlb.mod               file shocks: max |minnorm - occbin| = 1.6653345369377348e-16, periods binding: 1
+obc_zlb.mod               random 200: max |minnorm - occbin| = 6.661338147750939e-16, periods binding: 66, fast path used in 66 periods
+Test Summary:                       | Pass  Total  Time
+OBC: minnorm = OccBin (obc_zlb.mod) |    9      9  0.3s
+obc_zlb2.mod              file shocks: max |minnorm - occbin| = 3.3306690738754696e-16, periods binding: 4
+obc_zlb2.mod              random 200: max |minnorm - occbin| = 1.1102230246251565e-15, periods binding: 70, fast path used in 70 periods
+Test Summary:                        | Pass  Total  Time
+OBC: minnorm = OccBin (obc_zlb2.mod) |    9      9  0.6s
+borrcon.mod               file shocks: max |minnorm - occbin| = 2.220446049250313e-16, periods binding: 3
+borrcon.mod               random 200: max |minnorm - occbin| = 4.9960036108132044e-15, periods binding: 152, fast path used in 152 periods
+Test Summary:                       | Pass  Total  Time
+OBC: minnorm = OccBin (borrcon.mod) |    9      9  1.6s
+borrcon_0_std_shocks.mod  file shocks: max |minnorm - occbin| = 2.220446049250313e-16, periods binding: 3
+borrcon_0_std_shocks.mod  random 200: max |minnorm - occbin| = 4.440892098500626e-16, periods binding: 106, fast path used in 106 periods
+Test Summary:                                    | Pass  Total  Time
+OBC: minnorm = OccBin (borrcon_0_std_shocks.mod) |    9      9  0.6s
+NKM_0_std_shocks.mod      random 200: max |minnorm - occbin| = 1.1901590823981678e-13, periods binding: 53, fast path used in 53 periods
+Test Summary:                                | Pass  Total  Time
+OBC: minnorm = OccBin (NKM_0_std_shocks.mod) |    5      5  0.9s
+borrcon_sim.mod           file shocks: max |minnorm - occbin| = 2.220446049250313e-16, periods binding: 3
+borrcon_sim.mod           random 200: max |minnorm - occbin| = 4.9960036108132044e-15, periods binding: 152, fast path used in 152 periods
+Test Summary:                           | Pass  Total  Time
+OBC: minnorm = OccBin (borrcon_sim.mod) |    9      9  2.0s
+borrcon_curb.mod          file shocks: max |minnorm - occbin| = 2.220446049250313e-16, periods binding: 3
+borrcon_curb.mod          random 200: max |minnorm - occbin| = 4.9960036108132044e-15, periods binding: 152, fast path used in 152 periods
+Test Summary:                            | Pass  Total  Time
+OBC: minnorm = OccBin (borrcon_curb.mod) |    9      9  1.3s
+occ_borrcon.mod           random 200: max |minnorm - occbin| = 5.10702591327572e-15, periods binding: 141, fast path used in 141 periods
+Test Summary:                           | Pass  Total  Time
+OBC: minnorm = OccBin (occ_borrcon.mod) |    5      5  1.1s
+Test Summary:             | Pass  Total  Time
+OBC: IRFs with obc_method |    4      4  6.4s
+Test Summary: | Pass  Total  Time
+OBC: refusals |   10     10  2.1s
+Test Summary:                            | Pass  Total  Time
+OBC: native lines and the live workspace |   11     11  8.0s
