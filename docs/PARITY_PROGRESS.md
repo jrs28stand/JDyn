@@ -10,7 +10,7 @@ Branch `parity` (base main ce58c84). References: Dynare 7.2 under Octave 8.4; ge
 | 4 | `varexo_det` | done: `src/varexo_det.jl`, `test/test_parity_varexo_det.jl`; ghud/ghxud/ghuud/ghudud (orders 1-2) and simult_varexo_det paths 5e-14, forecast with exo_det paths (order 1 3e-15, order 2 with replayed draws 6e-15); perfect foresight, order 3 and pruning refused |
 | 5 | `epilogue` | done as a Julia API (src/epilogue.jl); not hooked into the MATLAB interpreter or shock decompositions. Dynare numbers: bit-identical with `replicate_dynare_bugs=true`, <1e-6 without (static: 1e-14) |
 | 6 | `external_function` | |
-| 7 | heteroskedastic shocks / filter | |
+| 7 | heteroskedastic shocks / filter | done: likelihood (multivariate, univariate, diffuse, missing data) and multivariate smoother; max rel diff vs Dynare 4e-14 |
 | 8 | `M_.Correlation_matrix` | done (exact match with Dynare 7.2 on corr8.mod) |
 
 ## Notes
@@ -37,3 +37,8 @@ Branch `parity` (base main ce58c84). References: Dynare 7.2 under Octave 8.4; ge
   "identity unless estimated" is not what 7.2 does), not from `var a, b = cov` covariances; `shocks(overwrite)` resets it to the identity;
   estimated correlations replace their entries. Kept in `m.options["Correlation_matrix"]` (`declared_correlation_matrix(m)`); JDyn used to derive it
   from Sigma_e. test_results_estimation's smo_me case now also compares Correlation_matrix (it was excluded as a known deviation).
+- Heteroskedastic filter: `heteroskedastic_shocks` blocks (src/heteroskedastic.jl: `heteroskedastic_arrays`, `heteroskedastic_qvec`, `heteroskedastic_rqr`) and
+  the `heteroskedastic_filter` estimation option. The Kalman filters accept `QQ` as an (n, n, nobs + 1) path (`kalman.jl`, `_qq`; period t predicts with
+  slice t + 1; no steady-state switch). The initial covariance and the diffuse setup use the constant Sigma_e. The smoother (multivariate only) takes
+  the Q path (prediction slice t + 1, shocks slice t); with the univariate smoother it is refused. Periods given as dates are refused; correlated
+  measurement errors with the univariate filter and the heteroskedastic filter are refused. Without the option the blocks are ignored, as in Dynare.
