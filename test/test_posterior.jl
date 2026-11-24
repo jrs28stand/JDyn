@@ -31,13 +31,15 @@ function chains(mod)
     JDyn.MCMCResult(draws, lp, vec(c["acceptance"]), String.(split(c["names"], ";")), Matrix(c["x_init"]), Float64(c["mh_drop"]), falses(nb, T)), c
 end
 
-"Largest |a - b| / (|b| + max |b|) over entries; NaNs must sit in the same places."
-function rdiff(a, b)
+"Largest |a - b| / (|b| + max |b|) over entries (differences below `atol` count as zero); NaNs must sit in the same places."
+function rdiff(a, b; atol=0.0)
     a, b = Float64.(a), reshape(Float64.(b), size(a))
     isnan.(a) == isnan.(b) || return Inf
     k = .!isnan.(b)
     any(k) || return 0.0
-    maximum(abs.(a[k] .- b[k]) ./ (abs.(b[k]) .+ maximum(abs.(b[k]))))
+    sc = maximum(abs.(b[k]))
+    sc == 0 && (sc = 1.0)
+    maximum(max.(abs.(a[k] .- b[k]) .- atol, 0.0) ./ (abs.(b[k]) .+ sc))
 end
 
 @testset "MCMC convergence diagnostics" begin
@@ -186,7 +188,7 @@ end
         prs = [("smv", res.smoothed_variables), ("upd", res.updated_variables), ("inn", res.smoothed_shocks),
                ("sme", res.smoothed_measurement_errors), ("cst", res.constant), ("tco", res.trend_coeff),
                ("ini", res.init_state), ("trd", res.trend), ("flt", res.filtered_variables)]
-        append!(prs, [("fk$k", sd) for (k, sd) in sort(collect(res.filtered_k_step_ahead))])
+        append!(prs, [("fk$k", sd) for (k, sd) in sort(collect(res.filtered_k_step_ahead); by=first)])
         nchecked = 0
         for (pre, sd) in prs
             if !haskey(r, "$(pre)_mean")
@@ -196,7 +198,7 @@ end
             nchecked += 1
             ix = size(sd.mean, 1) == 1 ? [1] : pidx
             for (f, k) in ((:mean, "mean"), (:median, "median"), (:var, "var"), (:hpd_inf, "hpdinf"), (:hpd_sup, "hpdsup"))
-                @test rdiff(getfield(sd, f)[ix, :], r["$(pre)_$k"]) < 1e-8
+                @test rdiff(getfield(sd, f)[ix, :], r["$(pre)_$k"]; atol=1e-25) < 1e-8
             end
             @test rdiff(sd.deciles[:, ix, :], r["$(pre)_deciles"]) < 1e-8
             @test rdiff(sd.density[1:dts:end, :, ix, :], r["$(pre)_density"]) < 1e-7
@@ -215,4 +217,53 @@ end
         JDyn.store_smoother_statistics!(oo, res)
         @test haskey(oo, "SmoothedVariables")
     end
+end
+
+@testset "estimation! with MCMC: posterior stage fills oo_ (convergence, IRFs, moments, smoother, forecasts)" begin
+    RE2 = joinpath(@__DIR__, "ref_oo_estimation")
+    d = mktempdir()
+    for f in readdir(RE2; join=true)
+        isfile(f) && cp(f, joinpath(d, basename(f)))
+    end
+    ws = with_logger(NullLogger()) do
+        JDyn.dynare(joinpath(d, "est_small.mod"); extra_args=["-DVARIANT=2"])
+    end
+    vl = ["y", "pi", "r", "yobs", "piobs", "robs"]
+    cd(d) do
+        with_logger(NullLogger()) do
+            JDyn.estimation!(ws, vl; datafile="est_nk_data", mode_compute=4, mh_replic=2100, mh_nblocks=2, mh_jscale=0.9, mh_drop=0.3,
+                             sub_draws=20, bayesian_irf=true, irf=8, moments_varendo=true, ar=2, conditional_variance_decomposition=[1, 4],
+                             smoother=true, filter_step_ahead=[1, 2], forecast=4, nodisplay=true)
+        end
+    end
+    oo = ws.oo_
+    @test haskey(oo, "convergence") && haskey(oo.convergence, "geweke")
+    @test haskey(oo, "PosteriorIRF") && haskey(oo.PosteriorIRF, "dsge")
+    @test length(oo.PosteriorIRF.dsge.Mean["y_ea"]) == 8
+    @test haskey(oo, "PosteriorTheoreticalMoments")
+    @test haskey(oo.PosteriorTheoreticalMoments.dsge, "ConditionalVarianceDecomposition")
+    @test size(oo.SmoothedVariables.y, 1) == 120
+    @test haskey(oo, "Filtered_Variables_2_step_ahead")
+    @test length(oo.MeanForecast.Mean["y"]) == 4 && length(oo.PointForecast.Var["y"]) == 4
+    @test all(oo.PointForecast.Var["y"] .>= oo.MeanForecast.Var["y"] .- 1e-12)
+end
+
+@testset "sub-draw selection" begin
+    mc, _ = chains("post_nk")
+    nb, T, n = size(mc.draws)
+    kept = JDyn.kept_per_chain(mc)
+    @test JDyn.number_of_subdraws(mc; sub_draws=30) == 30
+    @test JDyn.number_of_subdraws(mc) == min(1200, kept * nb)
+    @test_throws JDyn.EstimationError JDyn.number_of_subdraws(mc; sub_draws=kept * nb * nb + 1)
+    x, lp = JDyn.posterior_subsample(mc, 60; rng=Random.Xoshiro(3))
+    @test size(x) == (60, n) && length(lp) == 60
+    first = floor(Int, mc.drop * T)
+    pool = reshape(permutedims(mc.draws[:, first+1:end, :], (2, 1, 3)), :, n)
+    @test all(i -> any(j -> pool[j, :] == x[i, :], 1:size(pool, 1)), 1:60)
+    # reproducible from the stream
+    x2, _ = JDyn.posterior_subsample(mc, 60; rng=Random.Xoshiro(3))
+    @test x == x2
+    # one chain's worth of draws: Dynare uses the first rows of the pooled draws
+    pd, _ = JDyn.posterior_draws(JDyn.Estimation(first(ploadmod("post_nk", ["-DPOST=2"])); allow_unsupported=true), mc; sub_draws=kept)
+    @test pd == JDyn.pooled_draws(mc)[1][1:kept, :]
 end

@@ -22,8 +22,11 @@ function _posterior_stage!(ws, m::Model, est::Estimation, mc::MCMCResult, vl)
         return
     end
     flag(k) = _est_flag(get(o, k, false))
-    fsa = get(o, "filter_step_ahead", Int[])
-    wants_stats = flag("smoother") || flag("filtered_vars") || !(fsa === nothing || (fsa isa AbstractVector && isempty(fsa)))
+    fsa = Int[Int(x) for x in _fsa(ws)]
+    smo, fv = _optb(ws, "smoother", false), _optb(ws, "filtered_vars", false)
+    wants_stats = smo || fv || !isempty(fsa)          # (smoother options are not part of the Estimation object)
+    wants_stats && (_optb(ws, "filter_covariance", false) || _optb(ws, "smoothed_state_uncertainty", false)) &&
+        throw(EstimationError("posterior distributions of filter_covariance / smoothed_state_uncertainty are not implemented"))
     nf = Int(get(o, "forecast", 0))
     isempty(m.occbin_constraints) || ((flag("bayesian_irf") || flag("moments_varendo") || wants_stats || nf > 0) &&
         throw(EstimationError("posterior IRFs, moments, smoothers and forecasts with OccBin are not supported")))
@@ -36,7 +39,8 @@ function _posterior_stage!(ws, m::Model, est::Estimation, mc::MCMCResult, vl)
             delete!(sk, k)
         end
         P, _ = posterior_draws(est, mc; sub_draws=nothing, drop=mc.drop, rng=dynare_rng(m))
-        wants_stats && store_smoother_statistics!(oo, posterior_smoother_statistics(est; params=P, var_list=isempty(vls) ? nothing : vls, sk...))
+        wants_stats && store_smoother_statistics!(oo, posterior_smoother_statistics(est; params=P, var_list=isempty(vls) ? nothing : vls,
+                                                                                smoother=smo, filtered_vars=fv, filter_step_ahead=fsa, sk...))
         nf > 0 && store_posterior_forecast!(oo, posterior_forecast(est; params=P, horizon=nf, var_list=isempty(vls) ? nothing : vls, sk...))
     end
     nothing
