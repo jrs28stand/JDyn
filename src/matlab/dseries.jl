@@ -369,10 +369,10 @@ function _ds_arith(I, name, fn, a, usesops_left=true)
         ds_isempty(p) && return copy_ds(o)
     end
     if vobs(o) != vobs(p) && !(vobs(o) == 1 || vobs(p) == 1)
-        dserr("dseries::$(name == "plus" ? "plus" : "times"): Cannot $(name == "plus" ? "add" : name == "mtimes" ? "multiply" : "divide") inputname(1) and inputname(2) (wrong number of variables)!")
+        dserr("dseries::$(name == "plus" ? "plus" : "times"): Cannot $(name == "plus" ? "add" : name == "mtimes" ? "multiply" : "divide")  and  (wrong number of variables)!")
     end
     ido, idp = vobs(o) > vobs(p) ? (1:vobs(o), fill(1, vobs(o))) : vobs(o) < vobs(p) ? (fill(1, vobs(p)), 1:vobs(p)) : (1:vobs(o), 1:vobs(o))
-    dsfreq(o) == dsfreq(p) || dserr("dseries::$(name == "plus" ? "plus" : "times"): Cannot $(name == "plus" ? "add" : name == "mtimes" ? "multiply" : "divide") inputname(1) and inputname(2) (frequencies are different)!")
+    dsfreq(o) == dsfreq(p) || dserr("dseries::$(name == "plus" ? "plus" : "times"): Cannot $(name == "plus" ? "add" : name == "mtimes" ? "multiply" : "divide")  and  (frequencies are different)!")
     if nobs(o) != nobs(p) || o.dates.time[1] != p.dates.time[1]
         o, p = align_copies(o, p)
     end
@@ -432,9 +432,9 @@ dm!("dseries", "minus") do I, a, nout
     end
     ds_isempty(p) && return copy_ds(o)
     vobs(o) != vobs(p) && !(vobs(o) == 1 || vobs(p) == 1) &&
-        dserr("Cannot substract inputname(1) and inputname(2) (wrong number of variables)!", "dseries:WrongInputArguments")
+        dserr("Cannot substract the two dseries objects (wrong number of variables)!", "dseries:WrongInputArguments")
     ido, idp = vobs(o) > vobs(p) ? (1:vobs(o), fill(1, vobs(o))) : vobs(o) < vobs(p) ? (fill(1, vobs(p)), 1:vobs(p)) : (1:vobs(o), 1:vobs(o))
-    dsfreq(o) == dsfreq(p) || dserr("Cannot substract inputname(1) and inputname(2) (frequencies are different)!", "dseries:WrongInputArguments")
+    dsfreq(o) == dsfreq(p) || dserr("Cannot substract the two dseries objects (frequencies are different)!", "dseries:WrongInputArguments")
     if nobs(o) != nobs(p) || o.dates.time[1] != p.dates.time[1]
         o, p = align_copies(o, p)
     end
@@ -695,7 +695,7 @@ function _shiftop!(o, name, steps, unit; growth=false)
         elseif f in (52, 365)
             dserr("dseries::$name: I do not know yet how to compute $unit from $(f == 52 ? "weekly" : "daily") data!")
         end
-        dserr("dseries::$name: object inputname(1) has unknown frequency")
+        dserr("dseries::$name: object  has unknown frequency")
     end
     k = steps[f]
     d = copy(o.data)
@@ -920,13 +920,13 @@ function _loops(onames, ats, spec)
     if nloops == 1
         for t in toks(exprs[1])
             c = spec[1:ats[1]-1] * t * spec[ats[2]+1:end]
-            c in onames || merr("dseries::loops: (Implicit loops) Variable '$c' does not exist in dseries object 'inputname(1)'!")
+            c in onames || merr("dseries::loops: (Implicit loops) Variable '$c' does not exist in dseries object ''!")
             push!(out, c)
         end
     else
         for t1 in toks(exprs[1]), t2 in toks(exprs[2])
             c = spec[1:ats[1]-1] * t1 * spec[ats[2]+1:ats[3]-1] * t2 * spec[ats[4]+1:end]
-            c in onames || merr("dseries::loops: (Implicit loops) Variable '$c' does not exist in dseries object 'inputname(1)'!")
+            c in onames || merr("dseries::loops: (Implicit loops) Variable '$c' does not exist in dseries object ''!")
             push!(out, c)
         end
     end
@@ -948,7 +948,7 @@ function ds_extract(o::MDseries, specs::Vector{String})
     idx = Int[]
     for nm in names
         i = findfirst(==(nm), o.name)
-        i === nothing && merr("dseries::extract: Variable $nm is not a member of inputname(1)!")
+        i === nothing && merr("dseries::extract: Variable $nm is not a member of !")
         push!(idx, i)
     end
     _select_vars(o, idx)
@@ -1064,7 +1064,7 @@ dot!("dseries", "subsample", "extract")
 function ds_merge(o::MDseries, p::MDseries, legacy::Bool=false)
     ds_isempty(o) && return p
     ds_isempty(p) && return o
-    dsfreq(o) == dsfreq(p) || merr("dseries::merge: Cannot merge inputname(1) and inputname(2) (frequencies are different)!")
+    dsfreq(o) == dsfreq(p) || merr("dseries::merge: Cannot merge dseries objects (frequencies are different)!")
     allnames = vcat(o.name, p.name)
     # unique(..., 'last'): sorted names, index of the last occurrence
     lastidx = Dict{String,Int}()
@@ -1307,7 +1307,7 @@ function _tex_rename!(o, a)
     else
         name, new = a[1], a[2]
         idname = findfirst(==(name), o.name)
-        idname === nothing && merr("dseries::tex_rename: Variable $name is unknown in dseries object inputname(1)!")
+        idname === nothing && merr("dseries::tex_rename: Variable $name is unknown in dseries object !")
     end
     if new isa Cell
         length(new.items) == vobs(o) || merr("dseries::tex_rename: third input argument (newtexname) name must either be a string or a cell array of strings with the same number of entries as varibles in the dseries")
@@ -1403,3 +1403,12 @@ function _fmt_g15(x)
     isinf(x) && return x > 0 ? "Inf" : "-Inf"
     Printf.format(Printf.Format("%.8g"), x)
 end
+
+dot!("dseries", "baxter_king_filter", "baxter_king_filter_", "cumsum", "cumsum_", "insert", "pop", "pop_", "cumprod", "cumprod_",
+     "onesidedhptrend", "onesidedhpcycle", "lag", "lag_", "lead", "lead_", "hptrend", "hptrend_", "hpcycle", "hpcycle_", "chain",
+     "chain_", "backcast", "backcast_", "detrend", "detrend_", "exist", "mean", "nanmean", "std", "nanstd", "center", "center_",
+     "log", "log_", "exp", "exp_", "ygrowth", "ygrowth_", "hgrowth", "hgrowth_", "qgrowth", "qgrowth_", "mgrowth", "mgrowth_",
+     "dgrowth", "dgrowth_", "ydiff", "ydiff_", "hdiff", "hdiff_", "qdiff", "qdiff_", "diff", "diff_", "mdiff", "mdiff_", "abs", "abs_",
+     "flip", "flip_", "isnan", "isinf", "isreal", "round", "round_", "firstdate", "lastdate", "firstobservedperiod",
+     "lastobservedperiod", "lastobservedperiods", "lineartrend", "resetops", "resettags", "subsample", "projection", "timeaggregation",
+     "size", "set_names", "rename", "rename_", "tex_rename", "tex_rename_", "tag", "fill_", "disp", "save")

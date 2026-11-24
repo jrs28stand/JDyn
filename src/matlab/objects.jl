@@ -28,7 +28,12 @@ function obj_cat(vals, dim)
     cls = objclass(objs)
     all(v -> v isa MObject && mclass(v) == cls, objs) ||
         throw(MatlabError("concatenation operator not implemented for '$(mclass(objs[1]))' by '$(mclass(objs[end]))' operations"))
-    cls == "dates" ? dates_horzcat(objs) : (dim == 2 ? ds_horzcat(objs) : ds_vertcat(objs))
+    try
+        cls == "dates" ? dates_horzcat(objs) : (dim == 2 ? ds_horzcat(objs) : ds_vertcat(objs))
+    catch e
+        e isa MatlabError || rethrow()
+        throw(MatlabError("$cls/$(dim == 2 ? "horzcat" : "vertcat") method failed"))
+    end
 end
 
 # ---- fields and methods
@@ -50,6 +55,7 @@ end
 "`o.name` without arguments."
 function obj_field(I, o::MObject, name)
     _isprop(o, name) && return _property(o, name)
+    o isa MDates && name in ("append", "append_", "pop", "pop_", "remove", "remove_") && merr("S(2): out of bound 1 (dimensions are 1x1)")
     if o isa MDseries
         (name in OBJDOT["dseries"] || haskey(OBJM["dseries"], name) && name in ("size", "disp", "length", "isempty")) &&
             return _one_value(_method(o, name)(I, Any[o], 1))
