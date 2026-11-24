@@ -6,7 +6,7 @@ Branch `parity` (base main ce58c84). References: Dynare 7.2 under Octave 8.4; ge
 |---|------|--------|
 | 1 | steady-state `solve_algo` 9, 13, 14 | done: `src/steady_algos.jl`, `test/test_parity_steady.jl`; iterates equal Dynare's to <1e-13 relative |
 | 2 | homotopy stepping, `save_params_and_steady_state` | done: `src/homotopy.jl`, `test/test_parity_homotopy.jl`; 12 Dynare runs (modes 1/2/3, from_initval_to_endval, failing and halving mode-3 paths): steady states 1e-15 relative (with solve_algo=9), same number of solves/failed steps; file identical to Dynare's |
-| 3 | pruned order-3 theoretical moments | |
+| 3 | pruned order-3 theoretical moments | done: `src/moments_order3.jl`, `test/test_parity_moments3.jl`; 3 models x 2 cases x (JDyn, Dynare decision rules), max scaled diff 4.5e-15 with Dynare's rules; no variance decomposition at order 3 (as Dynare); order 3 without `pruning` and with filters refused (ArgumentError) |
 | 4 | `varexo_det` | |
 | 5 | `epilogue` | |
 | 6 | `external_function` | |

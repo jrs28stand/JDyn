@@ -371,7 +371,7 @@ function _stoch_simul(ws, m, oo, var_list, shocks, rng)
         oo.endo_simul = Matrix{Float64}(permutedims(y))        # n_endo x periods, as Dynare's simult
         oo.exo_simul = ex
     end
-    if !_optb(ws, "nomoments", false) && order <= 2
+    if !_optb(ws, "nomoments", false) && (order <= 2 || (order == 3 && pruning && periods == 0))
         mom = try
             periods > 0 ? simulated_moments(permutedims(oo.endo_simul); ivar=ivar, shocks=oo.exo_simul, dr=dr, model=m) :
                           theoretical_moments(m, dr; var_list=var_list)

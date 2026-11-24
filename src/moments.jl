@@ -623,8 +623,10 @@ function theoretical_moments(m::Model, dr=nothing; var_list=nothing, Sigma_e=not
     o = _mom_options(m, Dict(string(k) => v for (k, v) in options))
     o["one_sided_hp_filter"] != 0 && throw(ArgumentError("theoretical moments incompatible with one-sided HP filter. Use simulated moments instead"))
     order = o["order"]
-    order >= 3 && throw(ArgumentError("Theoretical moments are implemented up to second order"))
-    if order == 2 && m.max_deriv_order < 2
+    order > 3 && throw(ArgumentError("Theoretical moments are implemented up to third order (pruned)"))
+    order == 3 && o["pruning"] != true &&
+        throw(ArgumentError("Dynare has no theoretical moments at third order without pruning; use pruning (pruned state space) or simulated moments (periods > 0)"))
+    if order >= 2 && m.max_deriv_order < 2
         @warn "using order = 1 because Hessian is equal to zero"
         order = o["order"] = 1
     end
@@ -642,15 +644,15 @@ function theoretical_moments(m::Model, dr=nothing; var_list=nothing, Sigma_e=not
         obs_pos, isub, iobs = _intersect_stable(ivar, vid)
         me_present = !isempty(obs_pos)
     end
-    pruned = order == 2 && o["pruning"] == true
+    pruned = order >= 2 && o["pruning"] == true
     pruned && (o["hp_filter"] != 0 || o["bandpass"]) &&
-        throw(ArgumentError("theoretical moments incompatible with filtering at order 2. Use simulated moments instead"))
+        throw(ArgumentError("theoretical moments incompatible with filtering at order $order. Use simulated moments instead"))
     res = Moments(kind=pruned ? "pruned" : "theoretical", order=order, pruning=pruned, filter=_filter_name(o),
                   filter_param=o["hp_filter"] != 0 ? o["hp_filter"] : o["bandpass"] ? o["passband"] : nothing,
                   var_names=[m.endo_names[i] for i in ivar], var_index=ivar, exo_names=copy(m.exo_names),
                   stationary=trues(nvar), ar=nar)
     if pruned
-        E_y, Var_y, Corr_y, Corr_yi = _pruned_order2(R, Sigma, ivar, o)
+        E_y, Var_y, Corr_y, Corr_yi = order == 3 ? _pruned_order3(R, dr, Sigma, ivar, o) : _pruned_order2(R, Sigma, ivar, o)
         s2 = diag(Var_y)
         sd = _sqrt_nan(s2)
         res.mean, res.var, res.variance, res.std = E_y, Var_y, s2, sd
@@ -660,7 +662,7 @@ function theoretical_moments(m::Model, dr=nothing; var_list=nothing, Sigma_e=not
             o["nocorr"] == true || (res.corr = Corr_y)
             res.autocorr = Corr_yi
         end
-        if !(o["nodecomposition"] == true) && R.nexo > 1
+        if order == 2 && !(o["nodecomposition"] == true) && R.nexo > 1       # Dynare computes no variance decomposition at order 3
             ghu_s = R.ghu[R.index_states, :]
             A = R.ghx[R.index_states, :]
             idx = R.inv_order_var[ivar]
