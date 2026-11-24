@@ -238,7 +238,7 @@ How to re-run: `nice julia --project=. test/acceptance/run_dynare_tests.jl --tim
 
 - estimation, smoother, forecast and method-of-moments results in oo_ (`oo_.posterior`, `oo_.SmoothedVariables`, `oo_.MarginalDensity`,
   `oo_.likelihood_at_initial_parameters`, `estimation` does not fill oo_): about 100 REFUSED ("non-existent field") plus 150+ OK_WARN: estimation stream.
-- PAC / VAR / trend-component models and `var_expectation` / `pac.*` objects: about 90 REFUSED.
+- PAC / VAR / trend-component models and `var_expectation` / `pac.*` objects: now loaded and updated (src/pac.jl); what remains in tests/pac, var-expectations, trend-component-and-var-models: dseries (simulation, data), `pac.estimate.*`, `pac.print` (substitution tests), legacy `get_companion_matrix_legacy`. See docs/PAC_PROGRESS.md.
 - `dseries` / `dates` objects and date literals (`1Y`, `2000Q1`): the main cause of skipped MATLAB lines (130 files mention dseries): needs a dseries class in the interpreter.
 - Ramsey / optimal policy (ramsey_model, ramsey_policy): 23, now a clear ModelError (was a raw SteadyStateError "initial guess ... not finite").
 - heterogeneous-agent models (22), external functions in the model block (9), perfect_foresight_controlled_paths (9), shock_paths (3),

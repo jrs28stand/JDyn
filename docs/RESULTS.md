@@ -206,3 +206,13 @@ minutes): est_schorfheide with the smoother (loglinear, 1e-13) and two est_nk ru
    clobbering the caller's names).
 5. **Shapes, not types.** Counts are `Float64` (as MATLAB doubles); `M_.endo_names` is a column cell.
    Julia code that wants native types keeps using the existing API.
+
+## Semi-structural objects (src/pac.jl)
+
+`ws.M_.var.<name>`, `ws.M_.trend_component.<name>`, `ws.M_.var_expectation.<name>` and `ws.M_.pac.<name>` hold Dynare's fields
+(from the preprocessor's driver.m: `eqtags`, `lhs`, `max_lag`, `rhs.vars_at_eq`, `h_param_indices`, `ec`, `ar`, `additive`, `components` (a Julia
+`Vector{MStruct}`), `mce.alpha`, ...), plus what the run-time functions add (`isconstant`, `list_of_variables_in_companion_var`,
+`model_consistent_expectations`, `additive.bgp`, ...). `ws.oo_.var.<name>.CompanionMatrix` and `ws.oo_.trend_component.<name>.CompanionMatrix`
+are filled by `get_companion_matrix` / `pac.initialize` / `var_expectation.initialize`; `M_.params` carries the h / expectation parameters after
+`pac.update.expectation` / `var_expectation.update`. (`oo_.var` is overwritten by a later `stoch_simul` as in Dynare.)
+`oo_.var.<name>.ar` and `oo_.trend_component.<name>.ar` (legacy) are not filled.

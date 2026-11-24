@@ -54,7 +54,7 @@ faster than pydyn on the same machine. An interpreted `_steadystate.m` costs abo
 - Plotting beyond first-order IRFs (OccBin, smoother, decompositions, ...). First-order IRF figures are
   done: Dynare's content rules, tidy CSV export, SVG built in, PNG/PDF through an optional Plots.jl
   extension (see docs/plotting.md).
-- Optimal policy (Ramsey, OSR), heterogeneous agents, PAC/VAR models, `dseries`: refused with an error.
+- Optimal policy (Ramsey, OSR), heterogeneous agents, `dseries`: refused with an error. Semi-structural toolbox: see "Semi-structural models" below for what is and is not done (`pac.estimate.*`, legacy `get_companion_matrix_legacy`, `pac.print`/`var_expectation.print`).
 
 ## OccBin
 
@@ -254,3 +254,35 @@ maximum_lag + periods + maximum_lead) and `exo_simul` (rows x n_exo) have Dynare
   pydyn refuses but JDyn loads has no Dynare reference yet.
 - `options_.qz_criterium` set by MATLAB code and a `qz_criterium` statement option: the statement option
   wins regardless of order in the file.
+
+
+## Semi-structural models (VAR, trend component, var_expectation, PAC; src/pac.jl)
+
+Statements `var_model`, `trend_component_model`, `var_expectation_model`, `pac_model`, `pac_target_info` and the model-block terms
+`var_expectation(...)`, `pac_expectation(...)`, `pac_target_nonstationary(...)` (also with MCE) load. The preprocessor's Julia output
+already substitutes the auxiliary variables and the h/expectation parameters into the model; what only its MATLAB output holds
+(`M_.var.<name>`, `M_.trend_component.<name>`, `M_.var_expectation.<name>`, `M_.pac.<name>`, `varmatrices.m`,
+`trend_component_ar_a0.m`, `pac_target_coefficients.m`) is read from a second preprocessor run in MATLAB mode that `run_preprocessor`
+makes when the file has these statements (kept under `<model>/model/semi/`). `M_.var`, `M_.pac`, ... then have Dynare's layout in
+`ws.M_` and in the MATLAB lines of the file.
+
+Run-time functions, ported from Dynare 7.2's `matlab/`: `get_companion_matrix` (VAR with and without constant, structural VAR,
+trend component; outputs `A0, A0star, AR, B`; `oo_.var.<n>.CompanionMatrix`, `oo_.trend_component.<n>.CompanionMatrix`,
+`M_.<type>.<n>.isconstant` and `list_of_variables_in_companion_var`), `<fname>.varmatrices`, `<fname>.trend_component_ar_a0`,
+`<fname>.pac_target_coefficients`, `get_aux_variable_id`, `get_difference_order`, `isauxiliary`, `var_expectation.initialize` / `.update`
+(all horizons and `time_shift`), `pac.initialize`, `pac.update.expectation` / `.equation` (h vectors for `ll`, `dd`, `dl`, VAR with or without
+constant, trend component, components of `pac_target_info`, growth-neutrality corrections with `additive`, `optim_additive`,
+`non_optimizing_behaviour` and the bgp flags), `pac.mce.parameters`, `pac.bgp.set` / `.get`. Three-dimensional arrays exist only as
+results of these functions (`AR(:,:,i)` indexing, `index3` in src/pac.jl).
+
+| Check | What | Worst difference |
+|---|---|---|
+| `M_.params` after the update functions, companion matrices, eigenvalues of the MCE models | 32 fixtures cut from Dynare's tests (`test/ref_pac`, `test/test_pac.jl`): var-expectations 1, 1-with-time-shift-a, 2, 3, 3-with-time-shift, 5, 6, 9, 11, 12; pac var-1, 3, 6, 8, 9, 10e, 12 (6 files); trend-component 1, 2, 10, 19 (2), 19-growth-lin-comb, 28, 1-mce, 2-mce | 1e-9 relative (parameters, in practice 1e-15), 1e-10 (companion matrices), 1e-6 (eigenvalue moduli) |
+| The files' own checks (AR matrices, companion matrices, expectation weights) | trend-component-and-var-models (tcm1, tcm3, vm2 ...), var-expectations 1, 11, 1-with-time-shift-a, 3 | pass |
+
+Not implemented (refused or skipped with a clear message): `pac.estimate.nls` / `.iterative_ols` / `.init` (they need dseries and a
+nonlinear least-squares estimator), `pac.print` / `var_expectation.print` (they write `.inc` files and a dseries `evaluate.m`; JDyn does nothing, so the
+`substitution.mod` tests, which include those files, fail in the preprocessor), `get_companion_matrix_legacy` / `get_ar_ec_matrices`
+(legacy matrices from the model Jacobian), `pac.update.parameters` / `var_expectation.update_parameters` called directly, `pac.check`.
+Dynare 7.2 quirk reproduced: `var_expectation.update_parameters` uses `expr.params` (parameter indices) as coefficients.
+Dynare 7.2 defect: `pac.mce.parameters` with a parameter-valued bgp flag in `optim_additive` uses an undefined variable; JDyn raises that error.

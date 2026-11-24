@@ -847,6 +847,8 @@ if section("review")
     # is in JDyn's refusal lists
     if isdir(joinpath(DYNARE_SRC, "matlab"))
         missing_ = mutators(DYNARE_SRC)
+        # functions JDyn implements itself (src/pac.jl: PKG_FUNCS) are interpreted, not refused
+        filter!(n -> !haskey(JDyn.PKG_FUNCS, n), missing_)
         isempty(missing_) || @info "missing from JDyn.MUTATORS" missing_
         @test isempty(missing_)
     else
