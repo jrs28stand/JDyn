@@ -28,3 +28,13 @@ Branch `pf-fixes` (base main 65ed314). Acceptance files: Dynare 7.2 `tests/deter
   `oo_.initval_series`), and the file is a `.mat` written by a data script (`ramst_initval_file_data.m`) that the
   acceptance harness skips. Left for the dates/dseries work.
 - `perfect_foresight_controlled_paths` (9 tests) and `shock_paths` (3 tests): still refused.
+
+## Evidence
+
+Acceptance (deterministic_simulations): pfwee, pfwee_constant_sim_length, pfwee_learnt_in, pfwee_learnt_in_bare_1st_period,
+Irreversible_investment, Irreversible_investment_leadlag: CHECK_FAILED -> OK (the files' own strict-equality checks pass);
+pfwee_homotopy_linearization OK_WARN -> OK. Solow_no_varexo unchanged (OK_WARN) after an endval fix.
+Full test suite: all files pass (test_perfect_foresight.jl: the expectation that robust_lin_solve is warned about was
+changed to markowitz only, since it is now implemented).
+ramst_datafile: main now has dseries; the needed pieces are `dseries(file)` for the .mat/.m datafile and
+`oo_.initval_series` in make_ex_/make_y_ (see histvalf_initvalf.m); the data .mat is produced by a script the harness skips.
