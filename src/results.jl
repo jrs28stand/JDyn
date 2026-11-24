@@ -77,7 +77,8 @@ function build_M(m::Model)
     M.param_names_tex = _cellcol([get(d, "texName", d["name"]) for d in m.raw["parameters"]])
     M.endo_nbr = Float64(m.n_endo)
     M.exo_nbr = Float64(m.n_exo)
-    M.exo_det_nbr = 0.0
+    M.exo_det_nbr = Float64(n_exo_det(m))
+    n_exo_det(m) > 0 && (M.exo_det_names = _cellcol(exo_det_names(m)))
     M.param_nbr = Float64(length(m.param_names))
     M.orig_endo_nbr = Float64(orig_endo_nbr(m))
     M.eq_nbr = Float64(length(get_or(m.raw, "model", Any[])) == 0 ? m.n_endo : length(m.raw["model"]))
@@ -603,7 +604,7 @@ function dynare(modfile::AbstractString; output=nothing, shocks=Dict{Int,Any}(),
         set_dynare_seed!(m, seed === nothing ? "default" : seed)     # Dynare seeds its stream with 'default' at start-up
         particle_rng === nothing || set_rng_kind!(m, particle_rng)   # :octave = Octave's numbers in the particle filters (src/octave_rng.jl)
         ws = DynareWorkspace(m, build_M(m), build_options(m), MStruct(), Dict{String,Any}())
-        ws.oo_.exo_det_steady_state = zeros(0, 0)
+        ws.oo_.exo_det_steady_state = n_exo_det(m) > 0 ? _col(exo_det_steady(m)) : zeros(0, 0)
         ws.oo_.dynare_version = "7.2"
         ws.state[:matlab_options] = Dict{String,Any}()
         m.session.host.oo.results = ws.oo_          # MATLAB lines of the file see (and write) this oo_
@@ -652,6 +653,7 @@ function _run_in_place!(ws, st, nss, shocks, rng)
     if kind in ("initval", "endval")                   # these blocks also write oo_.steady_state
         ws.oo_.steady_state = _col(Float64[get(m.oo, v, 0.0) for v in m.endo_names])
         ws.oo_.exo_steady_state = _col(exo_steady(m))
+        n_exo_det(m) > 0 && (ws.oo_.exo_det_steady_state = _col(exo_det_steady(m)))
         return
     elseif kind == "histval"
         _histval!(ws)

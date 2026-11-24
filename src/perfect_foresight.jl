@@ -1518,6 +1518,7 @@ Throws `PerfectForesightError` when no solution is found (`raise_on_failure=fals
 function perfect_foresight(m::Model; periods=nothing, params=nothing, exo=nothing, y_init=nothing, y_term=nothing, guess=nothing,
                            steady=nothing, expectation_errors=nothing, learnt_shocks=(), learnt_endval=(), raise_on_failure::Bool=true,
                            verbose::Bool=false, lmmcp_tolfun=nothing, lmmcp_maxiter=nothing, tol=nothing, kw...)
+    n_exo_det(m) > 0 && throw(PerfectForesightError("perfect foresight with varexo_det variables is not supported", nothing))
     options = Dict{Symbol,Any}(kw)
     tol !== nothing && !haskey(options, :tolf) && (options[:tolf] = tol)
     periods !== nothing && (options[:periods] = periods)

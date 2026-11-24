@@ -1,0 +1,37 @@
+{"static_model": {"model_local_variables": [], "external_functions_temporary_terms_": [], "temporary_terms_": [{"temporary_term": "T15", "value": "h^(1+psi)"}
+, {"temporary_term": "T38", "value": "exp(a)*k^alpha"}
+, {"temporary_term": "T39", "value": "h^(1-alpha)"}
+, {"temporary_term": "T40", "value": "T38*T39"}
+], 
+"residuals":[
+{"residual": {"lhs": "c*theta*h^(1+psi)", "rhs": "(1-alpha)*y"}}
+, {"residual": {"lhs": "k", "rhs": "beta*(y*alpha*exp(b)+k*(1-delta))"}}
+, {"residual": {"lhs": "y", "rhs": "exp(a)*k^alpha*h^(1-alpha)"}}
+, {"residual": {"lhs": "k", "rhs": "k*(1-delta)+exp(b)*(y-c)"}}
+, {"residual": {"lhs": "a", "rhs": "e+b*tau+ahat+a*rho+rho2*AUX_ENDO_LAG_3_1"}}
+, {"residual": {"lhs": "b", "rhs": "bhat+a*tau+b*rho+u"}}
+, {"residual": {"lhs": "AUX_ENDO_LAG_3_1", "rhs": "a"}}
+
+]
+, "external_functions_temporary_terms_jacobian": [], "temporary_terms_jacobian": [], "jacobian": {"dims": [7, 7], "entries": [{"indices": [1, 1], "eq": 1, "var": "y", "val": "(-(1-alpha))"}
+, {"indices": [1, 2], "eq": 1, "var": "c", "val": "theta*T15"}
+, {"indices": [1, 5], "eq": 1, "var": "h", "val": "c*theta*get_power_deriv(h,1+psi,1)"}
+, {"indices": [2, 1], "eq": 2, "var": "y", "val": "(-(beta*alpha*exp(b)))"}
+, {"indices": [2, 3], "eq": 2, "var": "k", "val": "1-beta*(1-delta)"}
+, {"indices": [2, 6], "eq": 2, "var": "b", "val": "(-(beta*y*alpha*exp(b)))"}
+, {"indices": [3, 1], "eq": 3, "var": "y", "val": "1"}
+, {"indices": [3, 3], "eq": 3, "var": "k", "val": "(-(T39*exp(a)*get_power_deriv(k,alpha,1)))"}
+, {"indices": [3, 4], "eq": 3, "var": "a", "val": "(-T40)"}
+, {"indices": [3, 5], "eq": 3, "var": "h", "val": "(-(T38*get_power_deriv(h,1-alpha,1)))"}
+, {"indices": [4, 1], "eq": 4, "var": "y", "val": "(-exp(b))"}
+, {"indices": [4, 2], "eq": 4, "var": "c", "val": "exp(b)"}
+, {"indices": [4, 3], "eq": 4, "var": "k", "val": "1-(1-delta)"}
+, {"indices": [4, 6], "eq": 4, "var": "b", "val": "(-(exp(b)*(y-c)))"}
+, {"indices": [5, 4], "eq": 5, "var": "a", "val": "1-rho"}
+, {"indices": [5, 6], "eq": 5, "var": "b", "val": "(-tau)"}
+, {"indices": [5, 7], "eq": 5, "var": "AUX_ENDO_LAG_3_1", "val": "(-rho2)"}
+, {"indices": [6, 4], "eq": 6, "var": "a", "val": "(-tau)"}
+, {"indices": [6, 6], "eq": 6, "var": "b", "val": "1-rho"}
+, {"indices": [7, 4], "eq": 7, "var": "a", "val": "(-1)"}
+, {"indices": [7, 7], "eq": 7, "var": "AUX_ENDO_LAG_3_1", "val": "1"}
+]}, "external_functions_temporary_terms_hessian": [], "temporary_terms_hessian": [], "hessian": {"dims": [7, 7, 7], "entries": []}, "external_functions_temporary_terms_third_derivative": [], "temporary_terms_third_derivative": [], "third_derivative": {"dims": [7, 7, 7, 7], "entries": []}}}

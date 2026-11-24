@@ -329,7 +329,6 @@ function Model(json_dir::AbstractString; functions=Dict{String,Any}(), steady_st
     endo = String[d["name"] for d in raw["endogenous"]]
     exo = String[d["name"] for d in raw["exogenous"]]
     par = String[d["name"] for d in raw["parameters"]]
-    isempty(get_or(raw, "exogenous_deterministic", [])) || throw(ModelError("deterministic exogenous variables are not supported"))
     isempty(get_or(raw, "heterogeneity_dimension", [])) || throw(ModelError("heterogeneous-agent models (heterogeneity_dimension) are not supported"))
     info = raw["model_info"]
     n = length(endo)
@@ -446,6 +445,23 @@ end
 
 exo_steady(m::Model; terminal=false) = Float64[get(terminal ? merge(m.initval, m.endval) : m.initval, v, 0.0) for v in m.exo_names]
 
+# ---------------------------------------------------------------------- varexo_det
+"Names of the `varexo_det` variables (they follow the stochastic exogenous variables in the generated code's `x`)."
+exo_det_names(m::Model) = String[d["name"] for d in get_or(m.raw, "exogenous_deterministic", [])]
+n_exo_det(m::Model) = length(get_or(m.raw, "exogenous_deterministic", []))
+"Steady-state values of the `varexo_det` variables (initval, else 0), as `oo_.exo_det_steady_state`."
+exo_det_steady(m::Model) = Float64[get(m.initval, v, 0.0) for v in exo_det_names(m)]
+"""
+The exogenous vector the generated functions take: `x` (n_exo) followed, for a model with `varexo_det`, by the deterministic
+exogenous variables at their steady-state values (or `xd`); a vector that already has all of them is left alone.
+"""
+function _xfull(m::Model, x, xd=nothing)
+    x = x === nothing ? zeros(m.n_exo) : Vector{Float64}(x)
+    nd = n_exo_det(m)
+    (nd == 0 || length(x) == m.n_exo + nd) && return x
+    vcat(x, xd === nothing ? exo_det_steady(m) : Vector{Float64}(xd))
+end
+
 # ---------------------------------------------------------------------- evaluation
 _tmp(n::Int) = zeros(max(n, 1))
 
@@ -462,7 +478,7 @@ end
 
 function static_resid(m::Model, y::AbstractVector, x=nothing, params=nothing)
     f = m.fns
-    x = x === nothing ? zeros(m.n_exo) : Vector{Float64}(x)
+    x = _xfull(m, x)
     p = params === nothing ? m.params : Vector{Float64}(params)
     y = Vector{Float64}(y)
     T = _tmp(f.sta_tmp[1])
@@ -482,7 +498,7 @@ _neq(m::Model) = (v = get(m.raw, "model", nothing); v isa AbstractVector && !ise
 
 function static_jac(m::Model, y::AbstractVector, x=nothing, params=nothing)
     f = m.fns
-    x = x === nothing ? zeros(m.n_exo) : Vector{Float64}(x)
+    x = _xfull(m, x)
     p = params === nothing ? m.params : Vector{Float64}(params)
     y = Vector{Float64}(y)
     T = _tmp(f.sta_tmp[1] + f.sta_tmp[2])
@@ -503,7 +519,7 @@ end
 
 function dynamic_resid(m::Model, yy::AbstractVector, x=nothing, params=nothing, ss=nothing)
     f = m.fns
-    x = x === nothing ? zeros(m.n_exo) : Vector{Float64}(x)
+    x = _xfull(m, x)
     p = params === nothing ? m.params : Vector{Float64}(params)
     ss = ss === nothing ? zeros(m.n_endo) : Vector{Float64}(ss)
     T = _tmp(f.dyn_tmp[1])
@@ -522,7 +538,7 @@ end
 "Structural non-zeros of the dynamic Jacobian (at `(m.fns.g1_rows, m.fns.g1_cols)`)."
 function dynamic_jac_values(m::Model, yy::AbstractVector, x=nothing, params=nothing, ss=nothing)
     f = m.fns
-    x = x === nothing ? zeros(m.n_exo) : Vector{Float64}(x)
+    x = _xfull(m, x)
     p = params === nothing ? m.params : Vector{Float64}(params)
     ss = ss === nothing ? zeros(m.n_endo) : Vector{Float64}(ss)
     T = _tmp(f.dyn_tmp[1] + f.dyn_tmp[2])
@@ -543,6 +559,7 @@ function dynamic_jac(m::Model, yy::AbstractVector, x=nothing, params=nothing, ss
     f = m.fns
     J = zeros(m.n_endo, 3 * m.n_endo + m.n_exo)
     for k in eachindex(v)
+        f.g1_cols[k] > size(J, 2) && continue          # varexo_det columns: see dynamic_full_derivs
         J[f.g1_rows[k], f.g1_cols[k]] += v[k]
     end
     J
@@ -555,11 +572,21 @@ Derivatives of order 1 to 3 of the dynamic model: `cols` is nnz x order, 1-based
 [y(-1), y, y(+1), exogenous]; for order >= 2 each symmetric entry appears once.
 """
 function dynamic_sparse_derivs(m::Model, order::Int, yy, x=nothing, params=nothing, ss=nothing)
+    r, c, v = _dynamic_sparse_derivs(m, order, yy, x, params, ss)
+    n_exo_det(m) == 0 && return r, c, v
+    keep = findall(k -> all(<=(3 * m.n_endo + m.n_exo), view(c, k, :)), eachindex(r))      # the stochastic view: no varexo_det columns
+    r[keep], c[keep, :], v[keep]
+end
+
+"`dynamic_sparse_derivs` with the `varexo_det` columns (`[y(-1), y, y(+1), x, x_det]`)."
+dynamic_full_derivs(m::Model, order::Int, yy, x=nothing, params=nothing, ss=nothing) = _dynamic_sparse_derivs(m, order, yy, x, params, ss)
+
+function _dynamic_sparse_derivs(m::Model, order::Int, yy, x=nothing, params=nothing, ss=nothing)
     f = m.fns
     if order == 1
         return f.g1_rows, reshape(f.g1_cols, :, 1), dynamic_jac_values(m, yy, x, params, ss)
     end
-    x = x === nothing ? zeros(m.n_exo) : Vector{Float64}(x)
+    x = _xfull(m, x)
     p = params === nothing ? m.params : Vector{Float64}(params)
     ss = ss === nothing ? zeros(m.n_endo) : Vector{Float64}(ss)
     if order == 2
@@ -745,6 +772,14 @@ function _shocks!(m::Model, st)
         end
     end
     for d in get_or(st, "deterministic_shocks", [])
+        if !haskey(ix, d["var"]) && d["var"] in exo_det_names(m)
+            # shocks on varexo_det variables (Dynare's M_.det_shocks with exo_det = true): periods and values for the forecasts
+            for v in d["values"]
+                push!(get!(m.cache, :det_shocks_exo_det, Tuple{Int,Any,Any,Float64}[]),
+                      (findfirst(==(d["var"]), exo_det_names(m)), v["period1"], v["period2"], _value(m, v["value"])))
+            end
+            continue
+        end
         for v in d["values"]
             # dated periods are resolved against first_simulation_period when the perfect foresight statements are replayed
             (v["period1"] isa AbstractString && startswith(v["period1"], "dates(")) && continue
