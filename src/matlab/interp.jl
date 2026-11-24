@@ -182,6 +182,11 @@ function ev(I::Interp, n::EndKw, sc)
     v, k, nargs = I.end_stack[end]
     v isa MDates && return Float64(length(v.time))
     v isa MDseries && return Float64(vobs(v))
+    if is_nd(v)
+        nargs == 1 && return Float64(length(v))
+        sz = size(v)
+        return Float64(k < nargs ? (k <= length(sz) ? sz[k] : 1) : (k <= length(sz) ? prod(sz[k:end]) : 1))
+    end
     shp = v === nothing ? (0, 0) : shape_of(v)
     nargs == 1 && return Float64(shp[1] * shp[2])
     k <= 2 ? Float64(shp[k]) : 1.0
@@ -471,7 +476,8 @@ function mcall(I::Interp, name, args, nargout, sc)
     if f !== nothing
         push!(I.scope_stack, sc)
         r = try
-            f(I, args, nargout)
+            ndr = nd_hook(I, name, args, nargout)
+            ndr === nothing ? f(I, args, nargout) : ndr
         catch e
             e isa _JULIA_ERRORS ? throw(matlab_error(e)) : rethrow()
         finally
@@ -681,6 +687,7 @@ function for_values(I::Interp, s, sc)
         return Any[Cell(Any[x], (1, 1)) for x in v.items]
     end
     v isa AbstractString && return Any[string(c) for c in v]
+    is_nd(v) && (v = reshape(v, size(v, 1), :))
     a = arr(v)
     isempty(a) && return Any[]
     size(a, 1) == 1 && return Any[eltype(a) == Bool ? x : Float64(x) for x in a[1, :]]

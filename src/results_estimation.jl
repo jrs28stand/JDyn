@@ -408,6 +408,17 @@ function _estimation!(ws::DynareWorkspace, st, var_list, data, seed, options)
             mode = from_file ? mode_from_file(est, mfile) : posterior_mode(est; x0=x0m)
             runtime = time() - t0
             theta = copy(mode.x)
+            if !from_file                      # dynare_estimation_1.m: <fname>/Output/<fname>_mode.mat (xparam1, hh, parameter_names, fval)
+                try
+                    out = joinpath(m.mod_dir, m.name, "Output"); mkpath(out)
+                    md = Dict{String,Any}("xparam1" => reshape(copy(mode.x), :, 1), "parameter_names" => reshape(copy(est.names), :, 1),
+                                          "fval" => -mode.log_posterior)
+                    o["cova_compute"] != 0 && mode.hessian !== nothing && (md["hh"] = Matrix{Float64}(mode.hessian))
+                    MAT.matwrite(joinpath(out, m.name * "_mode.mat"), md)
+                catch e
+                    @debug "mode file not written" e
+                end
+            end
             P = get(oo, "posterior", nothing)
             P isa MStruct || (P = MStruct(); oo.posterior = P)
             haskey(P, "optimization") && delete!(P, "optimization")
