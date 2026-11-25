@@ -77,6 +77,18 @@ function _register_estimation_internals!()
             Estimation(m; statement=0, _estimation_kwargs(ws, ())...)
         end
         ws.state[:est_init] = est
+        # dynare_estimation_init.m: the parameters at their initial values, the steady state and decision rules there, oo_.prior
+        oo = a[6]               # the copy of oo_ the call received: the assignment of the outputs puts it back into oo_
+        sol0 = try
+            first_order(m; params=model_params(est, est.x0), qz_criterium=est.options["qz_criterium"], loglinear=est.options["loglinear"])
+        catch e
+            e isa Union{SteadyStateError,BlanchardKahnError,LoglinearError} || rethrow()
+            nothing
+        end
+        sol0 === nothing || (oo.steady_state = _col(sol0.steady_state))
+        ws.options_.noconstant = 0.0; a[5].noconstant = 0.0
+        _store_prior!(oo, est)
+        _store_dr_estimation!(oo, m)
         Any[DynareOpaque("dataset_", _EST_WHY), DynareOpaque("dataset_info", _EST_WHY), ret(reshape(Float64.(est.x0), :, 1)), zeros(0, 0),
             a[4], a[5], a[6], a[7], _bayestopt(est), DynareOpaque("bounds", _EST_WHY)][1:max(nout, 1)]
     end
