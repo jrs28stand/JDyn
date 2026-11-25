@@ -440,7 +440,8 @@ end
     mb = load_copy(joinpath(HO_DIR, "occ_borrcon.mod"))
     obb = JDyn.Occbin(mb)
     Sb = randn(MersenneTwister(4), 30, 2) .* sqrt.(diag(Matrix(mb.Sigma_e)))' .* 0.1
-    mk(; kw...) = JDyn.obc_ho(obb; order=2, horizon=32, check_ahead=32, cubature=true, qmc_level=5, m_diagnostic=false, kw...)
+    # these tests pin the strict rule (undecided tolerance 0: any failed point is an error unless the failure tolerance allows it); the split rule has its own testset below
+    mk(; kw...) = JDyn.obc_ho(obb; order=2, horizon=32, check_ahead=32, cubature=true, qmc_level=5, m_diagnostic=false, merge((cubature_undecided_tolerance=0.0,), kw)...)
     # default: the first failed point raises, with the payload; class (b): the check-ahead rows
     err = try; JDyn.obc_ho_simulate(mk(), Sb); nothing; catch e; e; end
     @test err isa JDyn.ObcError && err.detail isa JDyn.CubatureFailure
@@ -453,7 +454,7 @@ end
     # a model with points that have no solution at all (the SW-type stand-in): class (a)
     sw = sw_cp_model()
     Ssw = randn(MersenneTwister(4), 30, size(sw.Sigma_e, 1)) .* sqrt.(diag(Matrix(sw.Sigma_e)))' .* 0.25
-    h2 = JDyn.obc_ho(JDyn.Occbin(sw); order=2, horizon=32, check_ahead=32, cubature=true, qmc_level=5, m_diagnostic=false)
+    h2 = JDyn.obc_ho(JDyn.Occbin(sw); order=2, horizon=32, check_ahead=32, cubature=true, qmc_level=5, m_diagnostic=false, cubature_undecided_tolerance=0.0)
     e2 = try; JDyn.obc_ho_simulate(h2, Ssw); nothing; catch e; e; end
     @test e2 isa JDyn.ObcError && e2.detail.counts.a >= 1 && e2.status == :no_solution && e2.detail.period >= 1
     # tolerance mode: failed points leave the sample; one warning per simulation; weights 1/(points - failed)
@@ -590,16 +591,18 @@ end
     txt = read(joinpath(HO_DIR, "nk_occ.mod"), String)
     lines = "options_.occbin.obc_method = 'news';\noptions_.occbin.obc_order = 2;\noptions_.occbin.obc_horizon = 32;\noptions_.occbin.obc_check_ahead = 32;\n" *
             "options_.occbin.obc_cubature = true;\noptions_.occbin.obc_qmc_level = 5;\noptions_.occbin.obc_cubature_regions = 'all';\n" *
-            "options_.occbin.obc_m_diagnostic = 'false';\noptions_.occbin.obc_cubature_milp_time_limit = 0.5;\noptions_.occbin.obc_cubature_failure_tolerance = 0.1;\n"
+            "options_.occbin.obc_m_diagnostic = 'false';\noptions_.occbin.obc_cubature_milp_time_limit = 0.5;\noptions_.occbin.obc_cubature_failure_tolerance = 0.1;\n" *
+            "options_.occbin.obc_cubature_undecided_tolerance = 0.01;\noptions_.occbin.obc_cubature_undecided_min_points = 5;\n"
     write(joinpath(d, "nk_all.mod"), replace(txt, "steady; check;" => "shocks(surprise); var e; periods 1; values 10; end;\nsteady; check;") |> t -> replace(t, "occbin_setup;" => lines * "occbin_setup;"))
     m = with_logger(NullLogger()) do; JDyn.load(joinpath(d, "nk_all.mod")); end
     ob = JDyn.Occbin(m)
     mo = JDyn.mod_options(ob)
     @test mo.obc_cubature_regions == 0 && mo.obc_m_diagnostic === false && mo.obc_cubature_milp_time_limit == 0.5 && mo.obc_cubature_failure_tolerance == 0.1
+    @test mo.obc_cubature_undecided_tolerance == 0.01 && mo.obc_cubature_undecided_min_points == 5
     S = reshape(vec(ho_ref("shocks.mat")["ShockSequence"]), :, 1)[1:30, :]
     r = JDyn.simulate(ob, S; mo..., periods=30)
     rk = JDyn.simulate(ob, S; obc_method=:news, obc_order=2, obc_horizon=32, obc_check_ahead=32, obc_cubature=true, obc_qmc_level=5, obc_cubature_regions="all",
-                       obc_m_diagnostic=false, obc_cubature_milp_time_limit=0.5, obc_cubature_failure_tolerance=0.1, periods=30)
+                       obc_m_diagnostic=false, obc_cubature_milp_time_limit=0.5, obc_cubature_failure_tolerance=0.1, obc_cubature_undecided_tolerance=0.01, obc_cubature_undecided_min_points=5, periods=30)
     @test r.piecewise == rk.piecewise
     @test all(i -> hasproperty(i, :relevant) && hasproperty(i, :dropped), r.news.info) && sum(i.relevant for i in r.news.info) > 0
     ws = with_logger(NullLogger()) do; dynare(joinpath(d, "nk_all.mod")); end
@@ -607,4 +610,64 @@ end
     @test size(ws.oo_.occbin.news.wedges, 2) == 32
     @test_throws ArgumentError occbin_solver!(ws; obc_cubature_failure_tolerance=1.5)
     @test_throws ArgumentError occbin_solver!(ws; obc_cubature_regions=3)
+    @test_throws ArgumentError occbin_solver!(ws; obc_cubature_undecided_tolerance=1.0)
+    @test_throws ArgumentError occbin_solver!(ws; obc_cubature_undecided_min_points=-1)
+end
+
+@testset "split failure rule: proven no solution is an error, tail points within the allowance are dropped (cubature_limits)" begin
+    # the rule's arithmetic (pydyn's cubature_limits): a_lim = tol_a nrel; u = max(tol_u nrel, min) if tol_u > 0 else 0; total = max(a_lim, u)
+    @test JDyn.cubature_limits(279, 0.0, 0.005, 3) == (0.0, 3.0)                       # 0.5% of 279 is 1.4: the floor of 3 points applies
+    @test JDyn.cubature_limits(1000, 0.0, 0.005, 3) == (0.0, 5.0)
+    @test JDyn.cubature_limits(1000, 0.0, 0.0, 3) == (0.0, 0.0)                        # undecided tolerance 0: the strict rule, whatever the floor
+    @test JDyn.cubature_limits(1000, 0.02, 0.0, 3) == (20.0, 20.0)                     # the failure tolerance alone
+    @test JDyn.cubature_limits(1000, 0.002, 0.005, 3) == (2.0, 5.0)
+    @test JDyn.cubature_limits(1000, 0.02, 0.005, 3) == (20.0, 20.0)                   # total is never below the (a) limit
+    @test JDyn.cubature_limits(10, 0.0, 0.005, 0) == (0.0, 0.05)                       # floor 0: any failed point of 10 raises
+    mb = load_copy(joinpath(HO_DIR, "occ_borrcon.mod"))
+    obb = JDyn.Occbin(mb)
+    Sb = randn(MersenneTwister(4), 30, 2) .* sqrt.(diag(Matrix(mb.Sigma_e)))' .* 0.1
+    mk(; kw...) = JDyn.obc_ho(obb; order=2, horizon=32, check_ahead=32, cubature=true, qmc_level=5, m_diagnostic=false, kw...)
+    # defaults of the options
+    h0 = mk()
+    @test h0.cub.undecided_tolerance == 0.005 && h0.cub.undecided_min_points == 3 && h0.cub.milp_time_limit == 0.1 && h0.cub.tolerance == 0.0
+    # class (b) points: strict (tolerance 0) raises at once; the floor 0 with 0.5% of at most 63 points raises too
+    @test_throws JDyn.ObcError with_logger(NullLogger()) do; JDyn.obc_ho_simulate(mk(cubature_undecided_tolerance=0.0), Sb); end
+    @test_throws JDyn.ObcError with_logger(NullLogger()) do; JDyn.obc_ho_simulate(mk(cubature_undecided_min_points=0), Sb); end
+    # a floor above the number of relevant points drops every (b) point: the run completes, one warning, counts by class
+    h = mk(cubature_undecided_min_points=63)
+    r = @test_logs (:warn, r"by class: a=0 proven no solution, b=\d+ horizon too short, c=\d+ undecided.*docs/OBC_CUBATURE_FAILURES\.md") JDyn.obc_ho_simulate(h, Sb)
+    @test sum(r.dropped) > 0 && r.dropped == r.dropped_a .+ r.dropped_b .+ r.dropped_c && sum(r.dropped_a) == 0 && sum(r.dropped_b) > 0
+    @test sum(r.dropped) == r.stats[:dropped_points] && sum(r.dropped_b) == r.stats[:failed_b] && sum(r.relevant) == r.stats[:relevant_points]
+    @test all(r.dropped .<= max.(0.0, 63))
+    # the same run with the failure tolerance covering every class gives the same dropped counts and the same path (a larger tolerance only widens the total allowance)
+    h2 = mk(cubature_failure_tolerance=0.9, cubature_undecided_tolerance=0.0)
+    r2 = with_logger(NullLogger()) do; JDyn.obc_ho_simulate(h2, Sb); end
+    @test r2.dropped == r.dropped && r2.dropped_b == r.dropped_b && r2.wedges == r.wedges
+    # a point of class (a) is an error whatever the undecided allowance
+    sw = sw_cp_model()
+    Ssw = randn(MersenneTwister(4), 30, size(sw.Sigma_e, 1)) .* sqrt.(diag(Matrix(sw.Sigma_e)))' .* 0.25
+    h3 = JDyn.obc_ho(JDyn.Occbin(sw); order=2, horizon=32, check_ahead=32, cubature=true, qmc_level=5, m_diagnostic=false, cubature_undecided_tolerance=0.5, cubature_undecided_min_points=1000)
+    e3 = try; JDyn.obc_ho_simulate(h3, Ssw); nothing; catch e; e; end
+    @test e3 isa JDyn.ObcError && e3.status == :no_solution && e3.detail.counts.a >= 1 && e3.detail.undecided_tolerance == 0.5
+    @test occursin("PROVEN no solution", e3.msg) && occursin("docs/OBC_CUBATURE_FAILURES.md", e3.msg) && occursin("obc_cubature_undecided_tolerance=0.5", e3.msg)
+    # with a (a) allowance (failure tolerance) the point is dropped instead
+    h4 = JDyn.obc_ho(JDyn.Occbin(sw); order=2, horizon=32, check_ahead=32, cubature=true, qmc_level=5, m_diagnostic=false, cubature_failure_tolerance=0.95)
+    r4 = with_logger(NullLogger()) do; JDyn.obc_ho_simulate(h4, Ssw[1:3, :]); end
+    @test sum(r4.dropped_a) > 0
+    # invalid values are refused
+    for bad in (-0.1, 1.0, 2.0, NaN, "x")
+        @test_throws ArgumentError mk(cubature_undecided_tolerance=bad)
+    end
+    for bad in (-1, 1.5)
+        @test_throws ArgumentError mk(cubature_undecided_min_points=bad)
+    end
+    # the keyword route of simulate and the per-period info
+    m = load_copy(joinpath(HO_DIR, "occ_borrcon.mod"))
+    ob = JDyn.Occbin(m)
+    kw = (obc_method=:news, obc_order=2, obc_cubature=true, obc_qmc_level=5, obc_horizon=32, check_ahead_periods=32, obc_m_diagnostic=false, periods=30)
+    @test_throws ArgumentError JDyn.simulate(ob, Sb; obc_cubature_undecided_tolerance=-1, kw...)
+    @test_throws ArgumentError JDyn.simulate(ob, Sb; obc_cubature_undecided_min_points=1.5, kw...)
+    rs = with_logger(NullLogger()) do; JDyn.simulate(ob, Sb; obc_cubature_undecided_min_points=63, kw...); end
+    @test all(i -> hasproperty(i, :dropped_a) && hasproperty(i, :dropped_b) && hasproperty(i, :dropped_c), rs.news.info)
+    @test sum(i.dropped_b for i in rs.news.info) == sum(r.dropped_b)
 end

@@ -118,7 +118,8 @@ the first `2^(level+1) - 1` of the unscrambled Sobol sequence after the origin),
 function obc_ho(ob::Occbin; order::Integer=2, horizon::Integer=40, check_ahead::Integer=40, cubature::Bool=false,
                 periods_of_uncertainty::Integer=16, qmc_level::Integer=11, regions="all", taper::Bool=true,
                 pruning_cutoff=0.01, max_cubature_dimension::Integer=128, tol::Real=1e-10, Sigma_e=nothing,
-                m_diagnostic=:s, cubature_milp_time_limit::Real=1.0, cubature_failure_tolerance::Real=0.0)
+                m_diagnostic=:s, cubature_milp_time_limit::Real=0.1, cubature_failure_tolerance::Real=0.0,
+                cubature_undecided_tolerance=0.005, cubature_undecided_min_points=3)
     order in (1, 2) || throw(ArgumentError("obc_order must be 1 or 2 (order 3 is not implemented)"))
     regions = _obc_regions(regions)
     periods_of_uncertainty >= 1 || throw(ArgumentError("obc_periods_of_uncertainty must be at least 1"))
@@ -162,6 +163,8 @@ function obc_ho(ob::Occbin; order::Integer=2, horizon::Integer=40, check_ahead::
     _ho_build_q_map!(h)
     h.cub.milp_time_limit = _obc_float_option(cubature_milp_time_limit, "obc_cubature_milp_time_limit"; lo=0.0)
     h.cub.tolerance = _obc_float_option(cubature_failure_tolerance, "obc_cubature_failure_tolerance"; lo=0.0, hi=1.0, open_hi=true)
+    h.cub.undecided_tolerance = _obc_float_option(cubature_undecided_tolerance, "obc_cubature_undecided_tolerance"; lo=0.0, hi=1.0, open_hi=true)
+    h.cub.undecided_min_points = _obc_int_option(cubature_undecided_min_points, "obc_cubature_undecided_min_points"; min=0)
     if cubature
         lev = _obc_mdiag(m_diagnostic)
         h.cub.m_diag = cub_m_diagnostic(sys.M, length(sys.cons); level=lev)
@@ -357,7 +360,7 @@ Exact skipping: `p_h >= q_h - |R_h| |xi|` (Cauchy-Schwarz), so when `q >= 0` eve
 (points are sorted by norm: a prefix); and a path with `min p >= -1e-8` is irrelevant whatever its maximum.
 """
 function ho_news_shocks(h::ObcHO, q::AbstractVector, period::Int=0)
-    h.cub.dropped_last = 0; h.cub.relevant_last = 0
+    h.cub.dropped_last = 0; h.cub.relevant_last = 0; h.cub.dropped_cls = (0, 0, 0)
     h.cub.qlog === nothing || push!(h.cub.qlog, Vector{Float64}(q))
     (!h.cubature || size(h.R, 2) == 0) && return _ho_lcp(h, q, period)
     _ho_prepare_points!(h)
@@ -446,6 +449,26 @@ function _cub_classify(h::ObcHO, p::AbstractVector)
     nothing, s2 == :ok ? :b : :a
 end
 
+"Statistics of a period that dropped `nfail` points (`counts` by class)."
+function _cub_record!(h::ObcHO, counts, nfail::Int)
+    nfail > 0 || return
+    for c in (:a, :b, :c)
+        h.stats[Symbol("failed_", c)] = get(h.stats, Symbol("failed_", c), 0) + getfield(counts, c)
+    end
+    h.stats[:dropped_points] = get(h.stats, :dropped_points, 0) + nfail
+    h.stats[:dropped_periods] = get(h.stats, :dropped_periods, 0) + 1
+    nothing
+end
+
+"Raise the `ObcError` (payload `CubatureFailure`) of a period whose failures exceed the rule."
+function _cub_raise!(h::ObcHO, period, counts, nfail, unexamined, nrel, npts, n_as)
+    h.stats[:no_solution] = get(h.stats, :no_solution, 0) + 1
+    for c in (:a, :b, :c)
+        h.stats[Symbol("failed_", c)] = get(h.stats, Symbol("failed_", c), 0) + getfield(counts, c)
+    end
+    throw(_cub_failure(period, counts, nfail, unexamined, nrel, npts, n_as, h.cub.tolerance, h.cub.milp_time_limit, h.cub.undecided_tolerance))
+end
+
 """
     _cub_all!(h, q, P, rel, npts, period) -> Vector
 
@@ -524,11 +547,11 @@ function _cub_all!(h::ObcHO, q::AbstractVector, P::AbstractMatrix, rel::Vector{I
         end
     end
     nfail = 0
+    counts = (a=0, b=0, c=0)
     if !isempty(bad)
         h.stats[:batch_fail] = get(h.stats, :batch_fail, 0) + length(bad)
         nrel = length(rel)
-        limit = st.tolerance * nrel
-        counts = (a=0, b=0, c=0)
+        a_lim, limit = cubature_limits(nrel, st.tolerance, st.undecided_tolerance, st.undecided_min_points)
         for (i, j) in enumerate(bad)
             p = [q[r] + P[r, j] for r in 1:N]
             y, cls = _cub_classify(h, p)
@@ -537,24 +560,15 @@ function _cub_all!(h::ObcHO, q::AbstractVector, P::AbstractMatrix, rel::Vector{I
             else
                 counts = merge(counts, NamedTuple{(cls,)}((getfield(counts, cls) + 1,)))
                 nfail += 1
-                if nfail > limit
-                    h.stats[:no_solution] = get(h.stats, :no_solution, 0) + 1
-                    for c in (:a, :b, :c)
-                        h.stats[Symbol("failed_", c)] = get(h.stats, Symbol("failed_", c), 0) + getfield(counts, c)
-                    end
-                    throw(_cub_failure(period, counts, nfail, length(bad) - i, nrel, npts, length(bad), st.tolerance, st.milp_time_limit))
+                if counts.a > a_lim || nfail > limit                 # decided: stop (the counts are then lower bounds when points are left)
+                    _cub_raise!(h, period, counts, nfail, length(bad) - i, nrel, npts, length(bad))
                 end
             end
         end
-        for c in (:a, :b, :c)
-            h.stats[Symbol("failed_", c)] = get(h.stats, Symbol("failed_", c), 0) + getfield(counts, c)
-        end
-        if nfail > 0
-            h.stats[:dropped_points] = get(h.stats, :dropped_points, 0) + nfail
-            h.stats[:dropped_periods] = get(h.stats, :dropped_periods, 0) + 1
-        end
+        _cub_record!(h, counts, nfail)
     end
     st.dropped_last = nfail
+    st.dropped_cls = (counts.a, counts.b, counts.c)
     acc ./ (npts - nfail)
 end
 
@@ -586,8 +600,14 @@ function _cub_one!(h::ObcHO, qm::AbstractVector, nrel::Int, npts::Int, period::I
     y, cls = _cub_unit(h, qm)
     if cls !== nothing
         counts = merge((a=0, b=0, c=0), NamedTuple{(cls,)}((1,)))
-        h.stats[:no_solution] = get(h.stats, :no_solution, 0) + 1
-        throw(_cub_failure(period, counts, nrel, 0, nrel, npts, nothing, h.cub.tolerance, h.cub.milp_time_limit))
+        a_lim, limit = cubature_limits(nrel, h.cub.tolerance, h.cub.undecided_tolerance, h.cub.undecided_min_points)
+        if counts.a > a_lim || nrel > limit
+            _cub_raise!(h, period, counts, nrel, 0, nrel, npts, nothing)
+        end
+        _cub_record!(h, counts, nrel)
+        h.cub.dropped_last = nrel
+        h.cub.dropped_cls = (counts.a, counts.b, counts.c)
+        return zeros(h.nT)
     end
     (nrel / npts) .* y
 end
@@ -654,7 +674,7 @@ function _cub_regions!(h::ObcHO, q::AbstractVector, P::AbstractMatrix, rel::Vect
     k = h.regions
     xr = h.xs[:, first-1 .+ rel]
     groups = nrel <= k ? [[j] for j in 1:nrel] : _split_regions(q .+ view(P, :, rel), k, h.pruning_cutoff, h.max_dim)
-    limit = st.tolerance * nrel
+    a_lim, limit = cubature_limits(nrel, st.tolerance, st.undecided_tolerance, st.undecided_min_points)
     acc = zeros(T)
     nfail = 0
     counts = (a=0, b=0, c=0)
@@ -667,20 +687,14 @@ function _cub_regions!(h::ObcHO, q::AbstractVector, P::AbstractMatrix, rel::Vect
         else
             counts = merge(counts, NamedTuple{(cls,)}((getfield(counts, cls) + length(g),)))
             nfail += length(g)
-            if nfail > limit
-                h.stats[:no_solution] = get(h.stats, :no_solution, 0) + 1
-                throw(_cub_failure(period, counts, nfail, length(groups) - i, nrel, npts, nothing, st.tolerance, st.milp_time_limit))
+            if counts.a > a_lim || nfail > limit
+                _cub_raise!(h, period, counts, nfail, length(groups) - i, nrel, npts, nothing)
             end
         end
     end
-    if nfail > 0
-        for c in (:a, :b, :c)
-            h.stats[Symbol("failed_", c)] = get(h.stats, Symbol("failed_", c), 0) + getfield(counts, c)
-        end
-        h.stats[:dropped_points] = get(h.stats, :dropped_points, 0) + nfail
-        h.stats[:dropped_periods] = get(h.stats, :dropped_periods, 0) + 1
-    end
+    _cub_record!(h, counts, nfail)
     st.dropped_last = nfail
+    st.dropped_cls = (counts.a, counts.b, counts.c)
     acc ./ (npts - nfail)
 end
 
@@ -718,6 +732,7 @@ function obc_ho_simulate(h::ObcHO, shocks::AbstractMatrix; init=nothing)
     prev = y1 .+ y2 .+ o
     with_b, without_b, wedges = Matrix{Float64}(undef, S, n), Matrix{Float64}(undef, S, n), zeros(S, h.nT)
     dropped, relevant = zeros(Int, S), zeros(Int, S)
+    dcls = zeros(Int, S, 3)
     y1n, y2n, opre = zeros(n), zeros(n), zeros(n)
     x1, x2, x1n = zeros(ns), zeros(ns), zeros(ns)
     kxx, kuu, kxu = zeros(ns^2), zeros(nx^2), zeros(ns * nx)
@@ -768,12 +783,15 @@ function obc_ho_simulate(h::ObcHO, shocks::AbstractMatrix; init=nothing)
         end
         wedges[t, :] = w
         dropped[t], relevant[t] = h.cub.dropped_last, h.cub.relevant_last
+        dcls[t, :] .= h.cub.dropped_cls
     end
     if any(>(0), dropped)
-        @warn "obc_cubature_failure_tolerance = $(h.cub.tolerance): $(sum(dropped)) of $(sum(relevant)) relevant perturbed points ($(round(100 * sum(dropped) / sum(relevant); digits=1))%) were dropped in " *
-              "$(count(>(0), dropped)) of $S periods; the remaining points are reweighted by 1/(points - dropped)"
+        share = maximum(dropped[t] / max(1, relevant[t]) for t in 1:S)
+        @warn cubature_warning(h.cub.undecided_tolerance, h.cub.undecided_min_points, (sum(dcls[:, 1]), sum(dcls[:, 2]), sum(dcls[:, 3])),
+                               sum(relevant), share, count(>(0), dropped), S)
     end
-    (with_bound=with_b, without_bound=without_b, wedges=wedges, dropped=dropped, relevant=relevant, stats=copy(h.stats))
+    (with_bound=with_b, without_bound=without_b, wedges=wedges, dropped=dropped, relevant=relevant, dropped_a=dcls[:, 1], dropped_b=dcls[:, 2], dropped_c=dcls[:, 3],
+     stats=copy(h.stats))
 end
 
 # ------------------------------------------------------------------------------------ entry point (simulate with obc_order / obc_cubature)
@@ -805,7 +823,8 @@ positive wedges.
 function _simulate_obc_ho(ob::Occbin, shocks_in::AbstractMatrix; horizon::Integer, tol::Real, periods::Integer, check_ahead_periods::Integer,
                           max_check_ahead_periods::Real, init, exo_pos, ignored::NamedTuple, order::Integer, cubature::Bool,
                           periods_of_uncertainty::Integer, qmc_level::Integer, regions::Integer, m_diagnostic=:s,
-                          milp_time_limit::Real=1.0, failure_tolerance::Real=0.0)
+                          milp_time_limit::Real=0.1, failure_tolerance::Real=0.0,
+                          undecided_tolerance=0.005, undecided_min_points=3)
     m, n, n_exo = ob.model, ob.n, ob.n_exo
     changed = [String(key) for (key, v) in pairs(ignored) if !isequal(v, getfield(_OBC_IGNORED_DEFAULTS, key))]
     isempty(changed) || warn_once(m, "obc_order = $order: OccBin options of the regime iteration are not used (ignored): " * join(sort(changed), ", "))
@@ -818,10 +837,12 @@ function _simulate_obc_ho(ob::Occbin, shocks_in::AbstractMatrix; horizon::Intege
     shocks = zeros(n_periods, n_exo)
     shocks[1:S, exo_idx] = Float64.(shocks_in)
     check = Int(min(check_ahead_periods, max_check_ahead_periods))
-    key = (Int(horizon), check, Int(order), cubature, Int(periods_of_uncertainty), Int(qmc_level), Int(regions), Float64(tol), m_diagnostic, Float64(milp_time_limit), Float64(failure_tolerance))
+    key = (Int(horizon), check, Int(order), cubature, Int(periods_of_uncertainty), Int(qmc_level), Int(regions), Float64(tol), m_diagnostic, Float64(milp_time_limit), Float64(failure_tolerance),
+           Float64(undecided_tolerance), Int(undecided_min_points))
     h = get!(() -> obc_ho(ob; order=order, horizon=horizon, check_ahead=check, cubature=cubature, periods_of_uncertainty=periods_of_uncertainty,
                           qmc_level=qmc_level, regions=regions, tol=tol, m_diagnostic=m_diagnostic,
-                          cubature_milp_time_limit=milp_time_limit, cubature_failure_tolerance=failure_tolerance), get!(() -> Dict{Any,ObcHO}(), _OBC_HO_CACHE, ob), key)
+                          cubature_milp_time_limit=milp_time_limit, cubature_failure_tolerance=failure_tolerance,
+                          cubature_undecided_tolerance=undecided_tolerance, cubature_undecided_min_points=undecided_min_points), get!(() -> Dict{Any,ObcHO}(), _OBC_HO_CACHE, ob), key)
     foreach(k -> h.stats[k] = 0, keys(h.stats))
     y0 = init === nothing || isempty(init) ? nothing : Float64.(vec(collect(init)))
     y0 === nothing || length(y0) == n || throw(ArgumentError("init needs $n values (declaration order)"))
@@ -829,7 +850,8 @@ function _simulate_obc_ho(ob::Occbin, shocks_in::AbstractMatrix; horizon::Intege
     T = h.T
     status = fill(:ok, n_periods)
     infos = Any[(solver=:ho, cubature=cubature, order=order, lcp=h.stats[:lcp], cubature_points=h.stats[:cubature_points],
-                 relevant_points=h.stats[:relevant_points], relevant=sim.relevant[t], dropped=sim.dropped[t]) for t in 1:n_periods]
+                 relevant_points=h.stats[:relevant_points], relevant=sim.relevant[t], dropped=sim.dropped[t],
+                 dropped_a=sim.dropped_a[t], dropped_b=sim.dropped_b[t], dropped_c=sim.dropped_c[t]) for t in 1:n_periods]
     history = Vector{Vector{Tuple{Vector{Int},Vector{Int}}}}()
     diag = _Diag[]
     for t in 1:n_periods

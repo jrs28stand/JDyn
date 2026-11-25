@@ -66,13 +66,16 @@ mutable struct CubState
     dropped_last::Int
     relevant_last::Int
     qlog::Union{Nothing,Vector{Vector{Float64}}}      # when a vector: every gap path `q` passed to `ho_news_shocks` is appended (tests, cross-checks)
+    undecided_tolerance::Float64       # share of a period's relevant points of class b or c that may be dropped (obc_cubature_undecided_tolerance)
+    undecided_min_points::Int          # floor on that allowance in points (obc_cubature_undecided_min_points)
+    dropped_cls::NTuple{3,Int}         # dropped points of the last period by class (a, b, c)
 end
 function CubState(M::AbstractMatrix, N::Integer)
     nws = size(M, 1)
     CubState(:cache, CubCache(), zeros(Bool, nws), zeros(nws), zeros(nws), zeros(nws), zeros(UInt64, cld(nws, 64)),
                UInt64[], Int[], zeros(nws), zeros(N), maximum(abs, M),
                zeros(Bool, nws, 0), zeros(UInt64, 120, 0), Int[], Int[], UInt64[], UInt64[], zeros(nws, 0), zeros(nws, 0), zeros(nws, nws),
-               zeros(N, 0), zeros(nws, 0), Bool[], nothing, 1.0, 0.0, nothing, nothing, 0, 0, nothing)
+               zeros(N, 0), zeros(nws, 0), Bool[], nothing, 0.1, 0.0, nothing, nothing, 0, 0, nothing, 0.005, 3, (0, 0, 0))
 end
 
 @inline function _pack!(key::Vector{UInt64}, S::Vector{Bool})
@@ -338,7 +341,7 @@ function _obc_mdiag(x)
     throw(ArgumentError("obc_m_diagnostic must be s, full or false (got $x)"))
 end
 
-"`obc_cubature_milp_time_limit` (seconds, > 0) and `obc_cubature_failure_tolerance` (a share in [0, 1))."
+"`obc_cubature_milp_time_limit` (seconds, >= 0), `obc_cubature_failure_tolerance` and `obc_cubature_undecided_tolerance` (shares in [0, 1)), `obc_cubature_undecided_min_points` (integer >= 0)."
 function _obc_float_option(x, name::AbstractString; lo::Real, hi::Real=Inf, open_hi::Bool=false)
     v = x isa AbstractArray && length(x) == 1 ? x[1] : x
     v isa AbstractString && (v = tryparse(Float64, v))
@@ -424,6 +427,39 @@ function _cublp_gap(lp::CubLP, p::AbstractVector)
     Float64(ccall((:Highs_getObjectiveValue, libhighs), Cdouble, (Ptr{Cvoid},), lp.ptr))
 end
 
+# ------------------------------------------------------------------------------------------------ failure rule
+"Where the user guide of the failure rule lives (named in the warning and in the error)."
+const CUBATURE_FAILURES_PAGE = "docs/OBC_CUBATURE_FAILURES.md"
+
+"""
+    cubature_limits(nrel, failure_tolerance, undecided_tolerance, min_points=3) -> (a_lim, total_lim)
+
+The rule of one period with `nrel` relevant points (pydyn's `cubature_limits`): the period is acceptable iff `n_a <= a_lim` and `n_a + n_b + n_c <= total_lim`, where
+`a_lim = failure_tolerance * nrel`, `u = max(undecided_tolerance * nrel, min_points)` if `undecided_tolerance > 0` (else 0) and `total_lim = max(a_lim, u)`.
+With `undecided_tolerance = 0` this is the strict rule: no failed point unless `failure_tolerance > 0`.
+"""
+function cubature_limits(nrel::Integer, failure_tolerance::Real, undecided_tolerance::Real, min_points::Integer=3)
+    a_lim = failure_tolerance * nrel
+    u = undecided_tolerance > 0 ? max(undecided_tolerance * nrel, float(min_points)) : 0.0
+    a_lim, max(a_lim, u)
+end
+
+"""
+    cubature_warning(tolerance, min_points, dropped_cls, relevant, share_max, nperiods, S)
+
+The single warning of a simulation that dropped failed cubature points: totals by class, the largest share in one period, the tolerance and floor, advice per class and the pointer to the user guide.
+"""
+function cubature_warning(utol::Real, min_points::Integer, cls::NTuple{3,Int}, relevant::Integer, share_max::Real, nper::Integer, S::Integer)
+    a, b, c = cls
+    tot = a + b + c
+    "cubature: $tot of $relevant relevant perturbed points ($(round(100 * tot / max(1, relevant); digits=3))%) were dropped in $nper of $S periods " *
+    "(by class: a=$a proven no solution, b=$b horizon too short, c=$c undecided; largest share in one period $(round(100 * share_max; digits=2))%; " *
+    "allowed: $(100 * utol)% of a period's relevant points, never fewer than $min_points). " *
+    "Classes (b) and (c) are tail points that the solver could not settle: they are NOT proven to have no solution. The remaining points are reweighted " *
+    "by 1/(points - dropped), which biases the average slightly towards benign states. To reduce them: a longer `obc_horizon` for (b); a larger " *
+    "`obc_cubature_milp_time_limit` for (c). `obc_cubature_undecided_tolerance = 0` makes any failed point an error. See $CUBATURE_FAILURES_PAGE."
+end
+
 # ------------------------------------------------------------------------------------------------ failure payload
 """
     CubatureFailure
@@ -446,18 +482,22 @@ struct CubatureFailure
     tolerance::Float64
     milp_time_limit::Float64
     advice::Vector{String}
+    undecided_tolerance::Float64
 end
 
-function _cub_failure(period, counts, nfail, unexamined, nrel, npts, n_as, tol, limit)
+function _cub_failure(period, counts, nfail, unexamined, nrel, npts, n_as, tol, limit, utol=0.0)
     a, b, c = counts.a, counts.b, counts.c
     advice = String[]
-    b > 0 && push!(advice, "(b): the check-ahead rows cannot be met with wedges inside the news horizon; try a longer obc_horizon (not proved to help)")
-    a > 0 && push!(advice, "(a): proved no solution at this horizon (M is not an S-matrix or the path is outside its reach): the model has reachable states without an " *
-                           "equilibrium; set obc_cubature_failure_tolerance > 0 only to drop such points knowingly")
-    c > 0 && push!(advice, "(c): undecided at the MILP time limit ($(limit) s); raise obc_cubature_milp_time_limit")
+    a > 0 && push!(advice, "(a) PROVEN no solution: the model has states that agents give weight to (through the shocks they expect) from which no equilibrium " *
+                           "exists. This is a property of the model or its calibration, not of the solver; averaging over fewer points would hide it. " *
+                           "Raise obc_cubature_failure_tolerance only to drop such points knowingly")
+    b > 0 && push!(advice, "(b) horizon too short: the bound would still bind after the news horizon; try a longer obc_horizon (not proved to help)")
+    c > 0 && push!(advice, "(c) undecided: the integer programme did not settle the point in $(limit) s, or found a regime sequence that fails OccBin's test; " *
+                           "try a larger obc_cubature_milp_time_limit (this cannot make a point worse)")
+    push!(advice, "obc_cubature_undecided_tolerance is the share of relevant points in a period that may be (b) or (c) and dropped; see $CUBATURE_FAILURES_PAGE")
     status = a > 0 ? :no_solution : b > 0 ? :horizon_too_short : :not_converged
     lb = unexamined > 0
     msg = "cubature: $(lb ? "at least " : "")$nfail of $nrel relevant perturbed points ($npts in total) have no usable solution: a=$a b=$b c=$c" *
-          (tol > 0 ? "; tolerance $tol" : "") * ". " * join(advice, " ")
-    ObcError(status, period, msg, CubatureFailure(status, period, nfail, lb, nrel, npts, counts, n_as, tol, limit, advice))
+          (tol > 0 ? "; obc_cubature_failure_tolerance=$tol" : "") * (utol > 0 ? "; obc_cubature_undecided_tolerance=$utol" : "") * ". " * join(advice, " ")
+    ObcError(status, period, msg, CubatureFailure(status, period, nfail, lb, nrel, npts, counts, n_as, tol, limit, advice, utol))
 end
