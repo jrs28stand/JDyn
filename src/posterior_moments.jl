@@ -56,15 +56,18 @@ a `consider_*` option is an error, as in Dynare.
 """
 function moment_variable_list(est::Estimation; var_list=nothing, consider=nothing)
     m = est.model
-    given = var_list === nothing ? _estimation_var_list_est(est) : String.(collect(var_list))
+    stmt = _estimation_var_list_est(est)       # the list after the estimation command in the .mod file
+    given = var_list === nothing ? stmt : String.(collect(var_list))
     flag = consider
     if flag === nothing
         for (k, v) in (("consider_all_endogenous", :all), ("consider_all_endogenous_and_auxiliary", :aux), ("consider_only_observed", :obs))
             _est_flag(get(est.options, k, false)) && (flag = v)
         end
     end
-    !isempty(given) && flag !== nothing &&
+    # Dynare's rule concerns the .mod file's list; a list passed here explicitly takes precedence over the consider_* options
+    var_list === nothing && !isempty(stmt) && flag !== nothing &&
         throw(EstimationError("You cannot use the consider_all_endogenous, consider_all_endogenous_and_auxiliary or consider_only_observed options when listing variables after the estimation command"))
+    var_list === nothing || (flag = nothing)
     if isempty(given)
         given = flag === nothing || flag == :all ? orig_endo_names(m) :
                 flag == :aux ? copy(m.endo_names) :
