@@ -22,7 +22,7 @@ function cell(model, form, order, level; T)
     S = randn(MersenneTwister(4), T, m.n_exo) .* sd' .* SC[model]
     ob = JDyn.Occbin(m)
     hz = HZ[model]
-    kw = (order=order, horizon=hz, check_ahead=hz, cubature=level > 0, qmc_level=level)
+    kw = (order=order, horizon=hz, check_ahead=hz, cubature=level > 0, qmc_level=level, cubature_undecided_tolerance=0.02)     # 2%: bf and zlb2m have periods with 0.6% undecided points (docs/OBC_CUBATURE_FAILURES.md)
     form == :lcp && model == "bf" && return nothing
     h = form == :regime ? JDyn.obc_ho_regime(ob; kw...) : JDyn.obc_ho(ob; kw..., m_diagnostic=false)
     sim = form == :regime ? JDyn.obc_hor_simulate : JDyn.obc_ho_simulate
@@ -44,9 +44,10 @@ function main(args)
     open(OUT, "a") do io
         new && println(io, "| model | solver | ms per period (min of $REPS runs) | periods | periods with a wedge | relevant points | dropped | load |\n|---|---|---|---|---|---|---|---|")
         for model in models, (order, level, T) in ((2, 0, 150), (2, 9, 40), (2, 11, 40)), form in (:regime, :lcp)
-            c = try; cell(model, form, order, level; T=T); catch e; (ms=NaN, load=load1(), rel=0, drop=0, binds=0, T=T); end
+            c = try; cell(model, form, order, level; T=T); catch e; (ms=NaN, load=load1(), rel=0, drop=0, binds=0, T=T, err=first(sprint(showerror, e), 160)); end
             c === nothing && (println(io, "| $model | $(form) $(level == 0 ? "order 2" : "cubature level $level") | refused (not a complementary pair) | $T | | | | |"); continue)
-            line = @sprintf("| %s | %s %s | %.2f | %d | %d | %d | %d | %.2f |", model, form, level == 0 ? "order 2" : "cubature level $level", c.ms, c.T, c.binds, c.rel, c.drop, c.load)
+            line = @sprintf("| %s | %s %s | %.3f | %d | %d | %d | %d | %.2f |", model, form, level == 0 ? "order 2" : "cubature level $level", c.ms, c.T, c.binds, c.rel, c.drop, c.load) *
+                   (hasproperty(c, :err) ? " " * c.err : "")
             println(line); println(io, line); flush(io)
         end
     end

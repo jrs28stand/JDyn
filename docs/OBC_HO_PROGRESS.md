@@ -233,3 +233,64 @@ What was slow: the regime iteration evaluated OccBin's bind and relax conditions
 
 Tests (task 2): test/test_obc_formulation.jl (new, registered; about 1.5 min), test/test_obc_estimation.jl (mkest asks for the LCP explicitly on NKM/NKMS where a test is about the LCP solver: `LCPFilterSolver`, its statistics, selection, 2.8 s chains), test/test_obc_news.jl (NKM_0_std_shocks:
 LCP pinned for the forced-integer-programme variant, which is slow in the regime formulation; default run asserted regime = OccBin), test/test_obc_horizon.jl (NKM tests pin the LCP; new testset for the regime behaviour at the extreme vector).
+
+## Task 3: the split cubature failure rule and the regime formulation at order 2 and with cubature
+
+Specification: pydyn (branch `obc`, 9164d34) `docs/OBC_CUBATURE_FAILURES.md`, `docs/OBC_REGIME_HO.md`, `pydyn/obc_ho.py` (`cubature_limits`, the failure classes, warning and error texts), `pydyn/obc_regime_ho.py`
+(`HigherOrderRegime`), `pydyn/obc.py` (`RegimeOBC._search`, `lcp_from`, `_solve_lcp_core`), `tests/test_obc_regime_ho.py`. User guide of the failure rule: `docs/OBC_CUBATURE_FAILURES.md` (copied and adapted;
+every measured number on that page was measured in the Python port, the cross-port runs below reproduce the counts by class on the JDyn side).
+
+### Part A: the rule (src/obc_cubature.jl, src/obc_ho.jl)
+Per period with `nrel` relevant points: `n_a` (class a: proven no solution by an infeasible linear programme or by an integer programme that finishes infeasible at every horizon, see "Deviations"),
+`n_b` (horizon too short), `n_c` (undecided). `a_lim = obc_cubature_failure_tolerance nrel`, `u = max(obc_cubature_undecided_tolerance nrel, obc_cubature_undecided_min_points)` if the undecided tolerance is positive
+(else 0), `total_lim = max(a_lim, u)`; the period is acceptable iff `n_a <= a_lim` and `n_a + n_b + n_c <= total_lim` (`cubature_limits`). Defaults: failure tolerance 0, undecided tolerance 0.005, floor 3 points, MILP
+time limit 0.1 s per point (was 1 s). Dropped points leave the sample: `(sum over solved points) / (P - F)`. The search stops as soon as the outcome is decided; `CubatureFailure.lower_bound` says whether the counts are
+complete (nothing left to examine) or lower bounds. One warning per simulation (`cubature_warning`: totals by class, largest share in one period, tolerance and floor, advice per class, pointer to the user page); the error text
+(`_cub_failure`) carries the same advice and the pointer. Per period `relevant`, `dropped`, `dropped_a/b/c` (also in `result.news.info[t]`), totals in `stats` (`:relevant_points`, `:dropped_points`, `:dropped_periods`,
+`:failed_a/b/c`). Undecided tolerance 0 is the previous strict rule exactly (`a_lim = total_lim = failure_tolerance nrel`): the existing strict tests pin it. Options (`obc_cubature_undecided_tolerance`,
+`obc_cubature_undecided_min_points`, next to `obc_cubature_failure_tolerance`, `obc_cubature_milp_time_limit`) go through the `simulate` keywords, `occbin_solver!`/`occbin=Dict`, mod-file lines
+(`options_.occbin.<name>`; `_obc_flat_options`), `obc_ho` / `obc_ho_regime` keywords (without the `obc_` prefix); invalid values are `ArgumentError`s.
+
+### Part B: `ObcHORegime` (src/obc_regime_ho.jl, `obc_ho_regime`, `obc_hor_simulate`)
+New design with no external reference for the classes that are not exact complementary pairs (as pydyn's): the structure of `obc_ho` with the search of `RegimeOBC`. Per period the inputs of the search (alternative residuals `a`
+of every switched equation over T periods, condition-variable path `Ycv` over N periods) are affine in `z = (y1 + y2, kron(x1, x1), o_pre)`, precomputed per parameter set by the adjoint recursion for any list of functionals
+(`_hor_affine_maps`, generalising `_ho_build_q_map!`); the response to the wedges stays first order (`R`, `Wcv`, `V0` of `RegimeOBC`). `RegimeOBC`'s step was split (`_regime_search` on given inputs with `lcp_fn` / `milp_fn`
+closures; `_lcp_from`, `_solve_lcp_core`, `_regime_milp_core` on given inputs and time limit), the order-1 path calls the same functions with the same arithmetic (all OccBin/OBC tests unchanged). Cubature: root `R` on the
+gap-like functional of each constraint (`s_g` times the alternative residual of a complementary pair, so an exact model has the LCP's root to 1e-13; else the sign-normalised alternative residual of the primary/tied equation), the other
+acceptance quantities perturbed by `Ro xi` with `Ro = Cov(other, gap) pinv(R')`; a point is relevant when its reference-regime path fails OccBin's bind test (iteration 0 of the search); relevant points go through a batched
+guess-and-verify grouped by regime guess (one LU per distinct guess, many right-hand sides); points it does not settle go one by one through the complete search (tied LCP with LP proof, big-M integer programme, per-point time limit
+`obc_cubature_milp_time_limit`); classes: horizon too short = b, no solution with an LP certificate = a, everything else = c (an infeasible integer programme is not a proof). Regions 1 and k as in `obc_ho`.
+Routing (`simulate`, `_resolve_formulation`): `auto` = regime for approximate-class and non-complementarity constraints at order 2 / cubature, LCP for exact pairs (unchanged, bit for bit); `regime` forces it; `lcp` on a model
+that is not one exact pair per constraint is an `ArgumentError` listing the classes. The one-time `info` note and `news.note` are as at order 1.
+
+### Refused, and why
+`obc_formulation = hybrid` (not implemented, as at order 1); `lcp` on a non-complementary-pair model (the LCP theory does not apply: error names the constraint classes); `obc_selection != occbin`, `obc_raise = false`, `obc_fast_path = false`,
+`obc_solver_options` at order 2 / cubature (as before: the loop does not support them, refused not ignored); order 3; invalid values of the four cubature options; an equation whose version depends on two constraints jointly
+(`RegimeOBC`'s `ModelError`, as at order 1). `obc_m_diagnostic` is accepted and has no effect with the regime formulation (there is no single `M`; pydyn also skips it).
+
+### Deviations from pydyn
+1. The proof flag of class (a) travels as `ObcError.detail === :proof` (and `info.proof` of a failed search) instead of an attribute of the exception.
+2. The weights of the quadratic part of the affine maps use all `ns^2` columns (kron) instead of the folded upper triangle: the same numbers, more columns.
+3. Wedges of a guess come from `lu(...; check = false)` plus a finiteness test (JDyn's `_regime_wedges`, the same as at order 1), not pydyn's pivot-ratio test `_solve_checked`.
+4. The condition tests are evaluated point by point (JDyn's compiled conditions, bind only where the guess is slack, relax only where it binds: the same flags as evaluating both), not vectorised over points: the regime
+   cubature of NKM costs 1.3 s for 60 periods at level 9 in JDyn and 1.0 s in pydyn (same load).
+5. The LCP class keeps pydyn's classification: class (a) is the LP proof OR an integer programme that finishes infeasible at every horizon and on the head rows (pydyn `HigherOrderNews._classify`); only the regime
+   formulation restricts (a) to LP certificates. If class (a) should be LP-only for the LCP class too, the last line of `_cub_classify` returns `:c` instead of `:a`.
+6. `milp_time_limit` of the one search of a period without cubature: JDyn's `REGIME_MILP_TIME_LIMIT` (30 s, as pydyn's `RegimeOBC.milp_time_limit`).
+
+### Results (Task 3)
+Tests (one file at a time, load 0.2-1.0): `test_obc_ho.jl` all testsets pass (incl. split failure rule 29/29, route test 9/9); `test_obc_formulation.jl` all pass (HO routing, mode search and chains); `test_obc_regime_ho.jl` 2497/2497.
+Cross-port (pydyn run directly, same root and points injected; `bench/obc_cross_regime_ho.jl` + `bench/obc_cross_regime_ho_pydyn.py`, table in `bench/results/obc_cross_regime_ho.md`), max abs path difference, relevant counts and
+dropped-by-class counts identical in every case: nkm o2 2.5e-14; zlb2m o2 2.4e-17; nkm o2 cubature 9 7.7e-13 (dropped a/b/c 0/0/6); zlb2m o2 cubature 9 5.2e-17 (0/0/3); nk o2 cubature 9 5.6e-16; nkm LCP cubature 9 6.7e-13;
+zlb2 LCP cubature 7 3.1e-15 (0/28/0).
+Cost (ms per period, min of 2, load 0.45-1.07, `bench/results/obc_cost_regime_ho.md`; cubature cells with undecided tolerance 0.02): nkm regime 0.017 (o2) / 11.6 (c9) / 27.0 (c11), lcp 0.004 / 0.14 / 0.68; zlb2m regime 0.010 / 46.1 / 166.3,
+lcp 0.009 / 1.78 / 6.98; bf regime 0.006 / 252.6 / 1142.7, lcp refused. The regime cubature is 26-80x the LCP's: the profile (`bench/obc_profile_regime_ho.jl`) shows the time is in the time-limited integer programmes of the
+undecided points (0.1 s each), not in the batched part. bf and zlb2m periods need an undecided tolerance of about 0.02 (default 0.005 raises in 6 of 1023 points-periods = 0.59% at level 9).
+Exact class unchanged: SHA1 of order-1 news paths identical (nk, zlb, zlb2, borrcon) between 753d210 and now; order 2 and cubature cells identical except `nk order2` and `borrcon order2_cub5_regions1`, which are the
+cells whose hash flips between two values from run to run in BOTH trees (k_order build nondeterminism, ~1e-20 in ghxx as pydyn notes; old run 1 = new run 2 and old run 2 = new run 1). The magnitude was not measured
+separately, so "bit for bit" is claimed for order 1 and the other cells only (`bench/obc_exact_bits.jl`).
+
+### Not done / not verified
+No external reference for the non-LCP classes (approximate, multi_equation, inconsistent) at order 2 and with cubature: only the exact LCP class has one (Holden-type formulation); the regime results there are checked against
+the Python port and internal consistency, not against an independent solver. The numbers on the user page are measured in the Python port. Class (a) in the LCP class follows pydyn (open point 5 above). Order 3 refused.
+`_obc_flat_options` docstring and `CubatureFailure.lower_bound` docstring not updated. `bench/earlier_scripts/` has hard-coded /tmp paths.

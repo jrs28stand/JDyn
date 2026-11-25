@@ -2,14 +2,14 @@
 #
 #   DYNARE_PREPROCESSOR=... PYDYN_EXAMPLES=... PYTHONPATH=/home/claude/pydyn nice julia --project=. bench/obc_cross_regime_ho.jl [case ...]
 #
-# For each case JDyn writes the shocks (and, with cubature, its root `R` and points `xi`) to a .mat file, bench/obc_cross_regime_ho_pydyn.py runs pydyn's
+# For each case JDyn writes the shocks (and, with cubature, its root `R` and points `xi`) as csv files (17 digits), bench/obc_cross_regime_ho_pydyn.py runs pydyn's
 # `HigherOrderRegime` / `HigherOrderNews` (lcp) on the same model file with the same inputs, and the two answers are compared: paths, wedges, relevant points and the dropped
 # points by class. With cubature the same root and the same points are used by both (injected), so what is compared is the solver, not the quasi-Monte-Carlo set.
 # Results are appended to bench/results/obc_cross_regime_ho.md with the machine load.
 using Test; include(joinpath(@__DIR__, "..", "test", "common.jl"))
 using Random
 include(joinpath(@__DIR__, "..", "test", "rho_common.jl"))
-using MAT, Printf, Dates
+using DelimitedFiles, Printf, Dates
 
 const PY = joinpath(@__DIR__, "obc_cross_regime_ho_pydyn.py")
 const OUT = joinpath(@__DIR__, "results", "obc_cross_regime_ho.md")
@@ -44,20 +44,28 @@ function run_case(name)
     load_j = load1()
     tj = @elapsed r = with_logger(NullLogger()) do; sim(h, S); end
     d = mktempdir()
-    inp, out = joinpath(d, "in.mat"), joinpath(d, "out.mat")
-    cfg = Dict{String,Any}("shocks" => S, "order" => c.order, "horizon" => hz, "check_ahead" => hz, "cubature" => c.cub, "qmc_level" => c.level, "regions" => string(c.regions),
-                           "formulation" => string(c.form), "failure_tolerance" => 0.0, "undecided_tolerance" => 0.005, "milp_time_limit" => 0.1)
-    c.cub && (cfg["R"] = h.R; cfg["xi"] = h.xi)
-    matwrite(inp, cfg)
+    inp, out = joinpath(d, "in"), joinpath(d, "out")
+    mkpath(inp)
+    writedlm(joinpath(inp, "shocks.csv"), S, ',')
+    write(joinpath(inp, "cfg.txt"), join(["order=$(c.order)", "horizon=$hz", "check_ahead=$hz", "cubature=$(c.cub)", "qmc_level=$(c.level)", "regions=$(c.regions)",
+                                          "formulation=$(c.form)", "failure_tolerance=0.0", "undecided_tolerance=0.005", "milp_time_limit=0.1"], "\n") * "\n")
+    if c.cub
+        writedlm(joinpath(inp, "R.csv"), h.R, ',')
+        writedlm(joinpath(inp, "xi.csv"), h.xi, ',')
+    end
     env = Dict("PYTHONPATH" => get(ENV, "PYTHONPATH", "/home/claude/pydyn"), "DYNARE_PREPROCESSOR" => get(ENV, "DYNARE_PREPROCESSOR", "/home/claude/ref/pp-standalone/src/dynare-preprocessor"),
                "PYDYN_EXAMPLES" => get(ENV, "PYDYN_EXAMPLES", "/home/claude/ref/dynare-7.2/examples"))
     load_p = load1()
     run(setenv(`nice python3 $PY $(RHO_SRC[c.model]) $inp $out`, merge(Dict(ENV), env)))
-    p = matread(out)
+    pw = readdlm(joinpath(out, "with_bound.csv"), ',')
+    pwe = readdlm(joinpath(out, "wedges.csv"), ',')
+    cnt = Int.(readdlm(joinpath(out, "counts.csv"), ','))
+    meta = Dict(split(l, "=")[1] => split(l, "=")[2] for l in readlines(joinpath(out, "meta.txt")))
+    p = Dict("with_bound" => pw, "wedges" => pwe, "relevant" => cnt[:, 1], "dropped_a" => cnt[:, 3], "dropped_b" => cnt[:, 4], "dropped_c" => cnt[:, 5], "seconds" => parse(Float64, meta["seconds"]))
     dw = maximum(abs, r.with_bound .- p["with_bound"])
     dwe = maximum(abs, r.wedges .- p["wedges"])
     per = vec(maximum(abs.(r.with_bound .- p["with_bound"]); dims=2))
-    rel_eq = vec(r.relevant) == vec(Int.(p["relevant"]))
+    rel_eq = vec(r.relevant) == vec(p["relevant"])
     cls_eq = all(vec(getfield(r, k)) == vec(Int.(p[String(k)])) for k in (:dropped_a, :dropped_b, :dropped_c))
     row = (name=name, binds=count(w -> maximum(abs, w) > 1e-10, eachrow(r.wedges)), rel=sum(r.relevant), dropped=Tuple(sum(getfield(r, k)) for k in (:dropped_a, :dropped_b, :dropped_c)),
            pdropped=Tuple(sum(Int.(p[String(k)])) for k in (:dropped_a, :dropped_b, :dropped_c)), dw=dw, dwe=dwe, nbad=count(>(1e-8), per), rel_eq=rel_eq, cls_eq=cls_eq,
@@ -73,7 +81,7 @@ function main(args)
         new && println(io, "| case | periods with a wedge | relevant pts | dropped a/b/c JDyn | dropped a/b/c pydyn | max abs path diff | max abs wedge diff | periods with diff > 1e-8 | relevant equal | classes equal | JDyn s | pydyn s | load (1 min) JDyn / pydyn |\n|---|---|---|---|---|---|---|---|---|---|---|---|---|")
         for nm in names
             r = run_case(nm)
-            line = @sprintf("| %s | %d/%d | %d | %s | %s | %.2e | %.2e | %d | %s | %s | %.1f | %.1f | %.2f / %.2f |", r.name, r.binds, r.T, r.rel, join(r.dropped, "/"), join(r.pdropped, "/"),
+            line = @sprintf("| %s | %d/%d | %d | %s | %s | %.2e | %.2e | %d | %s | %s | %.3f | %.3f | %.2f / %.2f |", r.name, r.binds, r.T, r.rel, join(r.dropped, "/"), join(r.pdropped, "/"),
                             r.dw, r.dwe, r.nbad, r.rel_eq, r.cls_eq, r.tj, r.tp, r.load_j, r.load_p)
             println(line); println(io, line); flush(io)
         end
