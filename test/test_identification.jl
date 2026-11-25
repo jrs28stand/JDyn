@@ -8,14 +8,16 @@ using Random, Logging, MAT
 haskey(ENV, "ID_DEV") && Base.include(JDyn, joinpath(@__DIR__, "..", "src", "identification.jl"))   # development: no precompile
 const RI = joinpath(@__DIR__, "ref_identification")
 const ID_CASES0 = ["BrockMirman", "fl1", "cgg_criteria_differ", "as2007_QT", "forward_looking_varobs_x", "au5", "au6", "kim2",
-                  "fs2000_corr_pt", "as2007_kron_m1", "as2007_kron_p1", "as2007_negF"]
+                  "fs2000_corr_pt", "as2007_kron_m1", "as2007_kron_p1", "as2007_negF",
+                  "forward_looking_empty_ghx", "ident_unit_root", "rbc_ident_varexo_only", "rbc_ident_std_as_structural_par"]   # the last four: Octave 8.4 / Dynare 7.2 runs of the Dynare test suite
 const ID_CASES = haskey(ENV, "ID_ONLY") ? split(ENV["ID_ONLY"], ",") : ID_CASES0
 const ID_BASIS = Dict("fs2000_corr_pt" => ("ide_minimal_point.dMINIMAL", "ide_minimal_point.norm_dMINIMAL"))
 const ID_KRON = ("si_dMOMENTSnorm", "si_dREDUCEDFORMnorm", "si_dDYNAMICnorm", "jweak", "jweak_pair", "indno")
 const ID_SINGULAR = Dict("kim2" => ("si_dMOMENTSnorm", "si_dREDUCEDFORMnorm", "si_dDYNAMICnorm"),
                          "as2007_kron_m1" => ID_KRON, "as2007_kron_p1" => ID_KRON,
                          "as2007_negF" => (ID_KRON..., "ind_dREDUCEDFORM", "norm_dREDUCEDFORM", "si_dREDUCEDFORM", "REDUCEDFORM"))
-const ID_TOL = Dict("kim2" => 1e-7, "au5" => 1e-7, "au6" => 1e-7, "as2007_kron_m1" => 1e-5, "as2007_kron_p1" => 1e-5, "as2007_negF" => 1e-5)
+const ID_TOL = Dict("kim2" => 1e-7, "au5" => 1e-7, "au6" => 1e-7, "as2007_kron_m1" => 1e-5, "as2007_kron_p1" => 1e-5, "as2007_negF" => 1e-5,
+                      "rbc_ident_std_as_structural_par" => 1e-6, "rbc_ident_varexo_only" => 1e-6)   # cond ~ 1e16 problems: rounding differences of 1e-7
 const ID_NOISE = ("cond", "Mco", "Pco", "V")
 
 function id_cmp(a, b, path, bad, tol, skip)
@@ -92,4 +94,12 @@ end
         end
         @test any(f -> occursin(Regex("^" * case * "_.*_identif\\.mat\$"), f), readdir(out))
     end
+end
+
+@testset "identification refusals" begin
+    d0 = mktempdir(); cp(joinpath(RI, "forward_looking_common.inc"), joinpath(d0, "forward_looking_common.inc"))
+    base = replace(read(joinpath(RI, "forward_looking_empty_ghx.mod"), String), "identification;" => "identification(order=2);")
+    write(joinpath(d0, "r.mod"), base)
+    msg = try; with_logger(NullLogger()) do; JDyn.dynare(joinpath(d0, "r.mod"); random=:octave); end; ""; catch e; sprint(showerror, e); end
+    @test occursin("not ported", msg)
 end
