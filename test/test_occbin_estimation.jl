@@ -67,6 +67,15 @@ const CASES = [("nkm", "occest_nkm", 1:4), ("rbc", "occest_rbc", 1:3), ("nkms", 
     @test count(reg -> reg[1][1][1] == 1, rh) > 20
 end
 
+@testset "blank estimated_params bounds fall back to the prior's (MATLAB max/min skip NaN)" begin
+    # occest_nkms writes `phipi,,,,NORMAL_PDF,2,0.25;`: explicitly empty bounds reach JDyn as NaN
+    est = oest("occest_nkms", oref("occest_nkms_lik"))
+    @test !any(isnan, est.lb) && !any(isnan, est.ub)
+    plb, pub = JDyn.prior_bounds(est.prior, est.options["prior_trunc"])
+    @test est.lb == plb && est.ub == pub
+    @test JDyn._matlab_max(NaN, 1.0) == 1.0 && JDyn._matlab_min(2.0, NaN) == 2.0 && isnan(JDyn._matlab_max(NaN, NaN))
+end
+
 @testset "OccBin piecewise Kalman filter likelihood" begin
     # periods where two self-consistent regimes have likelihoods within 2e-15 of each other (the second constraint expected
     # to bind until period 113 or 116, 91 or 95, ...): both programs combine the two densities (kalman_update_engine.m), so the
