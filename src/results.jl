@@ -908,6 +908,7 @@ function dynare(modfile::AbstractString; output=nothing, shocks=Dict{Int,Any}(),
         ws.oo_.exo_steady_state = zeros(m.n_exo, 1)
         ws.state[:matlab_options] = Dict{String,Any}()
         ws.state[:modfile] = abspath(modfile)
+        _install_estimation_globals!(ws)
         m.session.host.M.results = ws.M_
         m.session.host.oo.results = ws.oo_          # MATLAB lines of the file see (and write) this oo_
         _pf_register_host!(ws)                      # perfect_foresight_solver(M_, options_, oo_) & co. (src/pf_functions.jl)
