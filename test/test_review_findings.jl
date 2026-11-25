@@ -217,8 +217,7 @@ end
                 """; quiet=false)           # no order: Dynare 7's default is 2
             JDyn.irf_figures(m)
         end
-        @test res.order == 1                                  # (what is documented in the docstring)
-        @test any(l -> occursin(r"order", string(l.message)), logger.logs)
+        @test res.order == 2                                  # generalised IRFs at order >= 2 (the old order-1 fallback is gone)
     end
 
     # ------------------------------------------------------------------ R17 load() cannot pass macro variables
@@ -245,7 +244,7 @@ end
             catch e
                 e
             end
-            @test r isa ModelError         # JDyn: LoadError: syntax: invalid assignment location "[TEF_0, TEFD_0, TEFDD_0]"
+            @test r === nothing    # external functions are supported now (src/external.jl; was: LoadError invalid assignment location "[TEF_0, TEFD_0, TEFDD_0]")
         end
         dts = joinpath(DYNARE_SRC, "tests", "deterministic_simulations", "ramst_dseries.mod")
         if isfile(dts)

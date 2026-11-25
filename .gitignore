@@ -4,3 +4,4 @@ Manifest.toml
 /test/work/
 deps/korder/build/
 deps/korder/*.so
+/test/acceptance/partial/

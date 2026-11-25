@@ -13,6 +13,11 @@
 
 const LOG2PI = log(2 * pi)
 
+# heteroskedastic_filter: QQ may be an (n, n, periods + 1) array; the prediction step of period t uses its slice t + 1 and the filters never switch to the
+# steady-state gain (Dynare's get_Qvec_heteroskedastic_filter.m)
+_qq(QQ::AbstractMatrix, t) = QQ
+_qq(QQ::AbstractArray{<:Any,3}, t) = @view QQ[:, :, t+1]
+
 _norm1(A) = isempty(A) ? 0.0 : maximum(sum(abs, A; dims=1))
 
 "Inverse and reciprocal 1-norm condition number (what MATLAB's `rcond` estimates); `(nothing, 0.0)` if singular or not finite."
@@ -208,7 +213,7 @@ Standard Kalman filter with a switch to the steady-state gain (`kalman_filter.m`
 the first period; `QQ = R Q R'`; `H` the measurement-error covariance matrix. Returns minus the log likelihood summed
 after the presample (Inf if singular) and the per-period values (halved, as Dynare).
 """
-function kalman_filter(Y::AbstractMatrix, a::AbstractVector, P::AbstractMatrix, T::AbstractMatrix, QQ::AbstractMatrix,
+function kalman_filter(Y::AbstractMatrix, a::AbstractVector, P::AbstractMatrix, T::AbstractMatrix, QQ::AbstractArray,
                        H::AbstractMatrix, z::AbstractVector{<:Integer}; kalman_tol=1e-10, riccati_tol=1e-6, presample=0,
                        rescale=false, diffuse_periods=0, data_index=nothing, no_more_missing=1)
     pp, smpl = size(Y)
@@ -228,7 +233,7 @@ function kalman_filter(Y::AbstractMatrix, a::AbstractVector, P::AbstractMatrix, 
             d = data_index[t]
             if isempty(d)
                 a = T * a
-                P = T * P * Tt + QQ
+                P = T * P * Tt + _qq(QQ, t)
                 t += 1
                 continue
             end
@@ -245,9 +250,9 @@ function kalman_filter(Y::AbstractMatrix, a::AbstractVector, P::AbstractMatrix, 
         log_dF, iF = res
         lik[t] = log_dF + dot(v, iF * v) + length(zt) * LOG2PI
         K = P[:, zt] * iF
-        P = T * (P - K * P[zt, :]) * Tt + QQ
+        P = T * (P - K * P[zt, :]) * Tt + _qq(QQ, t)
         a = T * (a + K * v)
-        if !missing_obs || t >= no_more_missing
+        if ndims(QQ) == 2 && (!missing_obs || t >= no_more_missing)
             Kv = vec(K)
             notsteady = oldK === nothing || length(oldK) != length(Kv) || maximum(abs.(Kv .- oldK)) > riccati_tol
             oldK = Kv
@@ -280,7 +285,7 @@ the diffuse periods (after the presample), the per-period values, and the predic
 non-diffuse period. `dLIK` is Inf if a singularity stops the filter and NaN if the diffuse stage never ends.
 """
 function kalman_filter_d(Y::AbstractMatrix, a::AbstractVector, Pinf::AbstractMatrix, Pstar::AbstractMatrix,
-                         T::AbstractMatrix, QQ::AbstractMatrix, H::AbstractMatrix, z::AbstractVector{<:Integer};
+                         T::AbstractMatrix, QQ::AbstractArray, H::AbstractMatrix, z::AbstractVector{<:Integer};
                          kalman_tol=1e-10, diffuse_kalman_tol=1e-6, presample=0, data_index=nothing)
     pp, smpl = size(Y)
     Tt = T'
@@ -296,7 +301,7 @@ function kalman_filter_d(Y::AbstractMatrix, a::AbstractVector, Pinf::AbstractMat
             d = data_index[t]
             if isempty(d)
                 a = T * a
-                Pstar = T * Pstar * Tt + QQ
+                Pstar = T * Pstar * Tt + _qq(QQ, t)
                 Pinf = T * Pinf * Tt
                 t += 1
                 continue
@@ -317,7 +322,7 @@ function kalman_filter_d(Y::AbstractMatrix, a::AbstractVector, Pinf::AbstractMat
             Kstar = Pstar[:, zt] * iFstar
             dlik[t] = log(det(Fstar)) + dot(v, iFstar * v) + const_
             Pinf = T * Pinf * Tt
-            Pstar = T * (Pstar - Pstar[:, zt] * Kstar') * Tt + QQ
+            Pstar = T * (Pstar - Pstar[:, zt] * Kstar') * Tt + _qq(QQ, t)
             a = T * (a + Kstar * v)
         else
             dlik[t] = log(det(Finf)) + const_
@@ -325,7 +330,7 @@ function kalman_filter_d(Y::AbstractMatrix, a::AbstractVector, Pinf::AbstractMat
             Kinf = Pinf[:, zt] * iFinf
             Fstar = Pstar[zt, zt] + Ht
             Kstar = (Pstar[:, zt] - Kinf * Fstar) * iFinf
-            Pstar = T * (Pstar - Pstar[:, zt] * Kinf' - Pinf[:, zt] * Kstar') * Tt + QQ
+            Pstar = T * (Pstar - Pstar[:, zt] * Kinf' - Pinf[:, zt] * Kstar') * Tt + _qq(QQ, t)
             Pinf = T * (Pinf - Pinf[:, zt] * Kinf') * Tt
             a = T * (a + Kinf * v)
         end
@@ -345,7 +350,7 @@ errors are handled by the caller through an enlarged state vector, as Dynare). O
 below `kalman_tol` are skipped. Returns minus the log likelihood (NaN if a variance is negative) and per-period values.
 """
 function univariate_kalman_filter(Y::AbstractMatrix, a::AbstractVector, P::AbstractMatrix, T::AbstractMatrix,
-                                  QQ::AbstractMatrix, Hdiag::AbstractVector, Z::AbstractMatrix; kalman_tol=1e-10,
+                                  QQ::AbstractArray, Hdiag::AbstractVector, Z::AbstractMatrix; kalman_tol=1e-10,
                                   riccati_tol=1e-6, presample=0, diffuse_periods=0, data_index=nothing, no_more_missing=1)
     pp, smpl = size(Y)
     mm = size(T, 1)
@@ -376,8 +381,8 @@ function univariate_kalman_filter(Y::AbstractMatrix, a::AbstractVector, P::Abstr
             end
         end
         a = T * a
-        P = T * P * Tt + QQ
-        if t >= no_more_missing
+        P = T * P * Tt + _qq(QQ, t)
+        if ndims(QQ) == 2 && t >= no_more_missing
             Kv = vec(K)
             if oldK === nothing
                 notsteady = any(!isnan, Kv)
@@ -424,7 +429,7 @@ end
 Diffuse stage of the univariate filter (`univariate_kalman_filter_d.m`); returns `(dLIK, dlik, a, Pstar)` like `kalman_filter_d`.
 """
 function univariate_kalman_filter_d(Y::AbstractMatrix, a::AbstractVector, Pinf::AbstractMatrix, Pstar::AbstractMatrix,
-                                    T::AbstractMatrix, QQ::AbstractMatrix, Hdiag::AbstractVector, Z::AbstractMatrix;
+                                    T::AbstractMatrix, QQ::AbstractArray, Hdiag::AbstractVector, Z::AbstractMatrix;
                                     kalman_tol=1e-10, diffuse_kalman_tol=1e-6, presample=0, data_index=nothing)
     pp, smpl = size(Y)
     Tt = T'
@@ -459,7 +464,7 @@ function univariate_kalman_filter_d(Y::AbstractMatrix, a::AbstractVector, Pinf::
             end
         end
         a = T * a
-        Pstar = T * Pstar * Tt + QQ
+        Pstar = T * Pstar * Tt + _qq(QQ, t)
         Pinf = T * Pinf * Tt
         new_rank > 0 && (new_rank = rank_(Z * Pinf * Z'))
         t += 1

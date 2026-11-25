@@ -261,7 +261,7 @@ const PF_STACKED = Dict(
         @test err isa ArgumentError && occursin("purely backward", err.msg)
         text = replace(read(joinpath(REF, "pf_temp.mod"), String), "tolf=1e-8, tolx=1e-8" => "tolf=1e-8, stack_solve_algo=2, markowitz=0.3, robust_lin_solve")
         m2 = pf_build("pf_temp_opts"; text=text)
-        res = @test_logs (:warn, r"stack_solve_algo=2") (:warn, r"markowitz.*robust_lin_solve|robust_lin_solve.*markowitz") match_mode = :any perfect_foresight(m2)
+        res = @test_logs (:warn, r"stack_solve_algo=2") (:warn, r"markowitz") match_mode = :any perfect_foresight(m2)
         @test all(abs.(res.endo_simul .- r["endo_simul"]) .<= PF_ATOL .+ PF_RTOL .* abs.(r["endo_simul"]))
     end
 

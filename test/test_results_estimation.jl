@@ -113,8 +113,8 @@ end
 
 @testset "smoother with measurement errors and loglinear-free model (smo_me, CASE=2)" begin
     ws = _re_run("smo_me.mod", ["-DCASE=2"])
-    # M_.Correlation_matrix: JDyn keeps the shocks-block correlation, Dynare the identity (stoch_simul-level deviation, see docs/RESULTS.md)
-    big, worst, dM = _cmp_case(ws, "smo_me_case2"; skip=union(_SKIP, Set(["var_list"])), mkeys=("params", "Sigma_e", "H"))
+    # M_.Correlation_matrix: the identity (a `var a, b = cov` covariance does not enter it; only `corr` statements and estimated correlations do)
+    big, worst, dM = _cmp_case(ws, "smo_me_case2"; skip=union(_SKIP, Set(["var_list"])), mkeys=("params", "Sigma_e", "H", "Correlation_matrix"))
     @test isempty(big)
     @test worst < 1e-10
     @test all(v -> v < 1e-10, values(dM))

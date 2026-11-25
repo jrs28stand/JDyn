@@ -24,26 +24,38 @@ include("matlab/parser.jl")
 include("matlab/builtins.jl")
 include("matlab/builtins_extra.jl")
 include("matlab/interp.jl")
+include("matlab/extern.jl")
+include("matlab/dates.jl")
+include("matlab/dseries.jl")
+include("matlab/objects.jl")
 include("octave_rng.jl")
 include("model.jl")
 include("matlab/session.jl")
+include("pac.jl")
 include("dmperm.jl")
 include("steady.jl")
+include("steady_algos.jl")
+include("homotopy.jl")
 include("perturbation.jl")
 include("simulate.jl")
 include("korder.jl")
 include("fft.jl")
 include("moments.jl")
+include("moments_order3.jl")
 include("priors.jl")
 include("kalman.jl")
+include("heteroskedastic.jl")
 include("nonlinear_filters.jl")
 include("estimation.jl")
 include("nonlinear_estimation.jl")
 include("optimizers.jl")
 include("smoother.jl")
 include("shock_decomposition.jl")
+include("plots_decomp.jl")
 include("perfect_foresight.jl")
+include("optimal_policy.jl")
 include("plotting.jl")
+include("figures.jl")
 include("occbin.jl")
 include("highs.jl")
 include("obc_solvers.jl")
@@ -56,13 +68,37 @@ include("occbin_filter.jl")
 include("occbin_estimation.jl")
 include("obc_filter.jl")
 include("results.jl")
+include("results_policy.jl")
+include("pf_functions.jl")
 include("results_estimation.jl")
 include("seeds.jl")
+include("varexo_det.jl")
+include("epilogue.jl")
+include("external.jl")
 include("forecast.jl")
+include("mcmc_diagnostics.jl")
+include("posterior.jl")
+include("posterior_forecast.jl")
+include("posterior_moments.jl")
+include("posterior_stage.jl")
+include("plots_estimation.jl")
+include("plots_occbin.jl")
+include("plots_forecast.jl")
+include("plots_hooks.jl")
+include("mh_files.jl")
+include("samplers.jl")
+include("mcmc_driver.jl")
+include("smc.jl")
+include("mcmc_stage.jl")
+include("dsge_var.jl")
 
-export run_preprocessor, load, Model, ModelError, steady_state, SteadyStateError, first_order, FirstOrderSolution,
+export posterior_irf_dsgevar, dsge_var_posterior, endogenous_log_prior, sample_mcmc, sample_smc, set_mcmc_rng!, mode_from_file, mcmc_diagnostics, posterior_irf, posterior_forecast, posterior_subsample, posterior_theoretical_moments,
+       posterior_smoother_statistics,
+       run_preprocessor, load, Model, ModelError, steady_state, SteadyStateError, first_order, FirstOrderSolution,
        BlanchardKahnError, ghx, ghu, irf, simulate, set_param!, set_params!, get_param, set_shock_stderr!,
-       stoch_simul_moments, theoretical_moments, k_order, KOrderError, korder_library, plot_irfs, irf_figures, irf_table, write_csv, pltorg, IRFResult, IRFFigure,
+       stoch_simul_moments, theoretical_moments, k_order, KOrderError, korder_library, plot_irfs, irf_figures, Figure, Panel, Curve, figure_table, save_figures, arrange_figures, graphs_dir, to_figure,
+       occbin_irf_figures, occbin_graph_figures, decomposition_figures, plot_shock_decomposition, prior_density, prior_figures, mode_check_data, mode_check_figures,
+       prior_posterior_figures, trace_figures, brooks_gelman_figures, bayesian_irf_figures, posterior_series_figures, smoother_figures, forecast_figures, conditional_forecast_figures, rplot_figures, dynare_parameter_name, irf_table, write_csv, pltorg, IRFResult, IRFFigure,
        Occbin, OccbinResult, OccbinIRF, OccbinError, OccbinPeriodicError, OccbinMaxitError, OccbinHorizonError, OccbinLoopError,
        OccbinDynareBug, error_flag, irf_occbin, occbin_graph_table, surprise_shocks, mod_options, check_constraints,
        occbin_filter_options, inversion_filter, piecewise_kalman_filter, occbin_smoother, occbin_shock_decomposition,
@@ -75,10 +111,15 @@ export run_preprocessor, load, Model, ModelError, steady_state, SteadyStateError
        DecompositionPlotData, decomposition_table, stack_bars,
        perfect_foresight, PerfectForesightResult, PerfectForesightError, unanticipated_shocks,
        dynare, @dynare, DynareWorkspace, build_M, build_options, MStruct, Cell,
-       stoch_simul!, steady!, check!, perfect_foresight_setup!, perfect_foresight_solver!, occbin_solver!, set_param_value!,
+       stoch_simul!, ramsey_policy!, discretionary_policy!, evaluate_planner_objective!, osr!, steady!, check!, perfect_foresight_setup!, perfect_foresight_solver!, occbin_solver!, set_param_value!,
        estimation!, calib_smoother!, set_dynare_seed!,
+       ramsey_info, is_ramsey, is_discretionary, planner_discount, ramsey_steady_state, planner_objective, evaluate_planner_objective,
+       PlannerObjectiveValue, discretionary_policy, DiscretionaryResult, osr, osr_objective, OSRResult, OptimalPolicyError, OSRError,
+       DiscretionaryPolicyError, variance_of_endogenous_variables,
        forecast, ForecastResult, conditional_forecast, ConditionalForecastResult, conditional_forecast_table, forecast_struct,
        conditional_forecast_struct, forecast!, conditional_forecast!,
+       exo_det_names, n_exo_det, exo_det_steady, exo_det_decision_rules, simult_varexo_det, exo_det_paths,
+       epilogue, Epilogue, epilogue_dynamic, epilogue_static, epilogue_from_paths, epilogue_names,
        obc_constraints, obc_classification, obc_system, obc_gaps, obc_q, obc_verify, ObcConstraint, ObcSystem, ObcNews, ObcError,
        solve_minnorm, solve_news, solve_active_set, m_diagnostics, obc_diagnostics, RegimeOBC, regime_obc, obc_lcp, single_spell_solutions, highs_lp, highs_milp
 

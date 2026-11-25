@@ -1,0 +1,85 @@
+{"dynamic_model": {"model_local_variables": [], "external_functions_temporary_terms_": [], "temporary_terms_": [{"temporary_term": "T15", "value": "h^(1+psi)"}
+, {"temporary_term": "T31", "value": "c*exp(b)/(exp(b(1))*c(1))"}
+, {"temporary_term": "T38", "value": "alpha*exp(b(1))*y(1)+k*(1-delta)"}
+, {"temporary_term": "T46", "value": "exp(a)*k(-1)^alpha"}
+, {"temporary_term": "T47", "value": "h^(1-alpha)"}
+, {"temporary_term": "T48", "value": "T46*T47"}
+], 
+"residuals":[
+{"residual": {"lhs": "c*theta*h^(1+psi)", "rhs": "(1-alpha)*y"}}
+, {"residual": {"lhs": "k", "rhs": "beta*c*exp(b)/(exp(b(1))*c(1))*(alpha*exp(b(1))*y(1)+k*(1-delta))"}}
+, {"residual": {"lhs": "y", "rhs": "exp(a)*k(-1)^alpha*h^(1-alpha)"}}
+, {"residual": {"lhs": "k", "rhs": "exp(b)*(y-c)+(1-delta)*k(-1)"}}
+, {"residual": {"lhs": "a", "rhs": "e+tau*b(-1)+ahat+rho*a(-1)+rho2*AUX_ENDO_LAG_3_1(-1)"}}
+, {"residual": {"lhs": "b", "rhs": "bhat+a(-1)*tau+rho*b(-1)+u"}}
+, {"residual": {"lhs": "AUX_ENDO_LAG_3_1", "rhs": "a(-1)"}}
+
+]
+, "external_functions_temporary_terms_jacobian": [], "temporary_terms_jacobian": [{"temporary_term": "T94", "value": "exp(b)/(exp(b(1))*c(1))"}
+, {"temporary_term": "T100", "value": "exp(b(1))*c(1)*exp(b(1))*c(1)"}
+, {"temporary_term": "T101", "value": "(-(c*exp(b)*exp(b(1))))/T100"}
+, {"temporary_term": "T106", "value": "exp(a)*get_power_deriv(k(-1),alpha,1)"}
+, {"temporary_term": "T108", "value": "(-(T47*T106))"}
+, {"temporary_term": "T116", "value": "get_power_deriv(h,1+psi,1)"}
+, {"temporary_term": "T118", "value": "get_power_deriv(h,1-alpha,1)"}
+, {"temporary_term": "T125", "value": "(-(c*exp(b)*exp(b(1))*c(1)))/T100"}
+], "jacobian": {"dims": [7, 25], "entries": [{"indices": [1, 8], "eq": 1, "var": "y", "shift": 0, "val": "(-(1-alpha))"}
+, {"indices": [1, 9], "eq": 1, "var": "c", "shift": 0, "val": "theta*T15"}
+, {"indices": [1, 12], "eq": 1, "var": "h", "shift": 0, "val": "c*theta*T116"}
+, {"indices": [2, 15], "eq": 2, "var": "y", "shift": 1, "val": "(-(beta*T31*alpha*exp(b(1))))"}
+, {"indices": [2, 9], "eq": 2, "var": "c", "shift": 0, "val": "(-(beta*T38*T94))"}
+, {"indices": [2, 16], "eq": 2, "var": "c", "shift": 1, "val": "(-(beta*T38*T101))"}
+, {"indices": [2, 10], "eq": 2, "var": "k", "shift": 0, "val": "1-beta*T31*(1-delta)"}
+, {"indices": [2, 13], "eq": 2, "var": "b", "shift": 0, "val": "(-(beta*T31*T38))"}
+, {"indices": [2, 20], "eq": 2, "var": "b", "shift": 1, "val": "(-(beta*(T38*T125+T31*alpha*exp(b(1))*y(1))))"}
+, {"indices": [3, 8], "eq": 3, "var": "y", "shift": 0, "val": "1"}
+, {"indices": [3, 3], "eq": 3, "var": "k", "shift": -1, "val": "T108"}
+, {"indices": [3, 11], "eq": 3, "var": "a", "shift": 0, "val": "(-T48)"}
+, {"indices": [3, 12], "eq": 3, "var": "h", "shift": 0, "val": "(-(T46*T118))"}
+, {"indices": [4, 8], "eq": 4, "var": "y", "shift": 0, "val": "(-exp(b))"}
+, {"indices": [4, 9], "eq": 4, "var": "c", "shift": 0, "val": "exp(b)"}
+, {"indices": [4, 3], "eq": 4, "var": "k", "shift": -1, "val": "(-(1-delta))"}
+, {"indices": [4, 10], "eq": 4, "var": "k", "shift": 0, "val": "1"}
+, {"indices": [4, 13], "eq": 4, "var": "b", "shift": 0, "val": "(-(exp(b)*(y-c)))"}
+, {"indices": [5, 4], "eq": 5, "var": "a", "shift": -1, "val": "(-rho)"}
+, {"indices": [5, 11], "eq": 5, "var": "a", "shift": 0, "val": "1"}
+, {"indices": [5, 6], "eq": 5, "var": "b", "shift": -1, "val": "(-tau)"}
+, {"indices": [5, 22], "eq": 5, "var": "e", "shift": 0, "val": "(-1)"}
+, {"indices": [5, 24], "eq": 5, "var": "ahat", "shift": 0, "val": "(-1)"}
+, {"indices": [5, 7], "eq": 5, "var": "AUX_ENDO_LAG_3_1", "shift": -1, "val": "(-rho2)"}
+, {"indices": [6, 4], "eq": 6, "var": "a", "shift": -1, "val": "(-tau)"}
+, {"indices": [6, 6], "eq": 6, "var": "b", "shift": -1, "val": "(-rho)"}
+, {"indices": [6, 13], "eq": 6, "var": "b", "shift": 0, "val": "1"}
+, {"indices": [6, 23], "eq": 6, "var": "u", "shift": 0, "val": "(-1)"}
+, {"indices": [6, 25], "eq": 6, "var": "bhat", "shift": 0, "val": "(-1)"}
+, {"indices": [7, 4], "eq": 7, "var": "a", "shift": -1, "val": "(-1)"}
+, {"indices": [7, 14], "eq": 7, "var": "AUX_ENDO_LAG_3_1", "shift": 0, "val": "1"}
+]}, "external_functions_temporary_terms_hessian": [], "temporary_terms_hessian": [], "hessian": {"dims": [7, 25, 25], "entries": [{"indices": [1, 9, 12], "eq": 1, "var1": "c", "shift1": 0, "var2": "h", "shift2": 0, "val": "theta*T116"}
+, {"indices": [1, 12, 12], "eq": 1, "var1": "h", "shift1": 0, "var2": "h", "shift2": 0, "val": "c*theta*get_power_deriv(h,1+psi,2)"}
+, {"indices": [2, 15, 9], "eq": 2, "var1": "y", "shift1": 1, "var2": "c", "shift2": 0, "val": "(-(beta*alpha*exp(b(1))*T94))"}
+, {"indices": [2, 15, 16], "eq": 2, "var1": "y", "shift1": 1, "var2": "c", "shift2": 1, "val": "(-(beta*alpha*exp(b(1))*T101))"}
+, {"indices": [2, 15, 13], "eq": 2, "var1": "y", "shift1": 1, "var2": "b", "shift2": 0, "val": "(-(beta*T31*alpha*exp(b(1))))"}
+, {"indices": [2, 15, 20], "eq": 2, "var1": "y", "shift1": 1, "var2": "b", "shift2": 1, "val": "(-(beta*(T31*alpha*exp(b(1))+alpha*exp(b(1))*T125)))"}
+, {"indices": [2, 9, 16], "eq": 2, "var1": "c", "shift1": 0, "var2": "c", "shift2": 1, "val": "(-(beta*T38*(-(exp(b)*exp(b(1))))/T100))"}
+, {"indices": [2, 9, 10], "eq": 2, "var1": "c", "shift1": 0, "var2": "k", "shift2": 0, "val": "(-(beta*(1-delta)*T94))"}
+, {"indices": [2, 9, 13], "eq": 2, "var1": "c", "shift1": 0, "var2": "b", "shift2": 0, "val": "(-(beta*T38*T94))"}
+, {"indices": [2, 9, 20], "eq": 2, "var1": "c", "shift1": 0, "var2": "b", "shift2": 1, "val": "(-(beta*(alpha*exp(b(1))*y(1)*T94+T38*(-(exp(b)*exp(b(1))*c(1)))/T100)))"}
+, {"indices": [2, 16, 16], "eq": 2, "var1": "c", "shift1": 1, "var2": "c", "shift2": 1, "val": "(-(beta*T38*(-((-(c*exp(b)*exp(b(1))))*(exp(b(1))*exp(b(1))*c(1)+exp(b(1))*exp(b(1))*c(1))))/(T100*T100)))"}
+, {"indices": [2, 16, 10], "eq": 2, "var1": "c", "shift1": 1, "var2": "k", "shift2": 0, "val": "(-(beta*(1-delta)*T101))"}
+, {"indices": [2, 16, 13], "eq": 2, "var1": "c", "shift1": 1, "var2": "b", "shift2": 0, "val": "(-(beta*T38*T101))"}
+, {"indices": [2, 16, 20], "eq": 2, "var1": "c", "shift1": 1, "var2": "b", "shift2": 1, "val": "(-(beta*(alpha*exp(b(1))*y(1)*T101+T38*((-(c*exp(b)*exp(b(1))))*T100-(-(c*exp(b)*exp(b(1))))*(T100+T100))/(T100*T100))))"}
+, {"indices": [2, 10, 13], "eq": 2, "var1": "k", "shift1": 0, "var2": "b", "shift2": 0, "val": "(-(beta*T31*(1-delta)))"}
+, {"indices": [2, 10, 20], "eq": 2, "var1": "k", "shift1": 0, "var2": "b", "shift2": 1, "val": "(-(beta*(1-delta)*T125))"}
+, {"indices": [2, 13, 13], "eq": 2, "var1": "b", "shift1": 0, "var2": "b", "shift2": 0, "val": "(-(beta*T31*T38))"}
+, {"indices": [2, 13, 20], "eq": 2, "var1": "b", "shift1": 0, "var2": "b", "shift2": 1, "val": "(-(beta*(T38*T125+T31*alpha*exp(b(1))*y(1))))"}
+, {"indices": [2, 20, 20], "eq": 2, "var1": "b", "shift1": 1, "var2": "b", "shift2": 1, "val": "(-(beta*(alpha*exp(b(1))*y(1)*T125+T38*(T100*(-(c*exp(b)*exp(b(1))*c(1)))-(-(c*exp(b)*exp(b(1))*c(1)))*(T100+T100))/(T100*T100)+T31*alpha*exp(b(1))*y(1)+alpha*exp(b(1))*y(1)*T125)))"}
+, {"indices": [3, 3, 3], "eq": 3, "var1": "k", "shift1": -1, "var2": "k", "shift2": -1, "val": "(-(T47*exp(a)*get_power_deriv(k(-1),alpha,2)))"}
+, {"indices": [3, 3, 11], "eq": 3, "var1": "k", "shift1": -1, "var2": "a", "shift2": 0, "val": "T108"}
+, {"indices": [3, 3, 12], "eq": 3, "var1": "k", "shift1": -1, "var2": "h", "shift2": 0, "val": "(-(T106*T118))"}
+, {"indices": [3, 11, 11], "eq": 3, "var1": "a", "shift1": 0, "var2": "a", "shift2": 0, "val": "(-T48)"}
+, {"indices": [3, 11, 12], "eq": 3, "var1": "a", "shift1": 0, "var2": "h", "shift2": 0, "val": "(-(T46*T118))"}
+, {"indices": [3, 12, 12], "eq": 3, "var1": "h", "shift1": 0, "var2": "h", "shift2": 0, "val": "(-(T46*get_power_deriv(h,1-alpha,2)))"}
+, {"indices": [4, 8, 13], "eq": 4, "var1": "y", "shift1": 0, "var2": "b", "shift2": 0, "val": "(-exp(b))"}
+, {"indices": [4, 9, 13], "eq": 4, "var1": "c", "shift1": 0, "var2": "b", "shift2": 0, "val": "exp(b)"}
+, {"indices": [4, 13, 13], "eq": 4, "var1": "b", "shift1": 0, "var2": "b", "shift2": 0, "val": "(-(exp(b)*(y-c)))"}
+]}, "external_functions_temporary_terms_third_derivative": [], "temporary_terms_third_derivative": [], "third_derivative": {"dims": [7, 25, 25, 25], "entries": []}}}

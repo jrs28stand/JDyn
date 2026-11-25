@@ -127,7 +127,11 @@ At Dynare's steady state the decision rules agree to 1e-12 (test_korder.jl).
 | forecast | forecast.{Mean, HPDinf, HPDsup, HPDinf_ME, HPDsup_ME} | yes (`forecast!`; after stoch_simul, orders 1-3; after estimation the `EstimationResult.forecast` field, copied into oo_ by `estimation`) |
 | conditional_forecast_paths, conditional_forecast | conditional_forecast.{cond, uncond, controlled_exo_variables, controlled_variables, instruments, graph}; options_cond_fcst_ | yes (`conditional_forecast!`; estimated parameter sets read oo_.posterior_mode / _mean / _median / mle_mode) |
 | plot_conditional_forecast | (figures) | the plotted numbers as a table (`conditional_forecast_table`) |
-| osr, identification, ... | | not supported by JDyn |
+| ramsey_model, ramsey_policy | M_.ramsey_orig_endo_nbr/ramsey_orig_eq_nbr, aux_vars of type 6 (multipliers MULT_i), options_.instruments, options_.ramsey_policy, oo_.dr (steady state with multipliers), oo_.steady_state, then the stoch_simul fields and planner_objective_value | yes (`ramsey_policy!`) |
+| evaluate_planner_objective | planner_objective_value.{unconditional, conditional} (a number, or under Ramsey `conditional.zero_initial_multiplier` and `.steady_initial_multiplier`) | yes (`evaluate_planner_objective!`) |
+| discretionary_policy | oo_.dr (order 1, `order_var` ... `ghu`), the stoch_simul fields, planner_objective_value | yes (`discretionary_policy!`) |
+| osr | M_.params (optimum), M_.osr.{param_names, param_indices}, oo_.osr.{objective_function, optim_params, error_indicator, optimization_info.{exitflag, iterations, funcCount, message}}, then stoch_simul at the optimum | yes (`osr!`) |
+| identification, ... | | not supported by JDyn |
 
 ## estimation and calib_smoother (what Dynare 7.2 writes, and what JDyn writes)
 
@@ -175,8 +179,7 @@ OccBin options come from the file's occbin_setup / occbin_solver statements and 
 keywords). Refused with OccBin: prefilter, univariate filters with the PKF, the diffuse filter, loglinear, filter_covariance,
 smoothed_state_uncertainty, filter_step_ahead beyond 1, observation_trends in the smoother.
 
-Not written, and refused where the option asks for them: `selected_variables_only`, a smoother or filter together with an
-MCMC run, `oo_.FilteredVariablesShockDecomposition`, forecasts, posterior IRFs, `bayestopt_`/`estim_params_` (JDyn keeps
+Not written, and refused where the option asks for them: `selected_variables_only`, `oo_.FilteredVariablesShockDecomposition`, `filter_covariance` / `smoothed_state_uncertainty` over posterior draws, `bayestopt_`/`estim_params_` (JDyn keeps
 them in the `Estimation` object, not in the workspace), recursive estimation, the other samplers. `mh_replic > 0` with
 `mode_compute=0` warns and is ignored, as Dynare returns before the sampler there.
 
@@ -206,3 +209,23 @@ minutes): est_schorfheide with the smoother (loglinear, 1e-13) and two est_nk ru
    clobbering the caller's names).
 5. **Shapes, not types.** Counts are `Float64` (as MATLAB doubles); `M_.endo_names` is a column cell.
    Julia code that wants native types keeps using the existing API.
+
+## Semi-structural objects (src/pac.jl)
+
+`ws.M_.var.<name>`, `ws.M_.trend_component.<name>`, `ws.M_.var_expectation.<name>` and `ws.M_.pac.<name>` hold Dynare's fields
+(from the preprocessor's driver.m: `eqtags`, `lhs`, `max_lag`, `rhs.vars_at_eq`, `h_param_indices`, `ec`, `ar`, `additive`, `components` (a Julia
+`Vector{MStruct}`), `mce.alpha`, ...), plus what the run-time functions add (`isconstant`, `list_of_variables_in_companion_var`,
+`model_consistent_expectations`, `additive.bgp`, ...). `ws.oo_.var.<name>.CompanionMatrix` and `ws.oo_.trend_component.<name>.CompanionMatrix`
+are filled by `get_companion_matrix` / `pac.initialize` / `var_expectation.initialize`; `M_.params` carries the h / expectation parameters after
+`pac.update.expectation` / `var_expectation.update`. (`oo_.var` is overwritten by a later `stoch_simul` as in Dynare.)
+`oo_.var.<name>.ar` and `oo_.trend_component.<name>.ar` (legacy) are not filled.
+
+## Posterior analyses over MCMC draws (src/mcmc_diagnostics.jl, posterior.jl, posterior_moments.jl, posterior_forecast.jl, posterior_stage.jl)
+
+With `mh_replic > 0` `estimation` fills, as Dynare 7.2 does: `oo_.convergence` (`geweke(b).<SE_name>`, `raftery_lewis(b)`, Brooks-Gelman
+series, inefficiency factors; skipped by `nodiagnostic`), `oo_.PosteriorIRF.dsge` (`bayesian_irf`), `oo_.PosteriorTheoreticalMoments.dsge`
+(`moments_varendo`: covariance, `contemporeaneous_correlation`, correlation, VarianceDecomposition(ME), ConditionalVarianceDecomposition(ME)
+with `Steps`), the posterior distributions of `SmoothedVariables`, `UpdatedVariables`, `SmoothedShocks`, `SmoothedMeasurementErrors`,
+`Constant`, `FilteredVariables`, `Filtered_Variables_<k>_step_ahead`, `Smoother.{Trend, TrendCoeff, Init_State}`,
+`FilteredVariablesKStepAhead(Variances)` (`smoother`, `filtered_vars`, `filter_step_ahead`), and `oo_.MeanForecast`, `PointForecast`,
+`PointForecastME` (`forecast`). Dynare 7.2 quirks reproduced on purpose: see docs/POSTERIOR_PROGRESS.md.

@@ -435,7 +435,11 @@ struct MCMCResult
     x0::Matrix{Float64}                # initial point of each chain
     drop::Float64
     accepted::Matrix{Bool}
+    neval::Union{Nothing,Matrix{Float64}}      # function evaluations per iteration (src/mcmc_driver.jl)
+    info::Dict{Symbol,Any}                     # sampler, proposal, generator states of the chains ... (src/mcmc_driver.jl)
 end
+MCMCResult(draws, log_posterior, acceptance_rate, names, x0, drop, accepted) =
+    MCMCResult(draws, log_posterior, acceptance_rate, names, x0, drop, accepted, nothing, Dict{Symbol,Any}())
 
 "Draws after discarding the first `floor(drop*replic)` of every chain (Dynare's `CutSample`), pooled: (draws, parameters)."
 function kept_draws(mc::MCMCResult; drop=mc.drop)
@@ -473,21 +477,30 @@ round_half_up(x) = Int(floor(x + 0.5))
 # ====================================================================== the estimation object
 const _COSMETIC_EST = Set(["nograph", "nodisplay", "graph_format", "TeX", "tex", "nodiagnostic", "console_mode", "silent_optimizer",
     "plot_priors", "debug", "noprint", "no_graph.posterior", "graph_save_formats", "dirname", "verbosity", "mode_check.nolik",
-    "mode_check.neighbourhood_size", "mode_check.symmetric_plots", "xls_sheet", "xls_range", "sub_draws", "nodecomposition"])
+    "mode_check.neighbourhood_size", "mode_check.symmetric_plots", "xls_sheet", "xls_range"])
 # options the code acts on
 const _HONOURED_EST = Set(["datafile", "first_obs", "nobs", "loglinear", "logdata", "prefilter", "presample", "lik_init",
     "diffuse_filter", "kalman_algo", "kalman_tol", "diffuse_kalman_tol", "riccati_tol", "prior_trunc", "mode_compute", "mh_replic",
     "mh_nblck", "mh_jscale", "mh_drop", "mh_init_scale_factor", "order", "use_univariate_filters_if_singularity_is_detected",
     "rescale_prediction_error_covariance", "cova_compute", "mh_conf_sig", "optim_opt", "gstep", "Harvey_scale_factor",
     "lyapunov_complex_threshold", "mode_check.status", "nodiagnostic",
-    "smoother", "filtered_vars", "filter_step_ahead", "filter_covariance", "smoothed_state_uncertainty", "forecast", "forecasts.conf_sig"])
+    "smoother", "filtered_vars", "filter_step_ahead", "filter_covariance", "smoothed_state_uncertainty", "forecast", "forecasts.conf_sig",
+    "sub_draws", "nodecomposition", "ar", "conditional_variance_decomposition", "contemporaneous_correlation", "moments_varendo",
+    "bayesian_irf", "irf", "irf_shocks", "relative_irf", "consider_all_endogenous", "consider_all_endogenous_and_auxiliary",
+    "consider_only_observed", "posterior_max_subsample_draws", "heteroskedastic_filter",
+    "mode_file", "load_mh_file", "mh_recover", "posterior_sampling_method", "posterior_sampler_options", "mcmc_jumping_covariance",
+    "mh_tune_jscale", "mh_tune_guess", "load_results_after_load_mh", "dsge_var", "dsge_varlag", "endogenous_prior"])
+# preprocessor option names -> the names used here
+const _EST_ALIASES = Dict("posterior_sampler_options.posterior_sampling_method" => "posterior_sampling_method",
+    "posterior_sampler_options.sampling_opt" => "posterior_sampler_options", "MCMC_jumping_covariance" => "mcmc_jumping_covariance",
+    "mh_tune_jscale.target" => "mh_tune_jscale", "mh_tune_jscale.guess" => "mh_tune_guess")
 const _EST_DEFAULTS = Dict{String,Any}("datafile" => nothing, "first_obs" => 1, "nobs" => nothing, "loglinear" => false,
     "logdata" => false, "prefilter" => 0, "presample" => 0, "lik_init" => 1, "diffuse_filter" => false, "kalman_algo" => 0,
     "kalman_tol" => 1e-10, "diffuse_kalman_tol" => 1e-6, "riccati_tol" => 1e-6, "prior_trunc" => 0.0, "mode_compute" => 5,
     "mh_replic" => 20000, "mh_nblck" => 2, "mh_jscale" => nothing, "mh_drop" => 0.5, "mh_init_scale_factor" => 2.0, "order" => 1,
     "use_univariate_filters_if_singularity_is_detected" => true, "rescale_prediction_error_covariance" => false,
     "cova_compute" => 1, "mh_conf_sig" => 0.9, "optim_opt" => "", "gstep" => (1e-2, 1.0), "Harvey_scale_factor" => 10.0,
-    "lyapunov_complex_threshold" => 1e-15, "qz_criterium" => nothing)
+    "lyapunov_complex_threshold" => 1e-15, "qz_criterium" => nothing, "heteroskedastic_filter" => false)
 
 _est_flag(v) = !(v === false || v === 0 || v === 0.0 || v === nothing || v == "")
 
@@ -553,11 +566,14 @@ function Estimation(m::Model; data=nothing, allow_unsupported::Bool=false, state
         raw[string(k) == "mh_nblocks" ? "mh_nblck" : string(k)] = v
     end
     opts = copy(_EST_DEFAULTS)
+    tune_status = false
     unsupported = String[]
     nlraw = _est_order(raw) == 2 ? _pop_particle_options!(raw) : nothing      # order 2: the nonlinear filters (src/nonlinear_estimation.jl)
     for (k, v) in raw
         k == "mh_nblocks" && (k = "mh_nblck")
         k == "optim" && (k = "optim_opt")
+        k = get(_EST_ALIASES, k, k)
+        k == "mh_tune_jscale.status" && (tune_status = _est_flag(v); continue)
         if v isa AbstractVector && length(v) == 1 && k != "gstep"
             v = v[1]
         end
@@ -594,6 +610,14 @@ function Estimation(m::Model; data=nothing, allow_unsupported::Bool=false, state
     for k in ("mh_drop", "mh_conf_sig", "prior_trunc", "mh_init_scale_factor", "kalman_tol", "diffuse_kalman_tol", "riccati_tol", "Harvey_scale_factor")
         opts[k] = Float64(opts[k])
     end
+    opts["dsge_varlag"] = Int(get(opts, "dsge_varlag", 4))          # DSGE-VAR (src/dsge_var.jl): the model is a DSGE-VAR when it has dsge_prior_weight
+    opts["endogenous_prior"] = _est_flag(get(opts, "endogenous_prior", false))
+    # posterior samplers (src/samplers.jl): mh_tune_jscale defaults to the target .33; slice needs bounded support
+    (tune_status && get(opts, "mh_tune_jscale", nothing) === nothing) && (opts["mh_tune_jscale"] = 0.33)
+    if _est_flag(get(opts, "mh_tune_jscale", nothing)) && opts["mh_jscale"] !== nothing
+        throw(EstimationError("the mh_tune_jscale and mh_jscale options are incompatible"))
+    end
+    get(opts, "posterior_sampling_method", "random_walk_metropolis_hastings") == "slice" && opts["prior_trunc"] == 0 && (opts["prior_trunc"] = 1e-10)
     if _est_flag(opts["diffuse_filter"]) || opts["kalman_algo"] in (3, 4)
         opts["lik_init"] == 2 && throw(EstimationError("options diffuse_filter, lik_init and/or kalman_algo have contradictory settings"))
         opts["lik_init"] = 3
@@ -882,7 +906,9 @@ function solve(est::Estimation, theta::AbstractVector)
     m = est.model
     o = est.options
     sol = first_order(m; params=model_params(est, theta), qz_criterium=o["qz_criterium"], loglinear=o["loglinear"])
-    all(isfinite, sol.params) || throw(SteadyStateError("parameters are NaN or Inf after the steady-state computation"))
+    pfin = isfinite.(sol.params)
+    haskey(m.ip, "dsge_prior_weight") && (pfin[m.ip["dsge_prior_weight"]] = true)      # dsge_var=Inf: an infinite weight is legitimate
+    all(pfin) || throw(SteadyStateError("parameters are NaN or Inf after the steady-state computation"))
     (all(isfinite, sol.G) && all(isfinite, sol.H)) || throw(BlanchardKahnError("the decision rule contains NaN or Inf"))
     sol.ys, sol.G, sol.H, sol.params
 end
@@ -931,6 +957,7 @@ function _setup_data!(est::Estimation, data)
         any(x -> !isnan(x) && x <= 0, raw) && throw(EstimationError("loglinear without logdata: the data contain non-positive values, whose logarithm is complex"))
         raw = log.(raw)
     end
+    o["_alldata"] = copy(raw)                          # DSGE-VAR: observations before first_obs are initial conditions
     first = Int(o["first_obs"])
     nobs = o["nobs"] === nothing ? size(raw, 1) - first + 1 : Int(o["nobs"])
     (first < 1 || nobs < 1 || first - 1 + nobs > size(raw, 1)) &&
@@ -1031,6 +1058,10 @@ function _dsge_likelihood(est::Estimation, theta::AbstractVector; bounds=(est.lb
         return reject(44, _ispd_penalty(Hm[est.H_check, est.H_check]), "covariance matrix of the measurement errors is not positive definite (info 44)")
     end
     get(o, "occbin", nothing) === nothing || return _occbin_likelihood(est, theta, with_lik)    # src/occbin_estimation.jl
+    if dsge_var_active(est)                                                                      # src/dsge_var.jl
+        rj = _dvar_precheck(est, theta)
+        rj === nothing || return rj
+    end
     local ys, G, Hs, params
     try
         ys, G, Hs, params = solve(est, theta)
@@ -1050,12 +1081,16 @@ function _dsge_likelihood(est::Estimation, theta::AbstractVector; bounds=(est.lb
     r = est.restrict
     T, R, z = G[r, r], Hs[r, :], est.mf
     (all(isfinite, T) && all(isfinite, R)) || return reject(3, 0.1, "the decision rule contains NaN or Inf")
+    dsge_var_active(est) && return _dvar_likelihood(est, theta, ys, T, R, Q, z)
     mm = size(T, 1)
     pp = length(z)
     Y = permutedims(est.data) .- ys[est.obs_decl]
     trend = _trend(est, params, est.nobs)
     trend === nothing || (Y = Y .- trend)
     QQ = R * Q * R'
+    # heteroskedastic_filter (src/heteroskedastic.jl): the path of R Q_t R'; the initial covariance and the diffuse setup use the constant QQ
+    het = _est_flag(o["heteroskedastic_filter"])
+    QQf = het ? heteroskedastic_rqr(R, heteroskedastic_qvec(Q, heteroskedastic_arrays(est.model, est.nobs, Int(o["first_obs"]))...)) : QQ
     a = zeros(mm)
     pre = o["presample"]
     kt, rt = o["kalman_tol"], o["riccati_tol"]
@@ -1067,13 +1102,14 @@ function _dsge_likelihood(est::Estimation, theta::AbstractVector; bounds=(est.lb
     P = zeros(mm, mm)
     Pinf = nothing
     expanded = false
-    Zu, Tu, Qu, Ru, QQu, Hdiag = nothing, T, Q, R, QQ, nothing
+    Zu, Tu, Qu, Ru, QQu, Hdiag = nothing, T, Q, R, QQf, nothing
     function prepare_univariate!(P_, Pinf_)
         # diagonal measurement-error covariance: Z is a selector; otherwise the errors are added to the state vector
         if all(abs.(Hm - Diagonal(diag(Hm))) .< 1e-14)
-            Zu, Tu, Qu, Ru, QQu, Hdiag = _measurement_matrix(est, mm), T, Q, R, QQ, diag(Hm)
+            Zu, Tu, Qu, Ru, QQu, Hdiag = _measurement_matrix(est, mm), T, Q, R, QQf, diag(Hm)
             return P_, Pinf_
         end
+        het && throw(EstimationError("heteroskedastic_filter with correlated measurement errors is not supported"))
         Z, Te, Qe, Re, Pe, Pie = _expand_for_univariate(T, R, Q, P_, Pinf_, _measurement_matrix(est, mm), Hm)
         expanded = true
         Zu, Tu, Qu, Ru, QQu, Hdiag = Z, Te, Qe, Re, Re * Qe * Re', zeros(pp)
@@ -1092,7 +1128,7 @@ function _dsge_likelihood(est::Estimation, theta::AbstractVector; bounds=(est.lb
         singular = false
         P = Pstar
         if algo == 3
-            dLIK, dlik, a1, P1 = kalman_filter_d(Y, a, Pinf, Pstar, T, QQ, Hm, z; kalman_tol=kt,
+            dLIK, dlik, a1, P1 = kalman_filter_d(Y, a, Pinf, Pstar, T, QQf, Hm, z; kalman_tol=kt,
                                                  diffuse_kalman_tol=o["diffuse_kalman_tol"], presample=pre, data_index=di_all)
             if isinf(dLIK)
                 singular = true               # as Dynare: redo the diffuse stage observation by observation
@@ -1116,7 +1152,7 @@ function _dsge_likelihood(est::Estimation, theta::AbstractVector; bounds=(est.lb
     LIK = 0.0
     lik = Float64[]
     if algo == 1 || algo == 3
-        LIK, lik = kalman_filter(Ys, a, P, T, QQ, Hm, z; kalman_tol=kt, riccati_tol=rt, presample=pre, diffuse_periods=dp,
+        LIK, lik = kalman_filter(Ys, a, P, T, het ? QQf[:, :, dp+1:end] : QQ, Hm, z; kalman_tol=kt, riccati_tol=rt, presample=pre, diffuse_periods=dp,
                                  data_index=di, no_more_missing=nmm, rescale=o["rescale_prediction_error_covariance"])
         if isinf(LIK)
             o["use_univariate_filters_if_singularity_is_detected"] || return reject(50, 0.1, "the forecast-error covariance is singular (info 50)")
@@ -1128,7 +1164,7 @@ function _dsge_likelihood(est::Estimation, theta::AbstractVector; bounds=(est.lb
             P, _ = prepare_univariate!(P, nothing)
             expanded && length(a) == mm && (a = vcat(a, zeros(pp)))
         end
-        LIK, lik = univariate_kalman_filter(Ys, a, P, Tu, QQu, Hdiag, Zu; kalman_tol=kt, riccati_tol=rt, presample=pre,
+        LIK, lik = univariate_kalman_filter(Ys, a, P, Tu, het ? QQu[:, :, dp+1:end] : QQu, Hdiag, Zu; kalman_tol=kt, riccati_tol=rt, presample=pre,
                                             diffuse_periods=dp, data_index=di, no_more_missing=nmm)
     end
     est.last_filter = Dict(1 => "multivariate", 2 => "univariate", 3 => "multivariate (diffuse)", 4 => "univariate (diffuse)")[algo]
@@ -1143,6 +1179,13 @@ function _dsge_likelihood(est::Estimation, theta::AbstractVector; bounds=(est.lb
         return Inf, info, 0.1, -LIK, lnprior, Float64[]
     end
     contrib = with_lik ? vcat(dlik, lik)[pre+1:end] : Float64[]
+    if o["endogenous_prior"]
+        # dsge_likelihood.m: endogenous_prior.m on the data from the last missing observation (stationary models only)
+        o["lik_init"] == 1 || throw(EstimationError("Endogenous prior not supported with non-stationary models"))
+        Pst = lyapunov_symm(T, QQ; qz_criterium=o["qz_criterium"], complex_threshold=o["lyapunov_complex_threshold"])[1]
+        lnpriormom = endogenous_log_prior(Y[:, est.no_more_missing:end], Pst, z, Hm)
+        return LIK - lnprior - lnpriormom, 0, 0.0, -LIK, lnprior, contrib
+    end
     LIK - lnprior, 0, 0.0, -LIK, lnprior, contrib
 end
 
@@ -1429,7 +1472,7 @@ function sample_posterior(est::Estimation; replic=nothing, nblocks=nothing, mode
     for j in 1:nblocks
         eps = innovations === nothing ? randn(rngs[j], replic, est.n) : Float64.(innovations[j, :, :])
         u = uniforms === nothing ? (() -> rand(rngs[j])) : Float64.(uniforms[j, :])
-        dr, lp, ac = metropolis_hastings(log_post, starts[j, :], lp0[j], chol_prop, lb, ub, eps, u)
+        dr, lp, ac = metropolis_hastings(log_post, starts[j, :], lp0[j], chol_prop, est.lb, est.ub, eps, u)     # proposals are checked against the estimated_params bounds too (posterior_sampler_iteration.m: sampler_options.bounds)
         draws[j, :, :] = dr; logpo[j, :] = lp; acc[j, :] = ac
     end
     MCMCResult(draws, logpo, vec(sum(acc; dims=2)) ./ replic, est.names, starts, drop, acc)
@@ -1542,16 +1585,29 @@ function estimate(m::Model; seed=nothing, rng=nothing, kw...)
     if o["mode_compute"] != 0
         mode = posterior_mode(est; rng=rng)
         lp = mode.log_posterior
+    elseif get(o, "mode_file", nothing) !== nothing && !samples_without_mode(est)
+        mode = mode_from_file(est, String(o["mode_file"]))         # mode_compute=0 with mode_file: Dynare's mode and Hessian (src/mcmc_stage.jl)
+        lp = mode.log_posterior
     end
     mc = nothing
     post = nothing
     mhm = NaN
-    if o["mh_replic"] > 0 && is_bayesian(est.prior)
-        (mode !== nothing && mode.inv_hessian !== nothing) ||
-            throw(EstimationError("mh_replic > 0 needs a posterior mode and its Hessian (mode_compute != 0 and cova_compute != 0)"))
-        mc = sample_posterior(est; mode=mode, seed=seed)
+    if o["mh_replic"] > 0 && is_bayesian(est.prior) || (sampling_method(est) in SMC_METHODS && is_bayesian(est.prior))
+        method = sampling_method(est)
+        if method in SMC_METHODS
+            smc = sample_smc(est; seed=seed)                         # hssmc / dsmh: the particles as one chain, no modified harmonic mean
+            mc = as_mcmc(smc)
+            mhm = smc.log_marginal_density
+        else
+            samples_without_mode(est) || (mode !== nothing && mode.inv_hessian !== nothing) ||
+                throw(EstimationError("mh_replic > 0 needs a posterior mode and its Hessian (mode_compute != 0 and cova_compute != 0, or a mode_file)"))
+            spec = get(o, "posterior_sampler_options", nothing)
+            plain = method == RWMH && spec === nothing && _tune_target(o) === nothing && String(get(o, "mcmc_jumping_covariance", "hessian")) == "hessian" &&
+                    _mcmc_kind(est, nothing) == :julia && mode !== nothing && mode.inv_hessian !== nothing
+            mc = plain ? sample_posterior(est; mode=mode, seed=seed) : sample_mcmc(est; mode=mode, seed=seed, rng=_mcmc_kind(est, nothing))
+            mhm = marginal_density_mhm(mc)
+        end
         post = posterior_statistics(est, mc)
-        mhm = marginal_density_mhm(mc)
     end
     lap = mode === nothing ? NaN : mode.laplace
     sm = nothing

@@ -47,14 +47,31 @@ faster than pydyn on the same machine. An interpreted `_steadystate.m` costs abo
 
 - Theoretical moments at order 3 and filtered (HP, band-pass) theoretical moments at order 2 (refused, as in Dynare);
   loglinear models above order 1 (refused, as in Dynare); unit roots with pruning at order 2 (refused, as Dynare).
-- Estimation beyond second order (order 3, `gmf`, `nonlinear_filter_initialization=2`, residual/multinomial resampling, prefilter/trends/missing data with particle filters: refused); Bayesian smoothed distributions over posterior draws (see the smoother section).
+- Estimation beyond second order (order 3, `gmf`, `nonlinear_filter_initialization=2`, residual/multinomial resampling, prefilter/trends/missing data with particle filters: refused).
 - OccBin: forecasts (`occbin.forecast`), particle filters, the loss-function regime guess, `init_regime_history` /
   `init_binding_indicator` of the filters, `smoother_first_period_occbin_update` other than 1 (refused); the Bayesian
-  smoother over posterior draws. OccBin figures are not drawn: the plotted content is available as tables (see below).
+  smoother, IRFs, moments and forecasts over posterior draws (refused). OccBin figures are not drawn: the plotted content is available as tables (see below).
 - Plotting beyond first-order IRFs (OccBin, smoother, decompositions, ...). First-order IRF figures are
   done: Dynare's content rules, tidy CSV export, SVG built in, PNG/PDF through an optional Plots.jl
   extension (see docs/plotting.md).
-- Optimal policy (Ramsey, OSR), heterogeneous agents, PAC/VAR models, `dseries`: refused with an error.
+- Optimal policy: not done are `ramsey_constraints` (Dynare's inequality constraints, `solve_algo=10`), perfect-foresight Ramsey
+  welfare with `ramsey_policy` after `perfect_foresight_solver` beyond Dynare's backward recursion, `osr(analytic_derivation)`,
+  `osr` with `opt_algo` 1, 2, 3 (MATLAB toolboxes), `stoch_simul` orders above 3 for Ramsey models, `mult_elimination` as a
+  separate option (the preprocessor does it). All refuse with an error. Heterogeneous agents: refused with an error; `dseries`/`dates`: see "dates and dseries" below. Semi-structural toolbox: see "Semi-structural models" below for what is and is not done (`pac.estimate.*`, legacy `get_companion_matrix_legacy`, `pac.print`/`var_expectation.print`).
+
+## Optimal policy (src/optimal_policy.jl, src/results_policy.jl; docs/RAMSEY_PROGRESS.md)
+
+`ramsey_model` / `ramsey_policy` (instruments, planner_discount, the Ramsey steady state `dyn_ramsey_static` with multipliers found
+by least squares, steady-state files, `histval`, several instruments, auxiliary variables), `evaluate_planner_objective` (orders 1
+and 2, conditional welfare with multipliers at 0 and at their steady state, unconditional welfare, `u` and `histval`),
+`discretionary_policy` (Dennis' algorithm) and `osr` (`osr_params`, `osr_params_bounds`, `optim_weights`, weighted variances or
+minus the welfare; csminwel, fminsearch, simplex, CMA-ES). They run through `dynare()`; `ramsey_policy!`, `discretionary_policy!`,
+`osr!`, `evaluate_planner_objective!` re-run them on a workspace, and `osr`, `discretionary_policy`, `evaluate_planner_objective`,
+`ramsey_steady_state` work on a `Model`. test/test_optimal_policy.jl compares with Dynare 7.2 (Octave) on 18 Ramsey models, 5
+discretionary models, 5 osr models and a 2-shock order-2 welfare: steady state, rules, welfare and osr objective to 1e-9 or better
+(csminwel optima to the optimiser's tolerance). Dynare's order-2 welfare mixes the Kronecker order of its `Wyu` term (matters with
+several shocks and states, and a nonzero first shock); JDyn corrects it by default and reproduces Dynare with
+`replicate_dynare_bugs=true` (checked against Octave).
 
 ## OccBin
 
@@ -122,7 +139,7 @@ k-step arrays, `Variance`, `State_uncertainty`, `Init_State_Vector`). `check_smo
 `dynare()` fills `oo_` for `estimation` and `calib_smoother` exactly as Dynare 7.2 does (`src/results_estimation.jl`; field
 map and validation in docs/RESULTS.md); `estimation!(ws, var_list; options...)` and `calib_smoother!(ws, var_list; options...)`
 re-run them on a workspace. Known gaps: `oo_.dr.{eigval, gx, Gy}` are not written; `optimization_info` iterations/funcCount are JDyn's own;
-`selected_variables_only` and a smoother together with MCMC raise.
+`selected_variables_only` raises.
 `shock_decomposition`, `initial_condition_decomposition`, `realtime_shock_decomposition`, `group_shocks`, `squeeze_shock_decomposition`
 and `decomposition_plot_data` / `decomposition_table` (CSV through `write_csv`) give the figures' content as tables.
 
@@ -149,8 +166,8 @@ and `decomposition_plot_data` / `decomposition_table` (CSV through `write_csv`) 
   `estimate(m)` runs what the `.mod` file's `estimation` statement asks. Unsupported options raise an
   `EstimationError` (or warn once with `allow_unsupported=true`); other `mode_compute` values (1, 3, 12, 13: MATLAB toolboxes;
   2, 6, 10, 101, 102: Dynare's own, not ported yet) raise an `EstimationError`, as do newrat's `optim('Hessian', 0 or 2)`.
-- Not implemented: forecasts over the posterior draws (`forecast` with `mh_replic > 0`, oo_.PointForecast / MeanForecast:
-  refused), posterior IRFs, recursive estimation, other samplers, orders above 1,
+- Posterior analyses over the MCMC draws (convergence diagnostics, posterior IRFs, moments, smoothed variables, forecasts) are in
+  docs/POSTERIOR_PROGRESS.md. Not implemented: recursive estimation, other samplers, orders above 1,
   particle filters, more than one `estimated_params` block.
 - The sampler is checked against Dynare's target density (40 stored draws) and statistically (2 x 4000 draws:
   means within 0.17 posterior std of Dynare's 2 x 20000, modified harmonic mean within 0.19); it is not
@@ -173,7 +190,7 @@ and `decomposition_plot_data` / `decomposition_table` (CSV through `write_csv`) 
   `observation_trends`, Dynare adds the data mean / trend to the mean forecast of the observed variables but not to HPDinf/HPDsup;
   with prefilter it subtracts the steady state of the variable at the observed variable's position in var_list, and fails when an
   observed variable is missing from var_list.
-- Not implemented: `varexo_det` forecasts (refused), forecasts over posterior draws, OccBin forecasts.
+- Not implemented: `varexo_det` forecasts (refused), OccBin forecasts.
 - newrat: the gradient steps are chosen so that the posterior moves by 1e-5, so the 1e-11 rounding differences between JDyn's and
   Dynare's likelihoods change the gradient by about 1e-6 relative and the univariate steps of `mr_gstep` (whose second differences
   are dominated by rounding in both programs) after the first iteration: the first step matches, the iterates then differ, the
@@ -199,8 +216,7 @@ maximum_lag + periods + maximum_lead) and `exo_simul` (rows x n_exo) have Dynare
 - Every `stack_solve_algo` is solved by Newton with a sparse LU (Dynare's algorithm 0, UMFPACK); a warning says so.
   Dynare's other linear solvers (LBJ, GMRES, bicgstab) give the same Newton step up to round-off or their own
   iterative tolerance, which JDyn does not reproduce. `robust_lin_solve`, bytecode, block and `solve_algo` are warned about.
-- Refused with an error: `perfect_foresight_controlled_paths`, `shock_paths` blocks, `initval_file`/`histval_file`, dates in
-  `periods`/`learnt_in`, `lmmcp` together with `model(linear)`, deterministic exogenous variables (`varexo_det`), marginal
+- Refused with an error: `perfect_foresight_controlled_paths`, `shock_paths` blocks, `initval_file`/`histval_file`, `lmmcp` together with `model(linear)`, deterministic exogenous variables (`varexo_det`), marginal
   linearization with expectation errors. `shocks(surprise)` blocks are OccBin's (Dynare's perfect foresight does not read
   them) and are ignored here too.
 - Stacked evaluation: one sparse pattern per number of periods, Jacobian filled in place, the factorisation's
@@ -254,3 +270,52 @@ maximum_lag + periods + maximum_lead) and `exo_simul` (rows x n_exo) have Dynare
   pydyn refuses but JDyn loads has no Dynare reference yet.
 - `options_.qz_criterium` set by MATLAB code and a `qz_criterium` statement option: the statement option
   wins regardless of order in the file.
+
+
+## Semi-structural models (VAR, trend component, var_expectation, PAC; src/pac.jl)
+
+Statements `var_model`, `trend_component_model`, `var_expectation_model`, `pac_model`, `pac_target_info` and the model-block terms
+`var_expectation(...)`, `pac_expectation(...)`, `pac_target_nonstationary(...)` (also with MCE) load. The preprocessor's Julia output
+already substitutes the auxiliary variables and the h/expectation parameters into the model; what only its MATLAB output holds
+(`M_.var.<name>`, `M_.trend_component.<name>`, `M_.var_expectation.<name>`, `M_.pac.<name>`, `varmatrices.m`,
+`trend_component_ar_a0.m`, `pac_target_coefficients.m`) is read from a second preprocessor run in MATLAB mode that `run_preprocessor`
+makes when the file has these statements (kept under `<model>/model/semi/`). `M_.var`, `M_.pac`, ... then have Dynare's layout in
+`ws.M_` and in the MATLAB lines of the file.
+
+Run-time functions, ported from Dynare 7.2's `matlab/`: `get_companion_matrix` (VAR with and without constant, structural VAR,
+trend component; outputs `A0, A0star, AR, B`; `oo_.var.<n>.CompanionMatrix`, `oo_.trend_component.<n>.CompanionMatrix`,
+`M_.<type>.<n>.isconstant` and `list_of_variables_in_companion_var`), `<fname>.varmatrices`, `<fname>.trend_component_ar_a0`,
+`<fname>.pac_target_coefficients`, `get_aux_variable_id`, `get_difference_order`, `isauxiliary`, `var_expectation.initialize` / `.update`
+(all horizons and `time_shift`), `pac.initialize`, `pac.update.expectation` / `.equation` (h vectors for `ll`, `dd`, `dl`, VAR with or without
+constant, trend component, components of `pac_target_info`, growth-neutrality corrections with `additive`, `optim_additive`,
+`non_optimizing_behaviour` and the bgp flags), `pac.mce.parameters`, `pac.bgp.set` / `.get`. Three-dimensional arrays exist only as
+results of these functions (`AR(:,:,i)` indexing, `index3` in src/pac.jl).
+
+| Check | What | Worst difference |
+|---|---|---|
+| `M_.params` after the update functions, companion matrices, eigenvalues of the MCE models | 32 fixtures cut from Dynare's tests (`test/ref_pac`, `test/test_pac.jl`): var-expectations 1, 1-with-time-shift-a, 2, 3, 3-with-time-shift, 5, 6, 9, 11, 12; pac var-1, 3, 6, 8, 9, 10e, 12 (6 files); trend-component 1, 2, 10, 19 (2), 19-growth-lin-comb, 28, 1-mce, 2-mce | 1e-9 relative (parameters, in practice 1e-15), 1e-10 (companion matrices), 1e-6 (eigenvalue moduli) |
+| The files' own checks (AR matrices, companion matrices, expectation weights) | trend-component-and-var-models (tcm1, tcm3, vm2 ...), var-expectations 1, 11, 1-with-time-shift-a, 3 | pass |
+
+Not implemented (refused or skipped with a clear message): `pac.estimate.nls` / `.iterative_ols` / `.init` (they need dseries and a
+nonlinear least-squares estimator), `pac.print` / `var_expectation.print` (they write `.inc` files and a dseries `evaluate.m`; JDyn does nothing, so the
+`substitution.mod` tests, which include those files, fail in the preprocessor), `get_companion_matrix_legacy` / `get_ar_ec_matrices`
+(legacy matrices from the model Jacobian), `pac.update.parameters` / `var_expectation.update_parameters` called directly, `pac.check`.
+Dynare 7.2 quirk reproduced: `var_expectation.update_parameters` uses `expr.params` (parameter indices) as coefficients.
+Dynare 7.2 defect: `pac.mce.parameters` with a parameter-valued bgp flag in `optim_additive` uses an undefined variable; JDyn raises that error.
+
+## dates and dseries (MATLAB interpreter, branch dseries)
+
+Native `dates` and `dseries` objects (src/matlab/dates.jl, dseries.jl, objects.jl), handle semantics as in Dynare 7.2,
+checked against Octave running Dynare's toolbox (test/dseries_cases.txt, 132 cases, `test/test_dseries.jl`) and against
+Dynare's embedded `%@test` unit tests (test/dseries_unit_tests.jl: 366 pass, 22 fail, 97 error; the rest are
+Octave/harness artefacts or refused features below).
+- dates: frequencies Y/S/Q/M/W/D, literals, arithmetic, ranges, comparisons, char/strings/year/subperiod/ndat,
+  firstdate/lastdate, pop/append/sort/unique/intersect/union/setdiff.
+- dseries: constructors from data/dates/names/csv/mat/m files, indexing by dates and names, arithmetic with alignment,
+  lag/lead/diff/log/exp/cumsum/merge/vobs/nobs/hpcycle/hptrend/baxter_king_filter/ydiff/qdiff/subsample/insert/remove/
+  rename/tag/save (csv, mat); `plot` is a no-op.
+- .mod side: date literals in `shocks`/`endval`/`periods`/`learnt_in`/`first_simulation_period` for perfect foresight;
+  `Simulated_time_series` is a dseries in the session scope after `perfect_foresight_solver`.
+- Still refused: xls/xlsx, `initval_file`/`histval_file` with series or datafile, `data(first_obs=dates)` in estimation,
+  cumsum/cumprod with a base period, fill_/exist/chain_/lineartrend/projection/one-sided HP filters, weekly/daily
+  ydiff/ygrowth, `save` format m, `ds{regex} = ...` assignment, tags in insert, struct2dseries.

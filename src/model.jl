@@ -42,6 +42,7 @@ function run_preprocessor(modfile::AbstractString; preprocessor=nothing, output=
     end
     jd = joinpath(dirname(modfile), name, "model", "json")
     isfile(joinpath(jd, "modfile.json")) || error("no JSON output in $jd")
+    _semi_prepare(exe, modfile, extra_args, jd)       # src/pac.jl: MATLAB-mode output for var_model / pac_model / ... (a no-op otherwise)
     jd
 end
 
@@ -246,7 +247,14 @@ function load_model_functions(json_dir::AbstractString, raw::Dict{String,Any}; h
             end
             continue
         end
-        Base.include(_matlab_comparisons, mod, joinpath(jdir, f))
+        path = joinpath(jdir, f)
+        text = read(path, String)
+        if _has_external(text)                         # external functions (src/external.jl): rewrite the MATLAB-style lines
+            isdefined(mod, :_EXT) || _install_external!(mod, ExternalFunctions(helpers, dirname(dirname(dirname(json_dir)))))
+            Base.include_string(_matlab_comparisons, mod, _rewrite_external(text), path)
+        else
+            Base.include(_matlab_comparisons, mod, path)
+        end
     end
     get(n, m=mod) = Base.invokelatest(isdefined, m, Symbol(n)) ? Base.invokelatest(getfield, m, Symbol(n)) : nothing
     req(n) = (f = get(n); f === nothing ? throw(ModelError("generated function $n is missing")) : f)
@@ -328,7 +336,6 @@ function Model(json_dir::AbstractString; functions=Dict{String,Any}(), steady_st
     endo = String[d["name"] for d in raw["endogenous"]]
     exo = String[d["name"] for d in raw["exogenous"]]
     par = String[d["name"] for d in raw["parameters"]]
-    isempty(get_or(raw, "exogenous_deterministic", [])) || throw(ModelError("deterministic exogenous variables are not supported"))
     isempty(get_or(raw, "heterogeneity_dimension", [])) || throw(ModelError("heterogeneous-agent models (heterogeneity_dimension) are not supported"))
     info = raw["model_info"]
     n = length(endo)
@@ -341,16 +348,6 @@ function Model(json_dir::AbstractString; functions=Dict{String,Any}(), steady_st
     lead_lag = hcat(cols...)
     (info["maximum_endo_lag"] > 1 || info["maximum_endo_lead"] > 1) &&
         throw(ModelError("expected the preprocessor to reduce the model to one lead/lag"))
-    # external functions in the model block are not supported (the generated code would call them)
-    for fj in ("dynamic.json", "static.json")
-        p = joinpath(json_dir, fj)
-        if isfile(p)
-            txt = replace(read(p, String), " " => "")
-            (occursin("external_functions_temporary_terms\":[{", txt) || occursin("\"external_function_term\"", txt) ||
-             occursin("\"external_function\":", txt)) &&
-                throw(ModelError("external functions in the model block are not supported"))
-        end
-    end
     ssm = nothing
     ssm_path = joinpath(json_dir, "steady_state_model.json")
     if isfile(ssm_path)
@@ -381,6 +378,7 @@ function Model(json_dir::AbstractString; functions=Dict{String,Any}(), steady_st
               String[], Dict{String,Float64}(), nothing, 0, Set{String}(),
               1 + (fns.dyn_g2 !== nothing) + (fns.dyn_g3 !== nothing),
               nothing, Dict{Symbol,Any}())
+    _semi_init!(m)                                       # src/pac.jl: M_.var, M_.pac, ... of the preprocessor's MATLAB output
     _run_statements!(m; on_command=on_command)
     m
 end
@@ -402,6 +400,7 @@ function _read_modfile_json(path)
         return JSON.parse(text; dicttype=Dict{String,Any})
     catch
     end
+    text = replace(text, r"(\"dsge_var\":\s*)(-?Inf)\b" => s"\1\"\2\"")     # dsge_var=Inf
     text = replace(text, r"(\"period2\":\s*)\}(\d+)" => s"\1\2")
     text = replace(text, r"\"(lower_bound|upper_bound)\":\s*\((-[^)\"]*)\)" => s"\"\1\": \"\2\"")
     text = replace(text, r"\\(.)" => m -> (m[2] in "\"\\/bfnrtu") ? m : "\\\\" * m[2:2])
@@ -444,6 +443,23 @@ end
 
 exo_steady(m::Model; terminal=false) = Float64[get(terminal ? merge(m.initval, m.endval) : m.initval, v, 0.0) for v in m.exo_names]
 
+# ---------------------------------------------------------------------- varexo_det
+"Names of the `varexo_det` variables (they follow the stochastic exogenous variables in the generated code's `x`)."
+exo_det_names(m::Model) = String[d["name"] for d in get_or(m.raw, "exogenous_deterministic", [])]
+n_exo_det(m::Model) = length(get_or(m.raw, "exogenous_deterministic", []))
+"Steady-state values of the `varexo_det` variables (initval, else 0), as `oo_.exo_det_steady_state`."
+exo_det_steady(m::Model) = Float64[get(m.initval, v, 0.0) for v in exo_det_names(m)]
+"""
+The exogenous vector the generated functions take: `x` (n_exo) followed, for a model with `varexo_det`, by the deterministic
+exogenous variables at their steady-state values (or `xd`); a vector that already has all of them is left alone.
+"""
+function _xfull(m::Model, x, xd=nothing)
+    x = x === nothing ? zeros(m.n_exo) : Vector{Float64}(x)
+    nd = n_exo_det(m)
+    (nd == 0 || length(x) == m.n_exo + nd) && return x
+    vcat(x, xd === nothing ? exo_det_steady(m) : Vector{Float64}(xd))
+end
+
 # ---------------------------------------------------------------------- evaluation
 _tmp(n::Int) = zeros(max(n, 1))
 
@@ -460,11 +476,12 @@ end
 
 function static_resid(m::Model, y::AbstractVector, x=nothing, params=nothing)
     f = m.fns
-    x = x === nothing ? zeros(m.n_exo) : Vector{Float64}(x)
+    x = _xfull(m, x)
     p = params === nothing ? m.params : Vector{Float64}(params)
     y = Vector{Float64}(y)
     T = _tmp(f.sta_tmp[1])
-    r = zeros(m.n_endo)
+    neq = _neq(m)
+    r = zeros(neq)
     try
         Base.invokelatest(f.sta_resid_tt, T, y, x, p)
         Base.invokelatest(f.sta_resid, T, r, y, x, p)
@@ -472,12 +489,14 @@ function static_resid(m::Model, y::AbstractVector, x=nothing, params=nothing)
         e isa DomainError || rethrow()
         fill!(r, NaN)
     end
-    r
+    neq == m.n_endo ? r : vcat(r, zeros(m.n_endo - neq))
 end
+"Number of equations written in the model block (fewer than the variables under `discretionary_policy`)."
+_neq(m::Model) = (v = get(m.raw, "model", nothing); v isa AbstractVector && !isempty(v) && length(v) < m.n_endo ? length(v) : m.n_endo)
 
 function static_jac(m::Model, y::AbstractVector, x=nothing, params=nothing)
     f = m.fns
-    x = x === nothing ? zeros(m.n_exo) : Vector{Float64}(x)
+    x = _xfull(m, x)
     p = params === nothing ? m.params : Vector{Float64}(params)
     y = Vector{Float64}(y)
     T = _tmp(f.sta_tmp[1] + f.sta_tmp[2])
@@ -498,11 +517,12 @@ end
 
 function dynamic_resid(m::Model, yy::AbstractVector, x=nothing, params=nothing, ss=nothing)
     f = m.fns
-    x = x === nothing ? zeros(m.n_exo) : Vector{Float64}(x)
+    x = _xfull(m, x)
     p = params === nothing ? m.params : Vector{Float64}(params)
     ss = ss === nothing ? zeros(m.n_endo) : Vector{Float64}(ss)
     T = _tmp(f.dyn_tmp[1])
-    r = zeros(m.n_endo)
+    neq = _neq(m)
+    r = zeros(neq)
     try
         Base.invokelatest(f.dyn_resid_tt, T, Vector{Float64}(yy), x, p, ss)
         Base.invokelatest(f.dyn_resid, T, r, Vector{Float64}(yy), x, p, ss)
@@ -510,13 +530,13 @@ function dynamic_resid(m::Model, yy::AbstractVector, x=nothing, params=nothing, 
         e isa DomainError || rethrow()
         fill!(r, NaN)
     end
-    r
+    neq == m.n_endo ? r : vcat(r, zeros(m.n_endo - neq))
 end
 
 "Structural non-zeros of the dynamic Jacobian (at `(m.fns.g1_rows, m.fns.g1_cols)`)."
 function dynamic_jac_values(m::Model, yy::AbstractVector, x=nothing, params=nothing, ss=nothing)
     f = m.fns
-    x = x === nothing ? zeros(m.n_exo) : Vector{Float64}(x)
+    x = _xfull(m, x)
     p = params === nothing ? m.params : Vector{Float64}(params)
     ss = ss === nothing ? zeros(m.n_endo) : Vector{Float64}(ss)
     T = _tmp(f.dyn_tmp[1] + f.dyn_tmp[2])
@@ -537,6 +557,7 @@ function dynamic_jac(m::Model, yy::AbstractVector, x=nothing, params=nothing, ss
     f = m.fns
     J = zeros(m.n_endo, 3 * m.n_endo + m.n_exo)
     for k in eachindex(v)
+        f.g1_cols[k] > size(J, 2) && continue          # varexo_det columns: see dynamic_full_derivs
         J[f.g1_rows[k], f.g1_cols[k]] += v[k]
     end
     J
@@ -549,11 +570,21 @@ Derivatives of order 1 to 3 of the dynamic model: `cols` is nnz x order, 1-based
 [y(-1), y, y(+1), exogenous]; for order >= 2 each symmetric entry appears once.
 """
 function dynamic_sparse_derivs(m::Model, order::Int, yy, x=nothing, params=nothing, ss=nothing)
+    r, c, v = _dynamic_sparse_derivs(m, order, yy, x, params, ss)
+    n_exo_det(m) == 0 && return r, c, v
+    keep = findall(k -> all(<=(3 * m.n_endo + m.n_exo), view(c, k, :)), eachindex(r))      # the stochastic view: no varexo_det columns
+    r[keep], c[keep, :], v[keep]
+end
+
+"`dynamic_sparse_derivs` with the `varexo_det` columns (`[y(-1), y, y(+1), x, x_det]`)."
+dynamic_full_derivs(m::Model, order::Int, yy, x=nothing, params=nothing, ss=nothing) = _dynamic_sparse_derivs(m, order, yy, x, params, ss)
+
+function _dynamic_sparse_derivs(m::Model, order::Int, yy, x=nothing, params=nothing, ss=nothing)
     f = m.fns
     if order == 1
         return f.g1_rows, reshape(f.g1_cols, :, 1), dynamic_jac_values(m, yy, x, params, ss)
     end
-    x = x === nothing ? zeros(m.n_exo) : Vector{Float64}(x)
+    x = _xfull(m, x)
     p = params === nothing ? m.params : Vector{Float64}(params)
     ss = ss === nothing ? zeros(m.n_endo) : Vector{Float64}(ss)
     if order == 2
@@ -647,8 +678,15 @@ function _exec_statement!(m::Model, st)
                 push!(m.session.oo_written, d["name"])
             end
         end
+    elseif kind == "save_params_and_steady_state"
+        _save_params_and_steady_state(m, st["filename"])
     elseif kind in ("ramsey_model", "ramsey_policy")
-        throw(ModelError("$kind (optimal policy) is not supported by JDyn: the Ramsey problem's steady state and policy rule are not computed"))
+        o = get_or(st, "options", Dict{String,Any}())
+        m.options[kind] = o
+        kind == "ramsey_policy" && _accumulate_options!(m, o)
+        ins = get(o, "instruments", nothing)
+        # options_.instruments as Dynare holds it (a column cell array), for _steadystate.m files that read it
+        ins === nothing || (m.matlab_options["instruments"] = Cell(Any[String(v) for v in (ins isa AbstractDict ? ins["symbol_list"] : ins)], (length(ins isa AbstractDict ? ins["symbol_list"] : ins), 1)))
     elseif kind == "shocks" && get(st, "surprise", false) == true
         m.n_surprise += 1
         push!(get!(m.options, "shock_paths", Any[]), st)
@@ -673,26 +711,9 @@ function _exec_statement!(m::Model, st)
         o = get_or(st, "options", Dict{String,Any}())
         m.options[kind] = merge(get(m.options, kind, Dict{String,Any}()), o)
         kind == "check" && _accumulate_options!(m, o)
-        if kind == "steady" && get(get_or(st, "options", Dict()), "homotopy_mode", 0) != 0 && get(m.options, "homotopy_from_initval_to_endval", false) == true
-            isempty(m.endval) && throw(ModelError("homotopy_setup: the from_initval_to_endval option cannot be used without an endval block"))
-            # exogenous variables explicitly listed in the homotopy_setup block keep the user's values (handled below)
-            listed = m.homotopy === nothing ? Set{String}() : Set(String(d["name"]) for d in m.homotopy if haskey(m.ix, d["name"]))
-            for (nm, v) in m.endval
-                (haskey(m.ix, nm) && !(nm in listed)) || continue
-                m.initval[nm] = v; m.oo[nm] = v
-            end
-        end
-        if kind == "steady" && get(get_or(st, "options", Dict()), "homotopy_mode", nothing) !== nothing && m.homotopy !== nothing
-            # Dynare's steady moves these parameters and exogenous variables to their final values
-            for d in m.homotopy
-                val = _value(m, d["final_value"])
-                if haskey(m.ip, d["name"])
-                    m.params[m.ip[d["name"]]] = val
-                else
-                    m.initval[d["name"]] = val; m.oo[d["name"]] = val
-                end
-            end
-        end
+        # homotopy_setup + steady(homotopy_mode=...): stepped as Dynare's homotopy1/2/3 (src/homotopy.jl); moves the parameters and
+        # exogenous variables to their final values and leaves the steady state there
+        kind == "steady" && haskey(get_or(st, "options", Dict()), "homotopy_mode") && _steady_homotopy!(m, merge(get(m.options, "steady", Dict()), get_or(st, "options", Dict())))
     elseif kind in _STORED_KINDS
         if kind == "estimated_params"
             m.options[kind] = st
@@ -705,7 +726,16 @@ function _exec_statement!(m::Model, st)
         else
             m.options[kind] = get_or(st, "options", Dict{String,Any}())
         end
-    elseif kind in ("native", "verbatim") || kind in _LATEX_KINDS
+    elseif kind in ("planner_objective", "evaluate_planner_objective", "discretionary_policy", "osr", "osr_params", "optim_weights",
+                    "osr_params_bounds", "ramsey_constraints")
+        # read by src/optimal_policy.jl and src/results_policy.jl; the solution commands' options persist in options_
+        o = get_or(st, "options", Dict{String,Any}())
+        m.options[kind] = merge(get(m.options, kind, Dict{String,Any}()), o)
+        kind in ("discretionary_policy", "osr") && _accumulate_options!(m, o)
+    elseif kind == "initval_file" && any(k -> haskey(get_or(st, "options", Dict{String,Any}()), k), ("series", "first_obs", "last_obs", "first_simulation_period", "last_simulation_period"))
+        throw(ModelError("initval_file with the options series, first_obs, last_obs, first_simulation_period or last_simulation_period is not implemented " *
+                         "(only datafile/filename and nobs are)"))
+    elseif kind in ("native", "verbatim", "perfect_foresight_controlled_paths", "initval_file") || kind in _LATEX_KINDS || kind in _SEMI_KINDS
         # native lines are run by the MATLAB session
     else
         push!(m.unhandled_statements, kind)
@@ -713,11 +743,20 @@ function _exec_statement!(m::Model, st)
     nothing
 end
 
+"""
+    declared_correlation_matrix(m) -> Matrix
+
+Dynare's `M_.Correlation_matrix` as the preprocessor's code leaves it: the identity, with the entries of `corr` statements of `shocks`
+blocks (calibrated ones included; `var a, b = value` covariances do not enter it) and reset by `shocks(overwrite)`.
+"""
+declared_correlation_matrix(m::Model) = get!(() -> Matrix{Float64}(LinearAlgebra.I, m.n_exo, m.n_exo), m.options, "Correlation_matrix")::Matrix{Float64}
+
 "One shocks block, applied in Dynare's order: reset, variances, covariances, correlations."
 function _shocks!(m::Model, st)
     ix, S = m.ix, m.Sigma_e
     if get(st, "overwrite", false) == true
         S .= 0
+        m.options["Correlation_matrix"] = Matrix{Float64}(LinearAlgebra.I, m.n_exo, m.n_exo)
         empty!(m.measurement_errors)
     end
     for (key, pw) in (("variance", 1), ("stderr", 2))
@@ -738,12 +777,26 @@ function _shocks!(m::Model, st)
             end
             i, j = ix[d["name"]], ix[d["name2"]]
             val = _value(m, d[key])
-            key == "correlation" && (val *= sqrt(S[i, i] * S[j, j]))
+            if key == "correlation"
+                C = declared_correlation_matrix(m)
+                C[i, j] = C[j, i] = val
+                val *= sqrt(S[i, i] * S[j, j])
+            end
             S[i, j] = S[j, i] = val
         end
     end
     for d in get_or(st, "deterministic_shocks", [])
+        if !haskey(ix, d["var"]) && d["var"] in exo_det_names(m)
+            # shocks on varexo_det variables (Dynare's M_.det_shocks with exo_det = true): periods and values for the forecasts
+            for v in d["values"]
+                push!(get!(m.cache, :det_shocks_exo_det, Tuple{Int,Any,Any,Float64}[]),
+                      (findfirst(==(d["var"]), exo_det_names(m)), v["period1"], v["period2"], _value(m, v["value"])))
+            end
+            continue
+        end
         for v in d["values"]
+            # dated periods are resolved against first_simulation_period when the perfect foresight statements are replayed
+            (v["period1"] isa AbstractString && startswith(v["period1"], "dates(")) && continue
             push!(m.det_shocks, (ix[d["var"]], Int(_numval(v["period1"])), Int(_numval(v["period2"])), _value(m, v["value"])))
         end
     end

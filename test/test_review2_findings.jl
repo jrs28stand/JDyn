@@ -158,14 +158,13 @@ end
     @test !any(l -> occursin("plot_threshold", string(l.message)), lg.logs)
 end
 
-@testset "R16 irf_figures at order 2 returns order-1 IRFs without a warning" begin
+@testset "R16 irf_figures at order 2 returns generalised IRFs" begin
     lg = Test.TestLogger(; min_level=Logging.Warn)
     res = with_logger(lg) do
         m = build(RBC * "stoch_simul(irf=4);\n"; quiet=false)
         JDyn.irf_figures(m)
     end
-    @test res.order == 1
-    @test any(l -> occursin("order", string(l.message)), lg.logs)
+    @test res.order == 2                       # generalised IRFs at order >= 2 (the old order-1 fallback is gone)
 end
 
 @testset "R17 load() does not forward extra_args" begin

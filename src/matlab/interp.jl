@@ -180,6 +180,8 @@ end
 function ev(I::Interp, n::EndKw, sc)
     isempty(I.end_stack) && throw(Unsupported("'end' inside a call to an unknown function or variable", "function"))
     v, k, nargs = I.end_stack[end]
+    v isa MDates && return Float64(length(v.time))
+    v isa MDseries && return Float64(vobs(v))
     shp = v === nothing ? (0, 0) : shape_of(v)
     nargs == 1 && return Float64(shp[1] * shp[2])
     k <= 2 ? Float64(shp[k]) : 1.0
@@ -188,6 +190,7 @@ function ev(I::Interp, n::Unop, sc)
     v = ev(I, n.e, sc)
     op = n.op
     op == "()" && return v
+    v isa MObject && return obj_unop(I, op, v)
     op == "-" && return uminus(v)
     op == "+" && return v isa Float64 ? v : ret(farr(v))
     op == "~" && return lnot(v)
@@ -203,7 +206,9 @@ function ev(I::Interp, n::Binop, sc)
         (op == "&&") != a && return a
         return _sc_bool(ev(I, n.r, sc))
     end
-    _BIN[op](ev(I, n.l, sc), ev(I, n.r, sc))
+    l, r = ev(I, n.l, sc), ev(I, n.r, sc)
+    (l isa MObject || r isa MObject) && return obj_binop(I, op, l, r)
+    _BIN[op](l, r)
 end
 function _sc_bool(v)
     v isa AbstractString && merr("operands of && and || must be logical scalars")
@@ -214,7 +219,9 @@ end
 function ev(I::Interp, n::RangeE, sc)
     a = ev(I, n.a, sc)
     c = ev(I, n.c, sc)
-    n.b === nothing ? colon(a, c) : colon(a, ev(I, n.b, sc), c)
+    b = n.b === nothing ? nothing : ev(I, n.b, sc)
+    (a isa MObject || c isa MObject || b isa MObject) && return dates_colon(a, b === nothing ? c : b, b === nothing ? nothing : c)
+    b === nothing ? colon(a, c) : colon(a, b, c)
 end
 function ev(I::Interp, n::MatrixLit, sc)
     rows = Any[]
@@ -297,6 +304,18 @@ function pkg_unit(I::Interp, sc, chain)
     end
     I.units[key] = u
 end
+"A package function implemented in Julia (PKG_FUNCS), called with the chain `a.b.c` and its argument nodes; nothing if there is none."
+function _pkg_builtin(I::Interp, sc, base, argnodes, nargout)
+    isempty(PKG_FUNCS) && return nothing
+    chain = _pkg_chain(base)
+    chain === nothing && return nothing
+    f = get(PKG_FUNCS, join(chain, "."), nothing)
+    f === nothing && length(chain) == 2 && (f = get(PKG_FUNCS, "*." * chain[2], nothing))     # <model name>.varmatrices, ...
+    (f === nothing || getvar(I, sc, chain[1]) !== MISSING_) && return nothing
+    args = Any[a isa ColonAll ? ":" : ev(I, a, sc) for a in argnodes]
+    r = f(I, args, nargout)
+    r isa Vector{Any} ? r : Any[r]
+end
 function pkg_call(I::Interp, u::Unit, argnodes, nargout, sc)
     is_script(u) && merr("$(u.path) is a script, not a package function")
     args = Any[a isa ColonAll ? ":" : ev(I, a, sc) for a in argnodes]
@@ -306,6 +325,11 @@ end
 function ev(I::Interp, n::IndexE, sc)
     base = n.base
     if base isa FieldE && !n.brace
+        r = _pkg_builtin(I, sc, base, n.args, 1)
+        if r !== nothing
+            isempty(r) && merr("'$(base.name)' returns no value")
+            return r[1]
+        end
         u = pkg_unit(I, sc, _pkg_chain(base))
         if u !== nothing
             r = pkg_call(I, u, n.args, 1, sc)
@@ -322,6 +346,10 @@ function ev(I::Interp, n::IndexE, sc)
             return r[1]
         end
         v isa Tainted && throw(Unsupported("'$(base.name)' is unknown: $(v.why)", "tainted"))
+    elseif base isa FieldE && !n.brace && base.name !== nothing
+        r = ev_index_fieldbase(I, n, sc, 1)
+        isempty(r) && merr("'$(base.name)' returns no value")
+        return r[1]
     else
         v = ev(I, base, sc)
     end
@@ -332,9 +360,26 @@ function ev(I::Interp, n::IndexE, sc)
     end
     v = _snap(v)
     args = index_args(I, v, n.args, sc)
+    v isa MObject && return n.brace ? obj_brace(I, v, args) : obj_index(I, v, args)
     n.brace ? index_brace(v, args) : mindex(v, args)
 end
+"`base.f(args)` where `base.f` is a field access: a method call or index of an object, a handle in a struct, an index."
+function ev_index_fieldbase(I::Interp, n, sc, nargout)
+    base = n.base
+    bb = field_base(I, base.base, sc)
+    if bb isa MObject
+        return obj_method_call(I, bb, base.name, n.args, sc, nargout)
+    end
+    v = getfield_(I, bb, base.name)
+    if v isa Handle
+        return call_handle(I, v, Any[ev(I, a, sc) for a in n.args], nargout)
+    end
+    v = _snap(v)
+    args = index_args(I, v, n.args, sc)
+    Any[v isa MObject ? obj_index(I, v, args) : mindex(v, args)]
+end
 function getfield_(I::Interp, v, name)
+    v isa MObject && return obj_field(I, v, name)
     v isa HostStruct && return get_field(v, name)
     if v isa MStruct
         if !haskey(v, name)
@@ -346,8 +391,7 @@ function getfield_(I::Interp, v, name)
     v isa Tainted && arr(v)
     throw(Unsupported("field access '.$name' on a $(mclass(v)) value (objects and packages are not supported)", "function"))
 end
-function ev(I::Interp, n::FieldE, sc)
-    b = n.base
+function field_base(I::Interp, b, sc)
     if b isa Id
         v = getvar(I, sc, b.name)
         if v === MISSING_
@@ -358,6 +402,10 @@ function ev(I::Interp, n::FieldE, sc)
     else
         v = ev(I, b, sc)
     end
+    v
+end
+function ev(I::Interp, n::FieldE, sc)
+    v = field_base(I, n.base, sc)
     name = n.name !== nothing ? n.name : ev(I, n.dyn, sc)
     name isa AbstractString || merr("dynamic field name must be a char array")
     getfield_(I, v, name)
@@ -371,8 +419,13 @@ function ev_multi(I::Interp, n, sc, nargout)
             return call_node(I, base.name, n.args, nargout, sc)
         end
         if base isa FieldE
+            r = _pkg_builtin(I, sc, base, n.args, nargout)
+            r !== nothing && return r
             u = pkg_unit(I, sc, _pkg_chain(base))
             u !== nothing && return pkg_call(I, u, n.args, nargout, sc)
+        end
+        if base isa FieldE && base.name !== nothing
+            return ev_index_fieldbase(I, n, sc, nargout)
         end
         if !(base isa Id) || getvar(I, sc, base.name) isa Handle
             v = ev(I, base, sc)
@@ -409,6 +462,10 @@ function mcall(I::Interp, name, args, nargout, sc)
             return Any[]
         end
         return call_user(I, u.main, u.funcs, args, nargout)
+    end
+    if !isempty(args)
+        r = obj_dispatch(I, name, args, nargout)
+        r === nothing || return r
     end
     f = get(BUILTINS, name, nothing)
     if f !== nothing
@@ -752,6 +809,7 @@ end
 
 function _assign_chain(I::Interp, cur, chain, i, value, sc)
     cur isa Tainted && arr(cur)
+    cur isa MObject && return obj_assign(I, cur, chain, i, value, sc)
     acc = chain[i]
     last = i == length(chain)
     if acc isa FieldE

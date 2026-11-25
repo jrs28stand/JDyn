@@ -1,0 +1,263 @@
+d = dates('2000Q1'):dates('2000Q4'); r = d.time;
+%%
+d = dates('1990Y'):dates('1993Y'); r = d.strings;
+%%
+d = dates('1990M11'):dates('1991M2'); r = d.strings;
+%%
+d = dates('1990S1'):dates('1991S2'); r = d.time;
+%%
+r = dates('1995Q3').time;
+%%
+r = dates('1995q3').freq;
+%%
+d = dates('2000Q1','2000Q3','1999Q4'); r = d.time;
+%%
+d = dates(4,1950,1):dates(4,1950,4); r = d.strings;
+%%
+d = dates(4,[1950 1; 1950 3]); r = d.time;
+%%
+d = dates('Q'); r = [d.freq d.ndat];
+%%
+d = dates(); r = [isempty(d.freq) d.ndat];
+%%
+d = dates('2000Q1'):dates('2000Q4'); r = char(d(2));
+%%
+d = dates('2000Q1'):dates('2000Q4'); e = d + 2; r = e.strings;
+%%
+d = dates('2000Q1'):dates('2000Q4'); e = d - 1; r = e.time;
+%%
+r = dates('2001Q2') - dates('2000Q1');
+%%
+d = dates('2000Q1'):dates('2000Q4'); r = d - dates('2000Q1');
+%%
+a = dates('2000Q1'); b = dates('2000Q3'); r = [a<b a>b a==b a~=b a<=b a>=b];
+%%
+d = dates('2000Q1'):dates('2000Q4'); r = d == dates('2000Q3');
+%%
+d = dates('2000Q1'):dates('2000Q4'); e = d(2:3); r = e.strings;
+%%
+d = dates('2000Q1'):dates('2000Q4'); e = d(end); r = e.time;
+%%
+d = dates('2000Q1'):dates('2000Q4'); e = d(logical([1 0 1 0])); r = e.strings;
+%%
+d = dates('2000Q1','2000Q3') + dates('1999Q1'); r = d.time;
+%%
+d = [dates('2000Q1') dates('2000Q3')]; r = d.strings;
+%%
+d = dates('2000Q3','2000Q1','2000Q2'); e = d.sort; r = e.time;
+%%
+d = dates('2000Q3','2000Q1','2000Q3','2000Q2','2000Q1'); e = d.unique; r = e.time;
+%%
+d = dates('2000Q3','2000Q1','2000Q3','2000Q2','2000Q1'); e = unique(d); r = e.strings;
+%%
+a = dates('2000Q1'):dates('2000Q4'); b = dates('2000Q3'):dates('2001Q2'); e = intersect(a,b); r = e.strings;
+%%
+a = dates('2000Q1'):dates('2000Q4'); b = dates('2000Q3'):dates('2001Q2'); e = union(a,b); r = e.strings;
+%%
+a = dates('2000Q1'):dates('2000Q4'); b = dates('2000Q3'):dates('2001Q2'); e = setdiff(a,b); r = e.strings;
+%%
+a = dates('2000Q1'):dates('2000Q4'); e = a.append('2005Q1'); r = e.strings;
+%%
+a = dates('2000Q1'):dates('2000Q4'); e = a.pop; r = e.strings;
+%%
+a = dates('2000Q1'):dates('2000Q4'); e = a.pop(dates('2000Q2')); r = e.strings;
+%%
+a = dates('2000Q1'):dates('2000Q4'); e = a.remove(dates('2000Q2'):dates('2000Q3')); r = e.strings;
+%%
+a = dates('2000Q1'):dates('2000Q4'); a.append_('2001Q1'); r = a.ndat;
+%%
+a = dates('2000Q1'):2:dates('2001Q4'); r = a.strings;
+%%
+a = dates('2000Q1'); r = [a.year a.subperiod];
+%%
+a = dates('2000Q3'):dates('2001Q2'); r = [a.year a.subperiod];
+%%
+a = dates('2000M3'); r = double(a);
+%%
+r = max(dates('2000Q1'):dates('2000Q4')).strings;
+%%
+r = min(dates('2000Q1'):dates('2000Q4')).strings;
+%%
+a = dates('2000Q1'):dates('2000Q4'); b = a*2; r = b.ndat;
+%%
+r = dates('2000W10').time;
+%%
+d = dates('2000-02-29'); r = d.time;
+%%
+d = dates('2000-02-29'):dates('2000-03-02'); r = d.strings;
+%%
+d = dates('2004W53'); r = d.time;
+%%
+try, d = dates('2000Q1') + dates('2000M1'); catch err, r = err.message; end
+%%
+try, d = dates('2000Q5'); catch err, r = err.message; end
+%%
+try, d = dates('2000Q1'):dates('1999Q1'); catch err, r = err.message; end
+%%
+r = isequal(dates('2000Q1'):dates('2000Q2'), dates('2000Q1','2000Q2'));
+%%
+r = isequal(dates('2000Q1'), dates('2000Q2'));
+%%
+r = [isdates(dates('2000Q1')) isdates(1) isdate('2000Q1') isdate('abc') isdate(3)];
+%%
+r = date2string(dates('2000Q1'));
+%%
+ts = dseries([1 2;3 4;5 6],'2000Q1',{'a','b'}); r = ts.data;
+%%
+ts = dseries([1 2;3 4;5 6],'2000Q1',{'a','b'}); r = ts.name;
+%%
+ts = dseries([1 2;3 4;5 6],'2000Q1',{'a_1','b'}); r = ts.tex;
+%%
+ts = dseries(ones(5,2)); r = ts.name;
+%%
+ts = dseries([1 2;3 4;5 6],'2000Q1'); r = [ts.nobs ts.vobs ts.freq ts.init.time ts.last.time];
+%%
+ts = dseries([1 2;3 4;5 6],'2000Q1'); r = size(ts);
+%%
+ts = dseries([1 2;3 4;5 6],dates('2000Q1'),{'a','b'}); x = ts.a; r = x.data;
+%%
+ts = dseries([1 2;3 4;5 6],2000,{'a','b'}); r = ts.dates.strings;
+%%
+ts = dseries([1 2;3 4;5 6],'2000Q1',{'a','b'}); x = ts{'a','b'}; r = x.data;
+%%
+ts = dseries([1 2;3 4;5 6],'2000Q1',{'a','b'}); x = ts{2}; r = x.name;
+%%
+ts = dseries([1 2;3 4;5 6],'2000Q1',{'a','b'}); x = ts(dates('2000Q2'):dates('2000Q3')); r = x.data;
+%%
+ts = dseries([1 2;3 4;5 6],'2000Q1',{'a','b'}); x = ts('2000Q2'); r = x.data;
+%%
+ts = dseries([1 2;3 4;5 6],'2000Q1',{'a','b'}); x = ts.a(-1); r = x.data;
+%%
+ts = dseries([1 2;3 4;5 6],'2000Q1',{'a','b'}); x = ts.b(1); r = x.data;
+%%
+ts = dseries([1 2;3 4;5 6],'2000Q1',{'a','b'}); x = ts.lag(2); r = x.data;
+%%
+ts = dseries([1 2;3 4;5 6],'2000Q1',{'a','b'}); x = lead(ts); r = x.data;
+%%
+ts = dseries([1 2;3 4;5 6],'2000Q1',{'a','b'}); x = ts.diff; r = x.data;
+%%
+ts = dseries([1 2;3 4;5 6],'2000Q1',{'a','b'}); x = ts.diff.lag; r = x.ops;
+%%
+ts = dseries([1 2;3 4;5 6],'2000Q1',{'a','b'}); x = log(ts); r = x.ops;
+%%
+ts = dseries([1 2;3 4;5 6],'2000Q1',{'a','b'}); x = exp(ts.a); r = x.data;
+%%
+ts = dseries([-1 2;3 4;5 6],'2000Q1',{'a','b'}); x = abs(ts); r = x.data;
+%%
+ts = dseries([1 2;3 4;5 6],'2000Q1',{'a','b'}); x = ts + ts; r = x.data;
+%%
+ts = dseries([1 2;3 4;5 6],'2000Q1',{'a','b'}); x = ts + ts; r = x.ops;
+%%
+ts = dseries([1 2;3 4;5 6],'2000Q1',{'a','b'}); x = ts - 1; r = x.ops;
+%%
+ts = dseries([1 2;3 4;5 6],'2000Q1',{'a','b'}); x = 1 - ts; r = x.data;
+%%
+ts = dseries([1 2;3 4;5 6],'2000Q1',{'a','b'}); x = 2*ts; r = x.ops;
+%%
+ts = dseries([1 2;3 4;5 6],'2000Q1',{'a','b'}); x = ts/2; r = x.data;
+%%
+ts = dseries([1 2;3 4;5 6],'2000Q1',{'a','b'}); x = ts.a/ts.b; r = x.data;
+%%
+ts = dseries([1 2;3 4;5 6],'2000Q1',{'a','b'}); x = ts.a - ts.b; r = x.ops;
+%%
+ts = dseries([1 2;3 4;5 6],'2000Q1',{'a','b'}); x = ts^2; r = x.data;
+%%
+ts = dseries([1 2;3 4;5 6],'2000Q1',{'a','b'}); x = -ts; r = x.ops;
+%%
+ts = dseries([1;3;5],'2000Q1',{'a'}); us = dseries([1;3;5],'2000Q2',{'b'}); x = ts + us; r = x.data;
+%%
+ts = dseries([1;3;5],'2000Q1',{'a'}); us = dseries([1;3;5],'2000Q2',{'b'}); x = [ts us]; r = x.data;
+%%
+ts = dseries([1;3;5],'2000Q1',{'a'}); us = dseries([1;3;5],'2000Q2',{'b'}); x = [ts us]; r = x.dates.strings;
+%%
+ts = dseries([1;3;5],'2000Q1',{'a'}); us = dseries([7;8],'2000Q4',{'a'}); x = [ts; us]; r = x.data;
+%%
+ts = dseries([1;NaN;5],'2000Q1',{'a'}); us = dseries([7;8;9],'2000Q1',{'a','b'}(1)); x = merge(ts, us); r = x.data;
+%%
+ts = dseries([1 2;3 4;5 6],'2000Q1',{'a','b'}); us = dseries([7 8],'2000Q2',{'b','c'}); x = merge(ts, us); r = x.data;
+%%
+ts = dseries([1 2;3 4;5 6],'2000Q1',{'a','b'}); us = dseries([7 8],'2000Q2',{'b','c'}); x = merge(ts, us); r = x.name;
+%%
+ts = dseries([1 2;3 4;5 6],'2000Q1',{'a','b'}); r = (ts > 2);
+%%
+ts = dseries([1 2;3 4;5 6],'2000Q1',{'a','b'}); r = ts == ts;
+%%
+ts = dseries([1 2;3 4;5 6],'2000Q1',{'a','b'}); r = isequal(ts, ts + 0);
+%%
+ts = dseries([1 2;3 4;5 6],'2000Q1',{'a','b'}); ts.c = ts.a*3; r = ts.data;
+%%
+ts = dseries([1 2;3 4;5 6],'2000Q1',{'a','b'}); ts.a = ts.b*3; r = ts.data;
+%%
+ts = dseries([1 2;3 4;5 6],'2000Q1',{'a','b'}); ts{'a'} = ts.b*3; r = ts.data;
+%%
+ts = dseries([1 2;3 4;5 6],'2000Q1',{'a','b'}); ts(dates('2000Q2')) = dseries([0 0],'2000Q2'); r = ts.data;
+%%
+ts = dseries([1 2;3 4;5 6],'2000Q1',{'a','b'}); ts.a(dates('2000Q2')) = 100; r = ts.data;
+%%
+ts = dseries([1 2;3 4;5 6],'2000Q1',{'a','b'}); ts = ts.remove('a'); r = ts.name;
+%%
+ts = dseries([1 2;3 4;5 6],'2000Q1',{'a','b'}); ts.rename_('a','z'); r = ts.name;
+%%
+ts = dseries([1 2;3 4;5 6],'2000Q1',{'a','b'}); x = ts.subsample(dates('2000Q2'), dates('2000Q3')); r = x.data;
+%%
+ts = dseries([1 2;3 4;5 6],'2000Q1',{'a','b'}); r = ts.firstdate.time;
+%%
+ts = dseries([NaN 2;3 4;5 NaN],'2000Q1',{'a','b'}); r = [ts.firstobservedperiod.time ts.lastobservedperiod.time];
+%%
+ts = dseries([1 2;3 4;5 6],'2000Q1',{'a','b'}); x = cumsum(ts); r = x.data;
+%%
+ts = dseries([1 2;3 4;5 6],'2000Q1',{'a','b'}); x = ts.cumprod; r = x.data;
+%%
+ts = dseries([1 2;3 4;5 6],'2000Q1',{'a','b'}); r = mean(ts);
+%%
+ts = dseries([1 2;3 4;5 6.5],'2000Q1',{'a','b'}); r = ts.std;
+%%
+ts = dseries((1:12)'.^2,'2000Q1',{'a'}); x = ts.hpcycle; r = x.data;
+%%
+ts = dseries((1:12)'.^2,'2000Q1',{'a'}); x = ts.hptrend(10); r = x.data;
+%%
+ts = dseries((1:40)'.^2,'2000Q1',{'a'}); x = ts.baxter_king_filter; r = [x.nobs x.init.time];
+%%
+ts = dseries((1:10)','2000Q1',{'a'}); x = ts.ydiff; r = x.data;
+%%
+ts = dseries((1:10)'.^2,'2000M1',{'a'}); x = ts.qdiff; r = x.data;
+%%
+ts = dseries((1:10)'.^2,'2000Q1',{'a'}); x = ts.ygrowth; r = x.data;
+%%
+ts = dseries([1 2;3 4;5 6],'2000Q1',{'a','b'}); x = ts.tag('t'); x.tag('t','a','hello'); r = x.tags.t;
+%%
+ts = dseries([1 2;3 4;5 6],'2000Q1',{'a','b'}); r = ts.dates.freq;
+%%
+ts = dseries([1 2;3 4;5 6],'2000Q1',{'a','b'}); x = ts.center; r = x.data;
+%%
+ts = dseries([1 2;3 4;5 6],'2000Q1',{'a','b'}); x = ts.detrend(1); r = x.data;
+%%
+ts = dseries([1 2;3 4;5 6],'2000Q1',{'a','b'}); x = round(ts/3, 1); r = x.data;
+%%
+ts = dseries([1 2;3 4;5 6],'2000Q1',{'a','b'}); x = ts.flip; r = x.data;
+%%
+try, ts = dseries([1 2;3 4],'2000Q1',{'a'}); catch err, r = err.message; end
+%%
+try, ts = dseries([1 2;3 4],'2000Q1',{'a','b'}); x = ts.c; catch err, r = err.message; end
+%%
+try, ts = dseries([1 2;3 4],'2000Q1',{'a','b'}); x = ts(dates('1999Q1')); catch err, r = err.message; end
+%%
+try, ts = dseries([1 2;3 4],'2000Q1',{'a','b'}); x = ts(dates('2002Q1')); catch err, r = err.message; end
+%%
+try, ts = dseries([1 2;3 4],'2000Q1',{'a','b'}); us = dseries([1 2;3 4],'2000M1',{'c','d'}); x = ts + us; catch err, r = err.message; end
+%%
+try, ts = dseries([1 2;3 4],'2000Q1',{'a','b'}); x = [ts ts]; catch err, r = err.message; end
+%%
+ts = dseries([1 2;3 4;5 6],'2000Q1',{'a','b'}); x = ts.lag_(1); r = ts.data;
+%%
+ts = dseries(ones(3,2),'2000Q1',{'a','b'}); x = ts.a + ts; r = x.name;
+%%
+ts = dseries([1 2;3 4;5 6],'2000Q1',{'a','b'}); [x,y] = align(ts, dseries([1;2],'2000Q2','z')); r = [x.data y.data];
+%%
+ts = dseries([1 2;3 4;5 6],'2000Q1',{'a','b'}); x = ts.dates(2); r = x.strings;
+%%
+ts = dseries([1 2;3 4;5 6],'2000Q1',{'a','b'}); x = ts.dates(end); r = x.strings;
+%%
+ts = dseries([1 2;3 4;5 6],'2000Q1',{'a','b'}); r = ts.data(2,:);
+%%
+ts = dseries([1 2;3 4;5 6],'2000Q1',{'a','b'}); r = ts.b.data(end);

@@ -33,7 +33,7 @@ const _SM_DEFAULTS = Dict{String,Any}("datafile" => nothing, "first_obs" => 1, "
     "filtered_vars" => false, "filter_step_ahead" => nothing, "filter_covariance" => false,
     "smoothed_state_uncertainty" => false, "parameter_set" => "calibration", "varobs" => nothing,
     "replicate_dynare_bugs" => false, "Harvey_scale_factor" => 10.0,
-    "use_univariate_smoother_if_singularity_is_detected" => false, "noprint" => false)
+    "use_univariate_smoother_if_singularity_is_detected" => false, "noprint" => false, "heteroskedastic_filter" => false)
 "Set by `_smoother_multivariate` when it stops because F is singular in a stationary period (Dynare's error flag 422)."
 const _SINGULAR_F = Ref(false)
 const PARAMETER_SETS = ("calibration", "posterior_mode", "posterior_mean", "posterior_median", "mle_mode", "prior_mode", "prior_mean")
@@ -43,14 +43,15 @@ const _ESTIMATION_ONLY = Set(["mode_compute", "mode_file", "mode_check", "mode_c
     "bayesian_irf", "moments_varendo", "irf", "forecast", "conf_sig", "mh_conf_sig", "load_mh_file", "prior_trunc", "smoother", "order",
     "posterior_sampler_options", "additional_optimizer_steps", "nobs_vec", "lyapunov", "sub_draws", "mh_recover", "mcmc_jumping_covariance",
     "use_univariate_filters_if_singularity_is_detected", "rescale_prediction_error_covariance", "riccati_tol", "gstep",
-    "lyapunov_complex_threshold", "use_univariate_smoother_if_singularity_is_detected"])
+    "lyapunov_complex_threshold", "use_univariate_smoother_if_singularity_is_detected", "dsge_var", "dsge_varlag", "endogenous_prior",
+    "mh_tune_guess", "load_results_after_load_mh"])
 const _SM_COSMETIC = union(COSMETIC, Set(["xls_sheet", "xls_range", "use_univariate_smoother_if_singularity_is_detected",
     "consider_all_endogenous", "consider_only_observed", "selected_variables_only", "plot_priors"]))
 # options of the decomposition statements that only concern Dynare's figure files and menus
 const _DECOMP_COSMETIC = Set(["colormap", "fig_name", "graph_format", "nodisplay", "interactive", "nograph",
     "shock_decomposition", "plot_shock_decomposition"])
 # options the code cannot honour: refused rather than ignored
-const _SM_REFUSED = Dict("heteroskedastic_filter" => "heteroskedastic filters", "smoother_redux" => "smoother_redux",
+const _SM_REFUSED = Dict("smoother_redux" => "smoother_redux",
     "occbin" => "OccBin smoothing", "noconstant" => "noconstant (Dynare's store_smoother_results ignores it, so its output mixes two conventions)", "partial_information" => "partial information", "kalman_algo5" => "the pruned skewed filter")
 
 _unwrap1(v) = (v isa AbstractVector && length(v) == 1) ? v[1] : v
@@ -209,8 +210,14 @@ function _smoother_multivariate(T, Z, R, Q, H, Pinf1, Pstar1, Y, di, nk, kalman_
     iFv = Vector{Matrix{Float64}}(undef, smpl)
     L = Vector{Matrix{Float64}}(undef, smpl)
     P = zeros(mm, mm, smpl + 1)
+    # heteroskedastic_filter: Q is (n_exo, n_exo, smpl + 1); period t predicts with Q[:, :, t + 1] and its smoothed shocks use Q[:, :, t]
+    qvec = ndims(Q) == 3
+    Qv = Q
+    qvec && (Q = Qv[:, :, 1])
     QQ = R * Q * R'
     QRt = Q * R'
+    QQ_at(t) = qvec ? R * Qv[:, :, t+1] * R' : QQ
+    QRt_at(t) = qvec ? Qv[:, :, t] * R' : QRt
     a0 = a_zero === nothing ? zeros(mm) : Vector{Float64}(a_zero)
     P0 = copy(Pstar1)
     a_pred === nothing || (a[:, 1] = a_pred)
@@ -232,6 +239,7 @@ function _smoother_multivariate(T, Z, R, Q, H, Pinf1, Pstar1, Y, di, nk, kalman_
     end
     while new_rank > 0 && t <= smpl
         d_ = di[t]
+        QQ = QQ_at(t)
         store_forecast = true
         if isempty(d_)
             kind[t] = :missing
@@ -303,6 +311,7 @@ function _smoother_multivariate(T, Z, R, Q, H, Pinf1, Pstar1, Y, di, nk, kalman_
     while t <= smpl
         P[:, :, t] = _lowersym(P[:, :, t])
         d_ = di[t]
+        QQ = QQ_at(t)
         if isempty(d_)
             atilde[:, t] = a[:, t]
             L[t] = Matrix(T)
@@ -358,7 +367,7 @@ function _smoother_multivariate(T, Z, R, Q, H, Pinf1, Pstar1, Y, di, nk, kalman_
             want_V && (N[t] = ZZ' * iFt * ZZ + L[t]' * N[t+1] * L[t])
         end
         alphahat[:, t] = a[:, t] + P[:, :, t] * r[:, t]
-        etahat[:, t] = QRt * r[:, t]
+        etahat[:, t] = QRt_at(t) * r[:, t]
         want_V && (V[:, :, t] = P[:, :, t] - P[:, :, t] * N[t] * P[:, :, t])
     end
     if d == 0
@@ -408,7 +417,7 @@ function _smoother_multivariate(T, Z, R, Q, H, Pinf1, Pstar1, Y, di, nk, kalman_
                 end
             end
             alphahat[:, t] = a[:, t] + Pstar[t] * r0[:, t] + Pinf[t] * r1[:, t]
-            etahat[:, t] = QRt * r0[:, t]
+            etahat[:, t] = QRt_at(t) * r0[:, t]
             if want_V
                 x = Pinf[t] * N1[t] * Pstar[t]
                 V[:, :, t] = Pstar[t] - Pstar[t] * N[t] * Pstar[t] - x' - x - Pinf[t] * N2[t] * Pinf[t]
@@ -723,7 +732,7 @@ function _initial_state(m::Model, sol::FirstOrderSolution, params, loglinear)
 end
 
 const _FROM_ESTIMATION = ("datafile", "first_obs", "nobs", "prefilter", "loglinear", "logdata", "presample", "lik_init",
-    "diffuse_filter", "kalman_algo", "kalman_tol", "diffuse_kalman_tol", "Harvey_scale_factor", "qz_criterium")
+    "diffuse_filter", "kalman_algo", "kalman_tol", "diffuse_kalman_tol", "Harvey_scale_factor", "qz_criterium", "heteroskedastic_filter")
 
 "select_qz_criterium_value.m"
 function _select_qz(m::Model, lik_init, user_qz)
@@ -788,9 +797,6 @@ function _smooth_linear(m::Model, data=nothing; sol=nothing, estimation=nothing,
     reuse === nothing || (est = nothing)
     opts = _resolve_options(m, user)
     isempty(m.exo_names) && throw(SmootherError("the model has no shocks"))
-    for st in _statements_of(m, "heteroskedastic_shocks")
-        throw(SmootherError("heteroskedastic_shocks blocks are not supported by the smoother"))
-    end
     varobs = opts["varobs"] === nothing ? copy(m.varobs) : String.(opts["varobs"])
     isempty(varobs) && throw(SmootherError("no observed variables: declare varobs or pass varobs=[...]"))
     for v in varobs
@@ -927,10 +933,14 @@ function _smooth_linear(m::Model, data=nothing; sol=nothing, estimation=nothing,
     nk = isempty(fsa) ? 1 : maximum(fsa)
     want_V, want_PK = opts["smoothed_state_uncertainty"], opts["filter_covariance"]
 
+    # heteroskedastic_filter (src/heteroskedastic.jl): time-varying Q, multivariate smoother only
+    het = _flag(_unwrap1(opts["heteroskedastic_filter"]))
+    het && algo in (2, 4) && throw(SmootherError("heteroskedastic_filter: only the multivariate smoother is implemented"))
+    Qs = het ? heteroskedastic_qvec(Q, heteroskedastic_arrays(m, smpl, first)...) : Q
     out = nothing
     if algo in (1, 3)
         _SINGULAR_F[] = false
-        out = _smoother_multivariate(G, Z, Hs, Q, Hme, Pinf, Pstar, Yd, di, nk, ktol, dtol, want_V, want_PK, compat, a_pred, a_zero)
+        out = _smoother_multivariate(G, Z, Hs, Qs, Hme, Pinf, Pstar, Yd, di, nk, ktol, dtol, want_V, want_PK, compat, a_pred, a_zero)
         if out === nothing
             # DsgeSmoother.m: stochastic singularity in a stationary period is an error (print_info) unless
             # use_univariate_smoother_if_singularity_is_detected is set (or noprint)
@@ -942,6 +952,7 @@ function _smooth_linear(m::Model, data=nothing; sol=nothing, estimation=nothing,
         end
     end
     if out === nothing
+        het && throw(SmootherError("heteroskedastic_filter: only the multivariate smoother is implemented (the filter needs the univariate one here)"))
         if !Hdiagonal && !expanded
             expanded = true
             Zx = [Z Matrix{Float64}(I, pp, pp)]

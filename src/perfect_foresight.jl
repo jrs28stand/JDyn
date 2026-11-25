@@ -113,7 +113,8 @@ const PF_SOLVER_KEYS = Dict("tolf" => "dynatol.f", "tolx" => "dynatol.x", "maxit
     "homotopy_linearization_fallback" => "simul.homotopy_linearization_fallback",
     "homotopy_marginal_linearization_fallback" => "simul.homotopy_marginal_linearization_fallback",
     "homotopy_exclude_varexo" => "simul.homotopy_exclude_varexo", "steady_tolf" => "simul.steady_tolf",
-    "constant_simulation_length" => "pfwee.constant_simulation_length", "noprint" => "noprint")
+    "constant_simulation_length" => "pfwee.constant_simulation_length", "noprint" => "noprint",
+    "robust_lin_solve" => "simul.robust_lin_solve", "allow_nonfinite_values" => "simul.allow_nonfinite_values")
 const PF_SETUP_KEYS = Dict("periods" => "periods", "endval_steady" => "simul.endval_steady",
     "endval_steady_nocheck" => "simul.endval_steady_nocheck", "datafile" => "datafile")
 const PF_DEFAULTS = Dict{String,Any}("dynatol.f" => nothing, "dynatol.x" => 1e-5, "simul.maxit" => 50,
@@ -123,12 +124,12 @@ const PF_DEFAULTS = Dict{String,Any}("dynatol.f" => nothing, "dynatol.x" => 1e-5
     "simul.homotopy_max_completion_share" => 1.0, "simul.homotopy_linearization_fallback" => false,
     "simul.homotopy_marginal_linearization_fallback" => 0.0, "simul.homotopy_exclude_varexo" => String[],
     "simul.steady_tolf" => nothing, "pfwee.constant_simulation_length" => false, "noprint" => false,
-    "periods" => nothing, "simul.endval_steady" => false, "simul.endval_steady_nocheck" => false, "datafile" => nothing)
+    "simul.robust_lin_solve" => false, "simul.allow_nonfinite_values" => false,
+    "periods" => nothing, "simul.first_simulation_period" => nothing, "simul.last_simulation_period" => nothing, "simul.endval_steady" => false, "simul.endval_steady_nocheck" => false, "datafile" => nothing)
 "Dynare's default tolerance on the residuals of a perfect foresight simulation (options_.dynatol.f)."
 const PF_DEFAULT_TOLF = 1e-5
 const PF_NOTES = Dict("markowitz" => "markowitz only matters for Dynare's bytecode solvers",
     "minimal_solving_periods" => "minimal_solving_periods only matters for Dynare's bytecode solvers",
-    "simul.robust_lin_solve" => "robust_lin_solve (iterative fallbacks for singular stacked Jacobians) is not implemented: a singular Jacobian makes the simulation fail",
     "simul.steady_solve_algo" => "steady_solve_algo: JDyn has one steady-state solver",
     "simul.steady_maxit" => "steady_maxit: JDyn has one steady-state solver",
     "simul.steady_tolx" => "steady_tolx: JDyn has one steady-state solver",
@@ -157,6 +158,18 @@ function _pf_resolve_options(m::Model, pfwee::Bool, kw)
             push!(given, key)
         end
     end
+    _pf_normalize_options!(m, o, given)
+    for (st, src) in zip(names, (setup, solver))
+        notes = ["$k ($(PF_NOTES[k]))" for k in keys(src) if haskey(PF_NOTES, k)]
+        other = sort([k for k in keys(src) if !haskey(PF_DEFAULTS, k) && !haskey(PF_NOTES, k) && !(k in COSMETIC) && k != "stack_solve_algo"])
+        isempty(notes) && isempty(other) ||
+            warn_once(m, "perfect_foresight does not act on these $st options from the .mod file: " * join(vcat(sort(notes), other), "; "))
+    end
+    o
+end
+
+"Types and checks of the options of the perfect foresight commands (`given`: the keys the user set)."
+function _pf_normalize_options!(m::Model, o, given)
     excl = o["simul.homotopy_exclude_varexo"]
     excl isa AbstractDict && (excl = get(excl, "symbol_list", String[]))
     o["simul.homotopy_exclude_varexo"] = excl isa AbstractString ? [String(excl)] : String[String(x) for x in something(excl, String[])]
@@ -169,7 +182,8 @@ function _pf_resolve_options(m::Model, pfwee::Bool, kw)
     marg = o["simul.homotopy_marginal_linearization_fallback"]
     o["simul.homotopy_marginal_linearization_fallback"] = marg === true ? 0.01 : marg === false || marg === nothing ? 0.0 : _pf_float(marg)
     for k in ("no_homotopy", "linear_approximation", "endogenous_terminal_period", "lmmcp.status", "simul.homotopy_linearization_fallback",
-              "pfwee.constant_simulation_length", "simul.endval_steady", "simul.endval_steady_nocheck")
+              "pfwee.constant_simulation_length", "simul.endval_steady", "simul.endval_steady_nocheck",
+              "simul.robust_lin_solve", "simul.allow_nonfinite_values")
         o[k] = _pf_bool(o[k])
     end
     o["simul.homotopy_step_size_increase_success_count"] = Int(_pf_float(o["simul.homotopy_step_size_increase_success_count"]))
@@ -179,12 +193,6 @@ function _pf_resolve_options(m::Model, pfwee::Bool, kw)
         0 <= algo <= 10 || throw(ArgumentError("stack_solve_algo must be between 0 and 10"))
         warn_once(m, "stack_solve_algo=$algo: JDyn has one solver for the stacked system, Newton's method with a sparse LU " *
                      "factorisation (Dynare's stack_solve_algo=0); every value of stack_solve_algo is solved that way")
-    end
-    for (st, src) in zip(names, (setup, solver))
-        notes = ["$k ($(PF_NOTES[k]))" for k in keys(src) if haskey(PF_NOTES, k)]
-        other = sort([k for k in keys(src) if !haskey(PF_DEFAULTS, k) && !haskey(PF_NOTES, k) && !(k in COSMETIC) && k != "stack_solve_algo"])
-        isempty(notes) && isempty(other) ||
-            warn_once(m, "perfect_foresight does not act on these $st options from the .mod file: " * join(vcat(sort(notes), other), "; "))
     end
     o
 end
@@ -223,11 +231,60 @@ mutable struct PFWorkspace
     dirty::Bool                               # values set by initval/endval since the last steady
     pfwee::Bool
     has_setup::Bool
+    cpaths::Vector{Any}                       # M_.perfect_foresight_controlled_paths / shock_paths+exogenize: Dicts exogenize_id, endogenize_id, periods, value, learnt_in
+    iseries::Any                              # oo_.initval_series: nothing or (data = rows x variables, names, p = periods the selection gives)
 end
+PFWorkspace(a, b, c, d, e, f, g, h, i, j, k, l, mm) = PFWorkspace(a, b, c, d, e, f, g, h, i, j, k, l, mm, Any[], nothing)
+
+"""
+Controlled path of one period (controlled_paths_by_period.m): the endogenous variables held at `values`
+(`exo_ids`) and the exogenous variables solved for in their place (`endo_ids`); `learnt_in` per entry.
+"""
+mutable struct PFCP
+    exo_ids::Vector{Int}
+    endo_ids::Vector{Int}
+    values::Vector{Float64}
+    learnt_in::Vector{Int}
+end
+PFCP() = PFCP(Int[], Int[], Float64[], Int[])
+Base.:(==)(a::PFCP, b::PFCP) = a.exo_ids == b.exo_ids && a.endo_ids == b.endo_ids && a.values == b.values && a.learnt_in == b.learnt_in
+Base.copy(c::PFCP) = PFCP(copy(c.exo_ids), copy(c.endo_ids), copy(c.values), copy(c.learnt_in))
 
 _pf_is_setup(st) = st["statementName"] in ("perfect_foresight_setup", "perfect_foresight_with_expectation_errors_setup")
 
-function _pf_period(v, what)
+"Time (frequency, count) of a date literal the preprocessor writes, `dates('2000Q1')`, or nothing."
+function _pf_date_literal(v)
+    v isa AbstractString || return nothing
+    mt = match(r"^\s*dates\('([^']+)'\)\s*$", v)
+    mt === nothing && return nothing
+    d = string2date(String(mt.captures[1]))
+    d === nothing ? nothing : (Int(d[1]), Float64(d[2]))
+end
+
+"First simulation period (frequency, time) from the setup statement's options, or nothing; with the number of periods when known."
+function _pf_date_context(m::Model)
+    first = last = nothing; periods = nothing
+    for st in m.statements
+        _pf_is_setup(st) || continue
+        o = get_or(st, "options", Dict{String,Any}())
+        haskey(o, "simul.first_simulation_period") && (first = _pf_date_literal(o["simul.first_simulation_period"]))
+        haskey(o, "simul.last_simulation_period") && (last = _pf_date_literal(o["simul.last_simulation_period"]))
+        haskey(o, "periods") && (periods = try Int(_pf_float(o["periods"])) catch; nothing end)
+    end
+    if first === nothing && last !== nothing && periods !== nothing
+        first = (last[1], last[2] - periods + 1)
+    end
+    (first=first, last=last, periods=periods)
+end
+
+function _pf_period(v, what, ctx=nothing)
+    lit = _pf_date_literal(v)
+    if lit !== nothing
+        (ctx === nothing || ctx.first === nothing) &&
+            throw(ModelError("$what is given as a date but neither first_simulation_period nor last_simulation_period was passed to perfect_foresight_setup"))
+        lit[1] == ctx.first[1] || throw(ModelError("$what $(repr(v)) and first_simulation_period have different frequencies"))
+        return Int(lit[2] - ctx.first[2] + 1)
+    end
     v isa Integer && return Int(v)
     v isa Real && isinteger(v) && return Int(v)
     v isa AbstractString && occursin(r"^\s*-?\d+\s*$", v) && return parse(Int, v)
@@ -254,6 +311,93 @@ function _pf_steady(m::Model, params, guess, x; tol=nothing, check=nothing)
     end
 end
 
+"""
+histvalf_initvalf.m for initval_file (numeric first_obs/last_obs/nobs/first_simulation_period/last_simulation_period):
+the data of `datafile` (.m, .mat or .csv, read as dseries does) and the number of simulation periods it gives.
+"""
+function _pf_initval_series(m::Model, caller, opts)
+    for k in ("series", "first_obs", "last_obs", "first_simulation_period", "last_simulation_period")
+        v = get(opts, k, nothing)
+        if k == "series" ? v !== nothing : (v !== nothing && !(v isa Real))
+            throw(ModelError("initval_file option $k = $(repr(v)) is not implemented in JDyn's perfect foresight " *
+                             "(the data file and numeric observation numbers are)"))
+        end
+    end
+    (haskey(opts, "filename") && haskey(opts, "datafile")) && throw(ModelError("INITVAL_FILE: you can't use option DATAFILE and option FILENAME at the same time"))
+    file = get(opts, "datafile", get(opts, "filename", nothing))
+    file === nothing && throw(ModelError("INITVAL_FILE: no data file given"))
+    file = String(file)
+    base, ext = splitext(file)
+    if isempty(ext)
+        cand = [e for e in (".m", ".mat", ".xls", ".xlsx") if isfile(joinpath(m.mod_dir, base * e))]
+        isempty(cand) && throw(ModelError("INITVAL_FILE: Can't find datafile: $base.{m,mat,xls,xlsx}"))
+        file = base * first(cand)
+    end
+    allow0 = ALLOW_RANDOM[]; ALLOW_RANDOM[] = true         # reading a file is allowed: the .mod file asks for it
+    ds = try
+        ds_ctor(Interp(m.mod_dir, nothing), Any[file])
+    catch e
+        e isa Unsupported && throw(ModelError("INITVAL_FILE: " * e.msg))
+        e isa MatlabError && throw(ModelError("INITVAL_FILE: " * e.msg))
+        rethrow()
+    finally
+        ALLOW_RANDOM[] = allow0
+    end
+    miss = [v for v in vcat(orig_endo_names(m), m.exo_names) if !(v in ds.name)]
+    isempty(miss) || throw(ModelError("INITVAL_FILE: some variables are missing: $(join(miss, ", "))"))
+    # dynamic_set_auxiliary_series: the auxiliary variable of an exogenous variable with a lead (AUX = x) equals that variable;
+    # the other kinds (shifted variables, multipliers) are not rebuilt
+    names, data = copy(ds.name), Matrix{Float64}(ds.data)
+    for a in get_or(m.raw, "aux_vars", [])
+        nm = m.endo_names[Int(a["endo_index"])]
+        nm in names && continue
+        src = get(a, "type", -1) == 2 ? strip(string(get(a, "orig_expr", ""))) : ""
+        src in names || throw(ModelError("initval_file with the auxiliary variable $nm (type $(get(a, "type", "?"))) is not implemented (dynamic_set_auxiliary_series)"))
+        push!(names, nm)
+        data = hcat(data, data[:, findfirst(==(src), names)])
+    end
+    ds = (data = data, name = names)
+    ol, oe = Int(get(m.info, "orig_maximum_lag", m.info["maximum_lag"])), Int(get(m.info, "orig_maximum_lead", m.info["maximum_lead"]))
+    nobs0 = size(ds.data, 1)
+    nobs = Int(get(opts, "nobs", 0))
+    first_obs, fobs_given = 1, false
+    if get(opts, "first_obs", nothing) !== nothing
+        f = Int(opts["first_obs"])
+        f < 1 && throw(ModelError("INITVAL_FILE: first_obs must be a positive number"))
+        f > nobs0 && throw(ModelError("INITVAL_FILE: first_obs = $f is larger than the number of observations in the data file ($nobs0)"))
+        first_obs, fobs_given = f, true
+        if get(opts, "first_simulation_period", nothing) !== nothing && first_obs != Int(opts["first_simulation_period"]) - ol
+            throw(ModelError("INITVAL_FILE: first_obs = $f and first_simulation_period = $(opts["first_simulation_period"]) have values inconsistent with a maximum lag of $ol periods"))
+        end
+    end
+    if !fobs_given && get(opts, "first_simulation_period", nothing) !== nothing
+        f = Int(opts["first_simulation_period"])
+        f < ol && throw(ModelError("INITVAL_FILE: first_simulation_period = $f must be larger than the maximum lag ($ol)"))
+        f > nobs0 && throw(ModelError("INITVAL_FILE: first_simulations_period = $f is larger than the number of observations in the data file ($nobs0)"))
+        first_obs, fobs_given = f - ol, true
+    end
+    last_obs = nobs0
+    if get(opts, "last_obs", nothing) !== nothing
+        last_obs = Int(opts["last_obs"])
+        last_obs > nobs0 && throw(ModelError("INITVAL_FILE: last_obs = $last_obs is larger than the number of observations in the dataset ($nobs0)"))
+        fobs_given && nobs > 0 && last_obs != first_obs + nobs - 1 &&
+            throw(ModelError("INITVAL_FILE: FIRST_OBS, LAST_OBS and NOBS contain inconsistent information. Use only two of these options."))
+        !fobs_given && nobs > 0 && (first_obs = last_obs - nobs + 1)
+    elseif nobs > 0
+        last_obs = first_obs + nobs - 1
+    end
+    if get(opts, "last_simulation_period", nothing) !== nothing
+        lsp = Int(opts["last_simulation_period"])
+        lsp <= last_obs - oe || throw(ModelError("INITVAL_FILE: LAST_SIMULATION_PERIOD is too large compared to the available data."))
+        last_obs = lsp + oe
+        p = lsp - (first_obs + ol) + 1
+    else
+        p = (last_obs - oe) - (first_obs + ol) + 1
+    end
+    (first_obs >= 1 && last_obs <= nobs0 && last_obs >= first_obs) || throw(ModelError("INITVAL_FILE: the selected observations are outside the data"))
+    (data = Matrix{Float64}(ds.data[first_obs:last_obs, :]), names = copy(ds.name), p = p)
+end
+
 "Replay the statements of the .mod file up to the last perfect_foresight_setup."
 function _pf_replay(m::Model, params=nothing, steady=nothing, extra_learnt_shocks=(), extra_learnt_endval=())
     sts = m.statements
@@ -264,6 +408,7 @@ function _pf_replay(m::Model, params=nothing, steady=nothing, extra_learnt_shock
     force = steady === nothing ? isempty(idx) : steady === true
     never = steady === false
     ie, ix = m.ie, m.ix
+    dctx = _pf_date_context(m)
     counts = Dict{Tuple{String,String},Int}()
     for st in sts[1:last]
         if st["statementName"] in ("initval", "endval")
@@ -297,7 +442,7 @@ function _pf_replay(m::Model, params=nothing, steady=nothing, extra_learnt_shock
             set_values!(st, m.initval)
         elseif kind == "endval" && haskey(st, "learnt_in")
             for d in get_or(st, "vals", [])
-                push!(ws.learnt_endval, Dict{String,Any}("learnt_in" => _pf_period(st["learnt_in"], "learnt_in"), "exo" => ix[d["name"]],
+                push!(ws.learnt_endval, Dict{String,Any}("learnt_in" => _pf_period(st["learnt_in"], "learnt_in", dctx), "exo" => ix[d["name"]],
                       "type" => get(d, "type", "level"), "value" => Float64(_value(m, d["value"]))))
             end
         elseif kind == "endval"
@@ -320,12 +465,12 @@ function _pf_replay(m::Model, params=nothing, steady=nothing, extra_learnt_shock
         elseif kind == "histval"
             _pf_histval!(m, ws, st)
         elseif kind in ("shocks", "mshocks") && haskey(st, "learnt_in")
-            lin = _pf_period(st["learnt_in"], "learnt_in")
+            lin = _pf_period(st["learnt_in"], "learnt_in", dctx)
             get(st, "overwrite", false) == true && filter!(d -> d["learnt_in"] != lin, ws.learnt_shocks)
             for d in get_or(st, "learnt_shocks", [])
                 for v in d["values"]
-                    push!(ws.learnt_shocks, Dict{String,Any}("learnt_in" => lin, "exo" => ix[d["var"]], "p1" => _pf_period(v["period1"], "period"),
-                          "p2" => _pf_period(v["period2"], "period"), "type" => get(v, "type", "level"), "value" => Float64(_value(m, v["value"]))))
+                    push!(ws.learnt_shocks, Dict{String,Any}("learnt_in" => lin, "exo" => ix[d["var"]], "p1" => _pf_period(v["period1"], "period", dctx),
+                          "p2" => _pf_period(v["period2"], "period", dctx), "type" => get(v, "type", "level"), "value" => Float64(_value(m, v["value"]))))
                 end
             end
         elseif kind in ("shocks", "mshocks") && get(st, "surprise", false) != true
@@ -334,14 +479,31 @@ function _pf_replay(m::Model, params=nothing, steady=nothing, extra_learnt_shock
             for d in get_or(st, "deterministic_shocks", [])
                 haskey(ix, d["var"]) || throw(ModelError("shock on $(d["var"]): deterministic exogenous variables are not supported"))
                 for v in d["values"]
-                    push!(ws.det_shocks, (ix[d["var"]], _pf_period(v["period1"], "period"), _pf_period(v["period2"], "period"),
+                    push!(ws.det_shocks, (ix[d["var"]], _pf_period(v["period1"], "period", dctx), _pf_period(v["period2"], "period", dctx),
                                           Float64(_value(m, v["value"])), typ))
                 end
             end
-        elseif kind in ("initval_file", "histval_file", "perfect_foresight_controlled_paths", "shock_paths", "smoother2histval")
+        elseif kind == "perfect_foresight_controlled_paths"
+            lin = haskey(st, "learnt_in") ? _pf_period(st["learnt_in"], "learnt_in", dctx) : 1
+            for d in get_or(st, "paths", [])
+                haskey(ie, d["exogenize"]) || throw(ModelError("perfect_foresight_controlled_paths: $(d["exogenize"]) is not an endogenous variable"))
+                haskey(ix, d["endogenize"]) || throw(ModelError("perfect_foresight_controlled_paths: $(d["endogenize"]) is not an exogenous variable"))
+                for v in d["values"]
+                    p1, p2 = _pf_period(v["period1"], "period", dctx), _pf_period(v["period2"], "period", dctx)
+                    push!(ws.cpaths, Dict{String,Any}("exogenize_id" => ie[d["exogenize"]], "endogenize_id" => ix[d["endogenize"]],
+                          "periods" => collect(p1:p2), "value" => Float64(_value(m, v["value"])), "learnt_in" => lin))
+                end
+            end
+        elseif kind == "initval_file"
+            ws.iseries = _pf_initval_series(m, "INITVALF", get_or(st, "options", Dict{String,Any}()))
+        elseif kind in ("histval_file", "shock_paths", "smoother2histval")
             throw(ModelError("$kind is not implemented in JDyn's perfect foresight"))
         elseif _pf_is_setup(st)
             ws.pfwee = kind != "perfect_foresight_setup"
+            # perfect_foresight_setup(datafile=...) is initval_file(datafile=...) (the preprocessor's driver calls histvalf_initvalf)
+            if kind == "perfect_foresight_setup" && haskey(get_or(st, "options", Dict{String,Any}()), "datafile")
+                ws.iseries = _pf_initval_series(m, "INITVALF", Dict{String,Any}("datafile" => st["options"]["datafile"]))
+            end
         end
     end
     force && ws.dirty && run_steady!()
@@ -364,6 +526,46 @@ function _pf_replay(m::Model, params=nothing, steady=nothing, extra_learnt_shock
     ws
 end
 
+"""
+controlled_paths_by_period.m: for each of the `periods` simulation periods the controlled variables known at
+`info_period` (all of them when `nothing`), or `nothing` when the file has no controlled path.
+"""
+function _pf_cp_by_period(m::Model, ws::PFWorkspace, periods::Int, info_period=nothing)
+    isempty(ws.cpaths) && return nothing
+    cp = [PFCP() for _ in 1:periods]
+    for c in ws.cpaths
+        lin = c["learnt_in"]
+        info_period !== nothing && lin > info_period && continue
+        prange = c["periods"]
+        info_period !== nothing && any(<(lin), prange) &&
+            throw(ModelError("perfect_foresight_controlled_paths(learnt_in=$lin): the periods are inconsistent with the learnt_in value"))
+        for p in prange
+            (1 <= p <= periods) || throw(PerfectForesightError("perfect_foresight_controlled_paths: period $p is outside the simulation"))
+            q = cp[p]
+            idx = findfirst(k -> q.exo_ids[k] == c["exogenize_id"] && q.endo_ids[k] == c["endogenize_id"] && q.learnt_in[k] < lin, eachindex(q.exo_ids))
+            if idx === nothing
+                push!(q.exo_ids, c["exogenize_id"]); push!(q.endo_ids, c["endogenize_id"]); push!(q.values, c["value"]); push!(q.learnt_in, lin)
+            else
+                q.values[idx] = c["value"]; q.learnt_in[idx] = lin
+            end
+        end
+    end
+    for (p, q) in enumerate(cp)
+        length(unique(q.exo_ids)) == length(q.exo_ids) ||
+            throw(PerfectForesightError("perfect_foresight_controlled_paths: variable $(m.endo_names[q.exo_ids[findfirst(i -> q.exo_ids[i] in q.exo_ids[1:i-1], eachindex(q.exo_ids))]]) is exogenized two times in period $p"))
+        length(unique(q.endo_ids)) == length(q.endo_ids) ||
+            throw(PerfectForesightError("perfect_foresight_controlled_paths: variable $(m.exo_names[q.endo_ids[findfirst(i -> q.endo_ids[i] in q.endo_ids[1:i-1], eachindex(q.endo_ids))]]) is endogenized two times in period $p"))
+    end
+    for (j, p1, p2, _, _) in ws.det_shocks
+        for p in p1:p2
+            (1 <= p <= periods) && j in cp[p].endo_ids &&
+                throw(PerfectForesightError("Exogenous variable $(m.exo_names[j]) is present in both the shocks and the perfect_foresight_controlled_paths in period $p"))
+        end
+    end
+    cp
+end
+_pf_cp_active(cp) = cp !== nothing && any(q -> !isempty(q.exo_ids), cp)
+
 const _PF_SIMPLE_AUX = r"^\s*([A-Za-z_]\w*)\s*(?:\(\s*(-?\d+)\s*\))?\s*$"
 
 """
@@ -385,6 +587,10 @@ function _pf_histval!(m::Model, ws::PFWorkspace, st)
     for a in get_or(m.raw, "aux_vars", [])
         name = m.endo_names[Int(a["endo_index"])]
         mo = match(_PF_SIMPLE_AUX, string(get(defs, name, "")))
+        if get(a, "type", -1) == 6
+            series[name] = zeros(L)      # a Lagrange multiplier has no history (0 in M_.endo_histval; evaluate_planner_objective ignores it)
+            continue
+        end
         if get(a, "type", -1) in (0, 2) && !(mo !== nothing && haskey(series, mo.captures[1]))
             series[name] = zeros(L)      # a lead auxiliary variable is never lagged: its period-0 value plays no role
             continue
@@ -411,6 +617,26 @@ function _pf_make_paths(m::Model, ws::PFWorkspace, periods::Int)
     (ws.endo_histval !== nothing && ws.ss0 !== nothing) && throw(PerfectForesightError("histval and endval cannot be used simultaneously"))
     x = repeat(ws.xss, 1, rows)
     y = repeat(ws.ss, 1, rows)
+    if ws.iseries !== nothing
+        # make_y_.m / make_ex_.m with oo_.initval_series
+        S = ws.iseries
+        ol = Int(get(m.info, "orig_maximum_lag", lag))
+        rr = ol-lag+1:ol+periods+lead
+        (first(rr) >= 1 && last(rr) <= size(S.data, 1)) ||
+            throw(PerfectForesightError("initval_file: the data has $(size(S.data, 1)) observations, the simulation needs $(last(rr)) (periods = $periods)"))
+        col = Dict(n => i for (i, n) in enumerate(S.names))
+        for v in vcat(m.endo_names, m.exo_names)
+            haskey(col, v) || throw(PerfectForesightError("initval_file: variable $v is missing from the data " *
+                                    "(auxiliary variables are not rebuilt from the data by JDyn)"))
+        end
+        y = Matrix{Float64}(permutedims(S.data[rr, [col[v] for v in m.endo_names]]))
+        x = Matrix{Float64}(permutedims(S.data[rr, [col[v] for v in m.exo_names]]))
+        if ws.endo_histval !== nothing && lag > 0
+            ws.ss0 !== nothing && throw(PerfectForesightError("histval and endval cannot be used simultaneously"))
+            x[:, 1:lag] .= ws.exo_histval
+            y[:, 1:lag] .= ws.endo_histval
+        end
+    else
     if ws.ss0 !== nothing
         x[:, 1:lag] .= ws.xss0
         y[:, 1:lag] .= ws.ss0
@@ -418,6 +644,7 @@ function _pf_make_paths(m::Model, ws::PFWorkspace, periods::Int)
     if ws.endo_histval !== nothing && lag > 0
         x[:, 1:lag] .= ws.exo_histval
         y[:, 1:lag] .= ws.endo_histval
+    end
     end
     late = sort(unique([m.exo_names[j] for (j, p1, p2, _, _) in ws.det_shocks if p2 > periods || p1 > periods]))
     isempty(late) || throw(PerfectForesightError("a shock is dated after the end of the simulation: at least one expected value for " *
@@ -598,6 +825,130 @@ function _pf_lu_solve(A::SparseMatrixCSC, b::AbstractVector, pat=nothing)
     end
 end
 
+# ---- robust_lin_solve: lin_solve_robust of sim1.m
+"""
+Octave's `A\\b` for a square sparse matrix. LU first; a singular matrix then gets a regularised factorisation
+(A + 1e-10 max|A| I) with iterative refinement against A, and finally a dense rank-revealing least-squares
+solve (up to 6000 unknowns). pydyn's `_backslash` is the specification (it matches Octave on the singular
+stacked Jacobian of Dynare's Irreversible_investment test).
+"""
+function _pf_backslash(A::SparseMatrixCSC, b::AbstractVector)
+    n = length(b)
+    try
+        F = lu(A; check=false)
+        if issuccess(F)
+            x = F \ b
+            all(isfinite, x) && return x
+        end
+    catch e
+        e isa LinearAlgebra.SingularException || e isa LinearAlgebra.LAPACKException || e isa ArgumentError || rethrow()
+    end
+    nb = norm(b)
+    try
+        delta = 1e-10 * maximum(abs, A)
+        F = lu(A + delta * sparse(1.0I, n, n); check=false)
+        if issuccess(F)
+            x = F \ b
+            best, rbest = x, norm(b - A * x)
+            for _ in 1:30
+                x = x + F \ (b - A * x)
+                r = norm(b - A * x)
+                r < rbest || break
+                best, rbest = x, r
+                rbest <= 1e-15 * nb && break
+            end
+            all(isfinite, best) && rbest <= 1e-10 * nb && return best
+        end
+    catch e
+        e isa LinearAlgebra.SingularException || e isa LinearAlgebra.LAPACKException || e isa ArgumentError || rethrow()
+    end
+    n <= 6000 || return fill(NaN, n)
+    M = Matrix(A)
+    (all(isfinite, M) && all(isfinite, b)) || return fill(NaN, n)
+    qr(M, ColumnNorm()) \ b
+end
+
+"BiCGSTAB (van der Vorst) from x0; returns the iterate after at most maxit iterations or when the relative residual is below tol."
+function _pf_bicgstab(A, b, x0, tol, maxit)
+    x = copy(x0); r = b - A * x; nb = norm(b)
+    norm(r) <= tol * nb && return x
+    rt = copy(r); rho = alpha = omega = 1.0; v = zeros(length(b)); p = zeros(length(b))
+    for _ in 1:maxit
+        rho1 = dot(rt, r)
+        (rho1 == 0 || !isfinite(rho1)) && break
+        beta = (rho1 / rho) * (alpha / omega)
+        p = r + beta * (p - omega * v)
+        v = A * p
+        alpha = rho1 / dot(rt, v)
+        s = r - alpha * v
+        if norm(s) <= tol * nb
+            return x + alpha * p
+        end
+        t = A * s
+        omega = dot(t, s) / dot(t, t)
+        x = x + alpha * p + omega * s
+        r = s - omega * t
+        rho = rho1
+        (norm(r) <= tol * nb || !isfinite(omega) || omega == 0) && break
+    end
+    x
+end
+
+"GMRES with restart `restart` (one outer cycle) from x0."
+function _pf_gmres(A, b, x0, tol, restart)
+    n = length(b); x = copy(x0); r = b - A * x; nb = norm(b); beta = norm(r)
+    (beta <= tol * nb || !isfinite(beta)) && return x
+    m = min(restart, n)
+    V = zeros(n, m + 1); H = zeros(m + 1, m)
+    V[:, 1] = r / beta
+    k = 0
+    for j in 1:m
+        w = A * V[:, j]
+        for i in 1:j
+            H[i, j] = dot(V[:, i], w)
+            w -= H[i, j] * V[:, i]
+        end
+        H[j+1, j] = norm(w)
+        k = j
+        H[j+1, j] < 1e-14 * beta && break
+        V[:, j+1] = w / H[j+1, j]
+    end
+    e1 = zeros(k + 1); e1[1] = beta
+    y = H[1:k+1, 1:k] \ e1
+    x + V[:, 1:k] * y
+end
+
+"lin_solve_robust of sim1.m: A\\b, BiCGSTAB from it, from zero, GMRES from the better of the two, from zero, then the pseudo-inverse."
+function _pf_lin_solve_robust(A::SparseMatrixCSC, b::AbstractVector, allow_nonfinite::Bool)
+    n = length(b)
+    nb = norm(b)
+    nb < sqrt(eps()) && return zeros(n)
+    clean(x) = allow_nonfinite ? x : map(v -> isfinite(v) ? v : 0.0, x)
+    relres(x) = (r = norm(b - A * x) / nb; isfinite(r) ? r : Inf)
+    tol = 1e-6
+    x = clean(_pf_backslash(A, b))
+    relres(x) <= tol && return x
+    x = _pf_bicgstab(A, b, x, tol, min(n, 20))
+    relres(x) <= tol && return x
+    old_x, old_r = x, relres(x)
+    x = _pf_bicgstab(A, b, zeros(n), tol, min(n, 20))
+    relres(x) <= tol && return x
+    x = clean(x)
+    old_r < relres(x) && (x = old_x)
+    x = _pf_gmres(A, b, x, tol, min(n, 10))
+    relres(x) <= tol && return x
+    x = clean(x)
+    old_x, old_r = x, relres(x)
+    x = _pf_gmres(A, b, zeros(n), tol, min(n, 10))
+    relres(x) <= tol && return x
+    x = clean(x)
+    old_r < relres(x) && (x = old_x)
+    old_x, old_r = x, relres(x)
+    x = clean(pinv(Matrix(A)) * b)
+    old_r < relres(x) && (x = old_x)
+    x
+end
+
 function _pf_boundaries(m::Model, endo::AbstractMatrix, periods::Int)
     lag, lead, n = m.info["maximum_lag"], m.info["maximum_lead"], m.n_endo
     y0 = lag > 0 ? Vector{Float64}(endo[:, lag]) : fill(NaN, n)
@@ -614,10 +965,49 @@ function _pf_maxerror(m::Model, P::PFStacked, endo, exo, periods)
 end
 
 # ------------------------------------------------------------------------------------------ solvers
-"sim1.m: Newton's method on the stacked system. Returns (endo, success, err, iter)."
-function _pf_sim1(m::Model, P::PFStacked, endo, exo, periods, o, log)
+"""
+controlled_paths_substitute_stacked_jacobian.m: in each controlled period the columns of the exogenized
+variables are replaced by the derivatives of the equations with respect to the endogenized exogenous variables.
+`Jconst` (n x (3n + nx)) is the constant Jacobian of a linear model, else it is evaluated at each period.
+"""
+function _pf_cp_substitute(m::Model, P::PFStacked, A::SparseMatrixCSC, Y, y0, yT, X, cp, Jconst=nothing)
+    n, T, f = m.n_endo, size(Y, 2), m.fns
+    full = hcat(y0, Y, yT)
+    I, J, V = findnz(A)
+    drop = Set{Int}()
+    nI, nJ, nV = Int[], Int[], Float64[]
+    for p in 1:T
+        c = cp[p]
+        isempty(c.exo_ids) && continue
+        Jf = Jconst
+        if Jf === nothing
+            vals = dynamic_jac_values(m, vec(full[:, p:p+2]), X[:, p], P.params, P.ss)
+            Jf = sparse(f.g1_rows, f.g1_cols, vals, n, 3n + m.n_exo)
+        end
+        for (k, id) in enumerate(c.exo_ids)
+            col = (p - 1) * n + id
+            push!(drop, col)
+            g = Jf[:, 3n + c.endo_ids[k]]
+            for (r, v) in zip(findnz(g)...)
+                push!(nI, (p - 1) * n + r); push!(nJ, col); push!(nV, v)
+            end
+        end
+    end
+    keep = [!(j in drop) for j in J]
+    sparse(vcat(I[keep], nI), vcat(J[keep], nJ), vcat(V[keep], nV), size(A, 1), size(A, 2))
+end
+
+"sim1.m: Newton's method on the stacked system. Returns (endo, success, err, iter); with controlled paths `cp` the solved exogenous variables are written into `exo`."
+function _pf_sim1(m::Model, P::PFStacked, endo, exo, periods, o, log, cp=nothing)
     lag, n = m.info["maximum_lag"], m.n_endo
     endo = copy(endo)
+    cp = _pf_cp_active(cp) ? cp : nothing
+    if cp !== nothing
+        o["endogenous_terminal_period"] && throw(PerfectForesightError("The endogenous_terminal_period option not available with perfect_foresight_controlled_paths or shock_paths+exogenize"))
+        for p in 1:periods
+            isempty(cp[p].exo_ids) || (endo[cp[p].exo_ids, lag+p] = cp[p].values)
+        end
+    end
     y0, yT = _pf_boundaries(m, endo, periods)
     Y = endo[:, lag+1:lag+periods]
     X = exo[:, lag+1:lag+periods]
@@ -644,11 +1034,23 @@ function _pf_sim1(m::Model, P::PFStacked, endo, exo, periods, o, log)
         if err < tolf
             converged = true
         else
-            dy = _pf_lu_solve(A, res, _pf_pattern(P, periods))
-            Y = Y .- reshape(dy, n, T)
+            cp === nothing || (A = _pf_cp_substitute(m, P, A, Y, y0, yT, X, cp))
+            dy = o["simul.robust_lin_solve"] ? _pf_lin_solve_robust(A, res, o["simul.allow_nonfinite_values"]) :
+                                               _pf_lu_solve(A, res, cp === nothing ? _pf_pattern(P, periods) : nothing)
+            mdy = reshape(dy, n, T)
+            Y = Y .- mdy
+            if cp !== nothing
+                for p in 1:T
+                    c = cp[p]
+                    isempty(c.exo_ids) && continue
+                    X[c.endo_ids, p] .-= mdy[c.exo_ids, p]
+                    Y[c.exo_ids, p] = c.values
+                end
+            end
         end
         it += 1
     end
+    cp === nothing || (exo[:, lag+1:lag+periods] .= X)
     endo[:, lag+1:lag+T] .= Y
     o["endogenous_terminal_period"] && (err = _pf_maxerror(m, P, endo, exo, periods))
     success = converged && all(isfinite, Y)
@@ -656,8 +1058,15 @@ function _pf_sim1(m::Model, P::PFStacked, endo, exo, periods, o, log)
 end
 
 "sim1_linear.m: one linear solve around the (terminal) steady state."
-function _pf_sim1_linear(m::Model, P::PFStacked, endo, exo, periods, ss, xss, params, o, nocheck)
+function _pf_sim1_linear(m::Model, P::PFStacked, endo, exo, periods, ss, xss, params, o, nocheck, cp=nothing)
     lag, n, nx = m.info["maximum_lag"], m.n_endo, m.n_exo
+    cp = _pf_cp_active(cp) ? cp : nothing
+    if cp !== nothing
+        endo = copy(endo)
+        for p in 1:periods
+            isempty(cp[p].exo_ids) || (endo[cp[p].exo_ids, lag+p] = cp[p].values)
+        end
+    end
     y3 = repeat(ss, 3)
     d1 = dynamic_resid(m, y3, xss, params, ss)
     if !nocheck && !(maximum(abs, d1) <= DYNARE_TOLF)
@@ -691,7 +1100,20 @@ function _pf_sim1_linear(m::Model, P::PFStacked, endo, exo, periods, ss, xss, pa
     for i in eachindex(nz)
         nz[i] = V[perm[i]]
     end
-    Y = Y .- reshape(_pf_lu_solve(A, res), n, periods)
+    if cp !== nothing
+        A = _pf_cp_substitute(m, P, A, repeat(ss, 1, periods), ss, ss, repeat(xss, 1, periods), cp, J)
+    end
+    mdy = reshape(_pf_lu_solve(A, res), n, periods)
+    Y = Y .- mdy
+    if cp !== nothing
+        for p in 1:periods
+            c = cp[p]
+            isempty(c.exo_ids) && continue
+            Y[c.exo_ids, p] = c.values .- ss[c.exo_ids]
+            dx[c.endo_ids, lag+p] .-= mdy[c.exo_ids, p]
+            exo[c.endo_ids, lag+p] = dx[c.endo_ids, lag+p] .+ xss[c.endo_ids]
+        end
+    end
     err = _pf_norm_inf(residuals(Y))
     success = all(isfinite, Y) && isfinite(err)
     out = copy(endo)
@@ -1072,6 +1494,7 @@ mutable struct PFSim
     mcp::Any
     problems::Dict{Vector{Float64},PFStacked}
     solver::String
+    cp::Any                    # controlled paths by period (Vector{PFCP}) or nothing
 end
 
 function PFSim(m::Model, params, o, endo, exo, ss, xss, ss0, xss0, verbose)
@@ -1082,7 +1505,7 @@ function PFSim(m::Model, params, o, endo, exo, ss, xss, ss0, xss0, verbose)
         mcp = complementarity_conditions(m)
     end
     PFSim(m, Vector{Float64}(params), o, endo, exo, ss, xss, ss0, xss0, verbose, m.info["maximum_lag"], m.info["maximum_lead"], mcp,
-          Dict{Vector{Float64},PFStacked}(), "")
+          Dict{Vector{Float64},PFStacked}(), "", nothing)
 end
 
 _pf_log(s::PFSim) = msg -> (s.verbose && println(msg); nothing)
@@ -1095,7 +1518,7 @@ function _pf_problem(s::PFSim, ss)
 end
 
 "perfect_foresight_solver_core.m: returns (endo, success, maxerror, iterations)."
-function _pf_core(s::PFSim, endo, exo, ss, xss, periods)
+function _pf_core(s::PFSim, endo, exo, ss, xss, periods, cp=s.cp)
     m, o, info = s.m, s.o, s.m.info
     has_lag, has_lead = info["maximum_endo_lag"] > 0, info["maximum_endo_lead"] > 0
     linear = o["linear_approximation"]
@@ -1104,6 +1527,10 @@ function _pf_core(s::PFSim, endo, exo, ss, xss, periods)
         throw(ArgumentError("option $name is not available with purely backward, purely forward or static models"))
     end
     get(o, "linear", false) && has_lag && has_lead && (linear = true)
+    if _pf_cp_active(cp)
+        o["lmmcp.status"] && throw(PerfectForesightError("perfect_foresight_controlled_paths or shock_paths+exogenize is not available for mixed-complementarity problems (LMMCP or PATH solvers)"))
+        has_lag && has_lead || throw(PerfectForesightError("perfect_foresight_controlled_paths or shock_paths+exogenize is not available with purely backward, purely forward or static models"))
+    end
     P = _pf_problem(s, ss)
     if s.mcp !== nothing
         s.solver = "lmmcp"
@@ -1117,10 +1544,10 @@ function _pf_core(s::PFSim, endo, exo, ss, xss, periods)
     if linear
         s.solver = "linear"
         nocheck = get(get(m.options, "steady", Dict{String,Any}()), "steadystate.nocheck", false) == true
-        return _pf_sim1_linear(m, P, endo, exo, periods, ss, xss, s.params, o, nocheck)
+        return _pf_sim1_linear(m, P, endo, exo, periods, ss, xss, s.params, o, nocheck, cp)
     end
     s.solver = "stacked Newton"
-    _pf_sim1(m, P, endo, exo, periods, o, _pf_log(s))
+    _pf_sim1(m, P, endo, exo, periods, o, _pf_log(s), cp)
 end
 
 function _pf_steady_at(s::PFSim, guess, x)
@@ -1128,7 +1555,11 @@ function _pf_steady_at(s::PFSim, guess, x)
     try
         tol = o["simul.steady_tolf"] === nothing ? DYNARE_TOLF : _pf_float(o["simul.steady_tolf"])
         ys, _ = _pf_steady(s.m, s.params, guess, x; tol=tol, check=!o["simul.endval_steady_nocheck"])
-        return all(isfinite, ys) ? ys : nothing
+        all(isfinite, ys) || return nothing
+        # a "solution" many orders of magnitude away from the guess is a runaway of the search (the equations are satisfied to the
+        # absolute tolerance by diverging values, e.g. 1/C -> 0): treat it as a failure, so the caller retries from the initial steady state
+        maximum(abs, ys) > 1e8 * max(1.0, maximum(abs, filter(isfinite, guess); init=0.0)) && return nothing
+        return ys
     catch e
         e isa InterruptException && rethrow()
         return nothing
@@ -1136,7 +1567,7 @@ function _pf_steady_at(s::PFSim, guess, x)
 end
 
 "create_scenario of perfect_foresight_solver.m: (ok, endo, exo, ss, xss)."
-function _pf_scenario(s::PFSim, share, shareorig, endoorig, exoorig, endobase, exobase, recompute, endo, ss, xss, periods)
+function _pf_scenario(s::PFSim, share, shareorig, endoorig, exoorig, endobase, exobase, recompute, endo, ss, xss, periods; exo_cur=nothing)
     lag, lead = s.lag, s.lead
     w = share / shareorig
     exo = exoorig .* w .+ exobase .* (1 - w)
@@ -1165,7 +1596,17 @@ function _pf_scenario(s::PFSim, share, shareorig, endoorig, exoorig, endobase, e
     else
         endo[:, lag+periods+1:end] .= w .* endoorig[:, lag+periods+1:end] .+ (1 - w) .* endobase[:, lag+periods+1:end]
     end
-    ok, endo, exo, ss, xss
+    cps = s.cp
+    if _pf_cp_active(s.cp)             # the controlled values follow the share too; the guess of the solved exogenous variables is kept
+        cps = [copy(q) for q in s.cp]
+        for p in 1:periods
+            q = cps[p]
+            isempty(q.exo_ids) && continue
+            q.values = s.cp[p].values .* share .+ endobase[q.exo_ids, p] .* (1 - share)
+            exo[q.endo_ids, lag+p] = exo_cur[q.endo_ids, lag+p]
+        end
+    end
+    ok, endo, exo, ss, xss, cps
 end
 
 "homotopy_loop of perfect_foresight_solver.m."
@@ -1184,14 +1625,15 @@ function _pf_homotopy(s::PFSim, max_share, shareorig, endoorig, exoorig, endobas
             new_share = max_share
             step = new_share - completed
         end
-        ok, endo, exo, ss, xss = _pf_scenario(s, new_share, shareorig, endoorig, exoorig, endobase, exobase, recompute, endo, ss, xss, periods)
+        ok, endo, exo, ss, xss, cps = _pf_scenario(s, new_share, shareorig, endoorig, exoorig, endobase, exobase, recompute, endo, ss, xss, periods; exo_cur=exo)
         success = false
         if ok
             if completed == 0 && !(iteration == 1 && new_share == shareorig)
                 # guess: the terminal steady state (the base scenario for models without leads)
                 endo[:, sim] .= lead > 0 ? endo[:, lag+periods+1] : endobase[:, sim]
+                _pf_cp_active(cps) && (exo[:, sim] .= exobase[:, sim])      # perfect_foresight_solver.m: guess of the exogenous variables with controlled paths
             end
-            endo, success, maxerror, solver_iter = _pf_core(s, endo, exo, ss, xss, periods)
+            endo, success, maxerror, solver_iter = _pf_core(s, endo, exo, ss, xss, periods, cps)
         else
             maxerror = NaN
         end
@@ -1248,7 +1690,8 @@ function _pf_solve(s::PFSim, periods::Int)
     max_share = o["simul.homotopy_max_completion_share"]
     completed, endo, exo, ss, xss, iteration, maxerror, solver_iter = _pf_homotopy(s, max_share, 1.0, endoorig, exoorig, endobase, exobase, recompute, periods)
     # oo_.exo_simul is left as perfect_foresight_setup built it unless the simulation fails
-    out = Dict{String,Any}("endo" => endo, "exo" => exoorig, "ss" => s.ss, "xss" => s.xss, "status" => false, "linearization" => false,
+    cpa = _pf_cp_active(s.cp)
+    out = Dict{String,Any}("endo" => endo, "exo" => cpa ? exo : exoorig, "cp" => cpa, "ss" => s.ss, "xss" => s.xss, "status" => false, "linearization" => false,
                            "marginal" => false, "share" => completed, "homotopy_iterations" => iteration, "iterations" => solver_iter,
                            "recompute" => recompute)
     marg = o["simul.homotopy_marginal_linearization_fallback"]
@@ -1257,14 +1700,15 @@ function _pf_solve(s::PFSim, periods::Int)
         recompute && (out["ss"] = ss)
     elseif o["simul.homotopy_linearization_fallback"] && completed > 0
         out["endo"] = endobase .+ (endo .- endobase) ./ completed
+        cpa && (out["exo"] = exobase .+ (exo .- exobase) ./ completed)
         recompute && (out["ss"] = out["endo"][:, end])
         maxerror = _pf_maxerror(m, _pf_problem(s, out["ss"]), out["endo"], out["exo"], periods)
         out["status"] = true; out["linearization"] = true
     elseif marg > 0 && completed > marg
         extra_share = completed - marg
-        ok, e_endo, e_exo, e_ss, e_xss = _pf_scenario(s, extra_share, 1.0, endoorig, exoorig, endobase, exobase, recompute, endo, ss, xss, periods)
+        ok, e_endo, e_exo, e_ss, e_xss, e_cps = _pf_scenario(s, extra_share, 1.0, endoorig, exoorig, endobase, exobase, recompute, endo, ss, xss, periods; exo_cur=exo)
         if ok
-            e_endo, ok, _, _ = _pf_core(s, e_endo, e_exo, e_ss, e_xss, periods)
+            e_endo, ok, _, _ = _pf_core(s, e_endo, e_exo, e_ss, e_xss, periods, e_cps)
         end
         if !ok
             share2, e_endo, e_exo, e_ss, e_xss, _, _, _ = _pf_homotopy(s, extra_share, 1.0, endoorig, exoorig, endobase, exobase, recompute, periods)
@@ -1272,6 +1716,7 @@ function _pf_solve(s::PFSim, periods::Int)
         end
         if ok
             out["endo"] = endo .+ (endo .- e_endo) .* ((1 - completed) / marg)
+            cpa && (out["exo"] = exo .+ (exo .- e_exo) .* ((1 - completed) / marg))
             recompute && (out["ss"] = out["endo"][:, end])
             maxerror = _pf_maxerror(m, _pf_problem(s, out["ss"]), out["endo"], out["exo"], periods)
             out["marginal"] = true
@@ -1385,6 +1830,8 @@ function _pf_solve_pfwee(m::Model, ws::PFWorkspace, periods, o, verbose, datafil
     ss, xss = copy(ws.ss), copy(ws.xss)
     ss0, xss0 = ws.ss0 === nothing ? (copy(ss), copy(xss)) : (ws.ss0, ws.xss0)
     const_len = o["pfwee.constant_simulation_length"]
+    cps = isempty(ws.cpaths) ? nothing : [_pf_cp_by_period(m, ws, periods, ip) for ip in 1:periods]
+    cps !== nothing && const_len && throw(PerfectForesightError("Options constant_simulation_length is incompatible with perfect_foresight_controlled_paths or shock_paths+exogenize block"))
     info_period, increment, share0 = 1, 0, nothing
     out = nothing
     solves = Tuple{Int,Int,Float64}[]
@@ -1402,6 +1849,7 @@ function _pf_solve_pfwee(m::Model, ws::PFWorkspace, periods, o, verbose, datafil
         exo[:, lag+1:lag+known] = shocks[:, info_period:periods, info_period]
         exo[:, lag+known+1:end] .= xss
         sim = PFSim(m, ws.params, o, endo, exo, ss, xss, ss0, xss0, verbose)
+        cps === nothing || (sim.cp = cps[info_period][info_period:end])
         out = _pf_solve(sim, sim_length)
         out["solver"] = sim.solver
         push!(solves, (info_period, Int(out["iterations"]), Float64(out["maxerror"])))
@@ -1423,7 +1871,8 @@ function _pf_solve_pfwee(m::Model, ws::PFWorkspace, periods, o, verbose, datafil
         exo_simul[:, p+1:end] = out["exo"]
         increment = 1
         while info_period + increment <= periods && terminal[:, info_period] == terminal[:, info_period+increment] &&
-              isequal(shocks[:, info_period+increment:periods, info_period], shocks[:, info_period+increment:periods, info_period+increment])
+              isequal(shocks[:, info_period+increment:periods, info_period], shocks[:, info_period+increment:periods, info_period+increment]) &&
+              (cps === nothing || cps[info_period][info_period+increment:end] == cps[info_period+increment][info_period+increment:end])
             increment += 1
         end
         info_period += increment
@@ -1481,6 +1930,7 @@ Throws `PerfectForesightError` when no solution is found (`raise_on_failure=fals
 function perfect_foresight(m::Model; periods=nothing, params=nothing, exo=nothing, y_init=nothing, y_term=nothing, guess=nothing,
                            steady=nothing, expectation_errors=nothing, learnt_shocks=(), learnt_endval=(), raise_on_failure::Bool=true,
                            verbose::Bool=false, lmmcp_tolfun=nothing, lmmcp_maxiter=nothing, tol=nothing, kw...)
+    n_exo_det(m) > 0 && throw(PerfectForesightError("perfect foresight with varexo_det variables is not supported", nothing))
     options = Dict{Symbol,Any}(kw)
     tol !== nothing && !haskey(options, :tolf) && (options[:tolf] = tol)
     periods !== nothing && (options[:periods] = periods)
@@ -1495,6 +1945,11 @@ function perfect_foresight(m::Model; periods=nothing, params=nothing, exo=nothin
     if o["periods"] === nothing
         o["periods"] = get(_pf_statement_options(m, "perfect_foresight_setup"), "periods", nothing)
         o["periods"] === nothing && (o["periods"] = get(_pf_statement_options(m, "perfect_foresight_with_expectation_errors_setup"), "periods", nothing))
+    end
+    o["periods"] === nothing && ws.iseries !== nothing && (o["periods"] = ws.iseries.p)
+    if o["periods"] === nothing
+        dc = _pf_date_context(m)
+        dc.first !== nothing && dc.last !== nothing && (o["periods"] = dc.last[2] - dc.first[2] + 1)
     end
     o["periods"] === nothing && throw(ArgumentError("periods not given and not set in the .mod file"))
     T = Int(_pf_float(o["periods"]))
@@ -1513,7 +1968,6 @@ function perfect_foresight(m::Model; periods=nothing, params=nothing, exo=nothin
                      "as in Dynare the conditions are ignored and the unconstrained path is computed (pass lmmcp=true to impose them)")
     end
     lag, lead = m.info["maximum_lag"], m.info["maximum_lead"]
-    o["datafile"] !== nothing && !pfwee && throw(ModelError("perfect_foresight_setup(datafile=...) (an initval_file) is not implemented"))
     local out, ss0, xss0
     if pfwee
         (exo !== nothing || y_init !== nothing || y_term !== nothing || guess !== nothing) &&
@@ -1540,6 +1994,7 @@ function perfect_foresight(m::Model; periods=nothing, params=nothing, exo=nothin
             endo[:, lag+1:lag+T] .= guess
         end
         sim = PFSim(m, ws.params, o, endo, x, ws.ss, ws.xss, ws.ss0, ws.xss0, verbose)
+        sim.cp = _pf_cp_by_period(m, ws, T)
         out = _pf_solve(sim, T)
         out["solver"] = sim.solver
         ss0, xss0 = ws.ss0, ws.xss0
