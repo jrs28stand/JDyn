@@ -5,6 +5,10 @@ Branch `obc-ho` (pushed to `origin wip/obc-ho`), based on `wip/obc` at 5f0d3a0. 
 
 ## State / next step
 
+TASK 3 (started 2026-11-25): Part A (split cubature failure rule) DONE and tested; Part B (order 2 and cubature for the regime formulation, `src/obc_regime_ho.jl`) DONE and tested
+(`test/test_obc_regime_ho.jl`, 2497 checks). Remaining: cross-port runs against pydyn (`bench/obc_cross_regime_ho.jl`), cost table (`bench/obc_cost_regime_ho.jl`), move the earlier scratch
+scripts into `bench/`, write the section "Task 3" below with the numbers, final report. Main merged at 1bb4530.
+
 MAINTENANCE TASK (three jobs, started 2026-11-25). Job 1 (bound the OccBin rule memo): DONE, see "Rule memo budget" below. Job 2 (news-filter "horizon too short" status, opt-in
 `obc_horizon_max`): DONE, see "Horizon too short" below. Job 3 (merge `main` into `obc-ho`, tighten the `bf` replay): merged, see "Merge of main" below.
 Resume: `source /root/jl/jdyn_env.sh; julia --project=. test/<file>.jl` (one file at a time; first run after a `src` edit precompiles for ~4 minutes). Push only to `origin obc-ho:wip/obc-ho`.

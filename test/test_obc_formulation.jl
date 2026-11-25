@@ -113,11 +113,15 @@ end
     end
     println("  NKM simulation, 6 shock sequences: max |auto (regime) - OccBin| = ", worst_auto, "; max |lcp - OccBin| = ", worst_lcp, " (", ndiff, " sequences differ)")
     @test worst_auto < 1e-6
-    # higher order and cubature need the LCP: kept for auto and lcp (with a warning for the approximate class), refused for regime
+    # higher order and cubature: the same routing as order 1 (src/obc_regime_ho.jl; the approximate class is the regime formulation by default, lcp is the explicit opt-out)
     shs = 0.01 .* randn(MersenneTwister(9), 6, obn.n_exo)
-    @test_throws ArgumentError simulate(obn, shs; obc_method=:news, obc_order=2, obc_formulation="regime")
-    ob2 = JDyn.Occbin(load_copy(joinpath(OREF, "occest_nkm.mod")))
-    @test_logs (:warn, r"obc_order = 2 / obc_cubature use the LCP formulation, but constraint 'zlb'") match_mode=:any simulate(ob2, shs; periods=20, obc_method=:news, obc_order=2, obc_check_ahead=20)
+    ra = quiet() do; simulate(obn, shs; periods=20, obc_method=:news, obc_order=2, obc_check_ahead=40, obc_horizon=40); end
+    @test ra.news.formulation == :regime && occursin("0.0057", ra.news.note)
+    rl = quiet() do; simulate(obn, shs; periods=20, obc_method=:news, obc_order=2, obc_check_ahead=40, obc_horizon=40, obc_formulation=:lcp); end
+    @test rl.news.formulation == :lcp
+    rr = quiet() do; simulate(obn, shs; periods=20, obc_method=:news, obc_order=2, obc_check_ahead=40, obc_horizon=40, obc_formulation="regime"); end
+    @test rr.piecewise == ra.piecewise
+    @test_logs match_mode=:any simulate(obn, shs; periods=20, obc_method=:news, obc_order=2, obc_check_ahead=40, obc_horizon=40, obc_formulation=:lcp)      # no warning for the opt-out
 end
 
 @testset "estimation: auto = regime for the NKM examples, equal to OccBin at the stored vectors" begin

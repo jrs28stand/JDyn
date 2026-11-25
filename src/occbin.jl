@@ -472,13 +472,8 @@ function simulate(ob::Occbin, shocks_in::AbstractMatrix; periods::Integer=100, c
     _obc_regions(obc_cubature_regions)                  # validates (1 or all)
     if _obc_order(obc_order) != 1 || obc_cubature       # src/obc_ho.jl: order 2 and / or cubature (news only)
         method == :news || throw(ArgumentError("obc_order = 2 and obc_cubature need obc_method = news"))
-        formulation == :regime && throw(ArgumentError("obc_formulation = regime is not available with obc_order = 2 or obc_cubature (they use the LCP formulation)"))
-        let cons = get!(() -> obc_constraints(ob), _OBC_CONS_CACHE, ob), ap = [c for c in cons if c.class == :complementarity && c.approx > 0]
-            # the higher-order loop needs the LCP: it is kept (not refused) but the approximate class is flagged
-            isempty(ap) || formulation == :lcp || warn_once(ob.model, "obc_order = 2 / obc_cubature use the LCP formulation, but constraint " *
-                join(["'$(c.name)' (relative discrepancy $(@sprintf("%.2g", c.approx)))" for c in ap], ", ") *
-                " is of the approximate complementarity class: the LCP can pick a different regime sequence than OccBin at knife-edge periods")
-        end
+        form, note = _resolve_formulation(ob, formulation)           # lcp on a model that is not an exact pair is an error; auto: regime for the approximate class and non-complementarity
+        isempty(note) || info_once(ob.model, note)
         # what the loop does not support is refused, not ignored
         obc_raise || throw(ArgumentError("obc_raise = false is not supported with obc_order = 2 or obc_cubature (a failing period raises an ObcError)"))
         obc_fast_path || throw(ArgumentError("obc_fast_path = false is not supported with obc_order = 2 or obc_cubature"))
@@ -494,7 +489,7 @@ function simulate(ob::Occbin, shocks_in::AbstractMatrix; periods::Integer=100, c
                                 max_check_ahead_periods=max_check_ahead_periods, init=init, exo_pos=exo_pos, order=_obc_order(obc_order),
                                 cubature=obc_cubature, periods_of_uncertainty=_obc_int_option(obc_periods_of_uncertainty, "obc_periods_of_uncertainty"),
                                 qmc_level=_obc_int_option(obc_qmc_level, "obc_qmc_level"; min=0), regions=_obc_regions(obc_cubature_regions),
-                                m_diagnostic=_obc_mdiag(obc_m_diagnostic), failure_tolerance=tolc, undecided_tolerance=tolu, undecided_min_points=minu,
+                                m_diagnostic=_obc_mdiag(obc_m_diagnostic), failure_tolerance=tolc, undecided_tolerance=tolu, undecided_min_points=minu, formulation=form, note=note,
                                 milp_time_limit=_obc_float_option(obc_cubature_milp_time_limit, "obc_cubature_milp_time_limit"; lo=0.0),
                                 ignored=(maxit=maxit, curb_retrench=curb_retrench, periodic_solution=periodic_solution,
                                          periodic_solution_threshold=periodic_solution_threshold, periodic_solution_strict=periodic_solution_strict,

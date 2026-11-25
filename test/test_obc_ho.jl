@@ -8,14 +8,14 @@ const HO_DIR = joinpath(@__DIR__, "obc", "ho")
 const JDyn_SRC_ROOT = DYNARE_SRC
 ho_ref(name) = matread(joinpath(HO_DIR, name))
 "Load a copy of the file's whole folder (include files)."
-function load_folder(path)
+function load_folder(path; kw...)
     d = mktempdir()
     for f in readdir(dirname(path))
         p = joinpath(dirname(path), f)
         isfile(p) && cp(p, joinpath(d, f))
     end
     with_logger(NullLogger()) do
-        JDyn.load(joinpath(d, basename(path)))
+        JDyn.load(joinpath(d, basename(path)); kw...)
     end
 end
 
@@ -269,12 +269,17 @@ end
         @test_throws ArgumentError JDyn.simulate(ob, S[1:50, :]; obc_order=2, obc_qmc_level=-1, kw...)
         @test_throws ArgumentError JDyn.simulate(ob, S[1:50, :]; obc_selection=:median, kw...)
         @test_throws ArgumentError JDyn.simulate(ob, S[1:50, :]; obc_selection=:longest, obc_method=:occbin)
-        # constraint classes that are not one complementary pair, and several constraints
+        # constraint classes that are not one complementary pair (several equations, inconsistent conditions): the regime formulation at higher order (src/obc_regime_ho.jl),
+        # refused only with an explicit obc_formulation = lcp
         for (rel, what) in (("examples/occbin/rbc_occbin.mod", "inconsistent"), ("tests/occbin/ppf/bf_ppf.mod", "multi_equation"))
             mm = load_folder(joinpath(JDyn_SRC_ROOT, rel))
             obm = JDyn.Occbin(mm)
-            err = try JDyn.simulate(obm, zeros(5, obm.n_exo); obc_method=:news, obc_order=2); nothing catch e; e end
-            @test err isa JDyn.ModelError && occursin(what, err.msg)
+            err = try JDyn.simulate(obm, zeros(5, obm.n_exo); obc_method=:news, obc_order=2, obc_formulation=:lcp); nothing catch e; e end
+            @test err isa ArgumentError && occursin("complementary pair", err.msg) && occursin(what, err.msg)
+        end
+        let mm = load_folder(joinpath(JDyn_SRC_ROOT, "tests/occbin/ppf/bf_ppf.mod"); output="second"), obm = JDyn.Occbin(mm)
+            r = JDyn.simulate(obm, 0.01 .* randn(MersenneTwister(1), 5, obm.n_exo); obc_method=:news, obc_order=2, periods=5)
+            @test r.news.formulation == :regime && size(r.piecewise, 1) == 5
         end
         # an unknown option value in the file is an error when the file is loaded into the options
         d = mktempdir()

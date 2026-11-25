@@ -420,10 +420,25 @@ and `info = (used, iterations, message)` for one shock period (no path). `method
 function _regime_step(rg::RegimeOBC, init::AbstractVector, shock::AbstractVector; maxit::Int=60, method::Symbol=:auto, z0=nothing, milp::Bool=true,
                       selection::Symbol=:occbin)
     selection == :occbin || return _regime_step_select(rg, init, shock, selection; maxit=maxit, method=method, z0=z0, milp=milp)
-    T, N, k, nc = rg.T, rg.N, length(rg.cv), rg.nc
+    k = length(rg.cv)
     xs = vcat(init[rg.st], shock)
-    Ycv = reshape(rg.Bx * xs, k, N)
+    Ycv = reshape(rg.Bx * xs, k, rg.N)
     a = rg.a0 .+ rg.Ax * xs
+    _regime_search(rg, Ycv, a; maxit=maxit, method=method, z0=z0,
+                   lcp_fn=() -> _solve_lcp(rg, init, shock; milp=milp), milp_fn=() -> _regime_milp(rg, init, shock, a), milp=milp)
+end
+
+"""
+    _regime_search(rg, Ycv, a; maxit, method, z0, lcp_fn, milp_fn, milp) -> (status, z, w, info)
+
+The search of `_regime_step` for given state-dependent inputs: `Ycv` (`k x N`) the path of the variables the conditions read and `a` (`nb T`) the alternative
+residuals of the switched equations, both on the no-wedge path. `lcp_fn()` returns the tied-wedge solution `(z, w, pcv)` or `nothing` (it throws an `ObcError` when no
+solution exists; `err.detail === :proof` marks a certificate by an infeasible linear programme), `milp_fn()` the regime indicators of the integer programme. `_regime_step`
+gives the inputs of the first-order solution (`Bx`, `Ax`); the higher-order solver (`src/obc_regime_ho.jl`) those of the order-2 expected path. `info.proof` is set on a failure
+that an infeasible linear programme certifies.
+"""
+function _regime_search(rg::RegimeOBC, Ycv::AbstractMatrix, a::AbstractVector; maxit::Int=60, method::Symbol=:auto, z0=nothing, lcp_fn, milp_fn, milp::Bool=true)
+    T, N, k, nc = rg.T, rg.N, length(rg.cv), rg.nc
     z = falses(N, nc)
     info = (used=:none, iterations=0, message="")
     ok = beyond = false
@@ -446,10 +461,10 @@ function _regime_step(rg::RegimeOBC, init::AbstractVector, shock::AbstractVector
     if method == :guess_verify
         return (:not_converged, z, zeros(length(rg.cols) * T), (used=:guess_verify, iterations=0, message="the guess-and-verify iteration cycles"))
     end
-    fail(st, msg, used) = (st, falses(N, nc), zeros(length(rg.cols) * T), (used=used, iterations=0, message=msg))
+    fail(st, msg, used; proof::Bool=false) = (st, falses(N, nc), zeros(length(rg.cols) * T), (used=used, iterations=0, message=msg, proof=proof))
     if method != :milp
         try
-            got = _solve_lcp(rg, init, shock; milp=milp)    # throws ObcError with a proof when no solution exists
+            got = lcp_fn()                                  # throws ObcError with a proof when no solution exists
             if got !== nothing
                 zl, wl, pl = got
                 vb, vr = _regime_violations(rg, zl, pl)
@@ -457,12 +472,12 @@ function _regime_step(rg::RegimeOBC, init::AbstractVector, shock::AbstractVector
             end
         catch err
             err isa ObcError || rethrow()
-            return fail(err.status, err.msg, :lcp)
+            return fail(err.status, err.msg, :lcp; proof=err.detail === :proof)
         end
     end
     milp || return fail(:no_solution, "integer programme not attempted (milp = false)", :milp)
     try
-        zm = _regime_milp(rg, init, shock, a)
+        zm = milp_fn()
         wm = _regime_wedges(rg, zm, a)
         wm === nothing && return fail(:not_converged, "the regime sequence found by the integer programme gives a singular system", :milp)
         pcv = Ycv .+ reshape(rg.Wcv * wm, k, N)
@@ -612,16 +627,7 @@ function obc_lcp(rg::RegimeOBC, init::AbstractVector, shock::AbstractVector; tol
     x = vcat(init, shock)
     a = rg.a0 .+ rg.Am * x
     base = tie.q0raw .+ tie.Qraw * x
-    s_g, s_y = tie.s_g, tie.s_y
-    M = (s_g * s_y) .* tie.Mraw
-    q = s_g .* base
-    G = zeros(N, T)
-    asec = reduce(vcat, [a[(i-1)*T+1:i*T]' for i in tie.secondary])          # n_sec x T
-    f = -(tie.Coi * asec)
-    for (o, blk) in enumerate(tie.secondary)
-        G .+= s_g .* tie.Mblocks[blk] .* f[o, :]'
-    end
-    maximum(abs, G) <= tol * max(maximum(abs, q), 1e-300) && (G = nothing)
+    M, q, G = _lcp_from(rg, a, base; tol=tol)
     (M, q, G, (a=a, x=x))
 end
 
@@ -691,6 +697,19 @@ function _solve_lcp(rg::RegimeOBC, init::AbstractVector, shock::AbstractVector; 
     tie = _tie(rg)
     (tie === nothing || !tie.mirror) && return nothing
     M, q, G, info = obc_lcp(rg, init, shock)
+    got = _solve_lcp_core(rg, M, q, G, info.a; milp=milp)
+    got === nothing && return nothing
+    z, w = got
+    z, w, _regime_pcv(rg, info.x, w)
+end
+
+"""
+    _solve_lcp_core(rg, M, q, G, a; milp=true, time_limit=REGIME_MILP_TIME_LIMIT[]) -> (z, w) | nothing
+
+The tied-wedge problem for given `(M, q, G)` (`obc_lcp`, `_lcp_from`) and block residuals `a`. Throws an `ObcError` when there is no solution; `detail === :proof` when
+the linear relaxation is infeasible (a certificate). The integer programmes get `time_limit` seconds.
+"""
+function _solve_lcp_core(rg::RegimeOBC, M, q, G, a::AbstractVector; milp::Bool=true, time_limit::Real=REGIME_MILP_TIME_LIMIT[])
     T, N = rg.T, rg.N
     proof = "no solution exists that returns to the reference regime within the news horizon: the constraint cannot be kept satisfied in " *
             "every period by any non-negative wedges (linear programme infeasible)"
@@ -701,19 +720,19 @@ function _solve_lcp(rg::RegimeOBC, init::AbstractVector, shock::AbstractVector; 
         if !(st == :ok && _verify_lcp(M, q, y, T, 1e-8))
             if !milp
                 stl, _ = highs_lp(zeros(T), -M, fill(-Inf, N), q, zeros(T), fill(Inf, T))
-                throw(ObcError(:no_solution, 0, stl == :infeasible ? proof : "integer programme not attempted (milp = false)"))
+                throw(ObcError(:no_solution, 0, stl == :infeasible ? proof : "integer programme not attempted (milp = false)", stl == :infeasible ? :proof : nothing))
             end
-            y, st, inf = solve_news(M1, q1; tol=1e-8, Mb=M[T+1:N, :], qb=q[T+1:N], n_c=1,
-                                    time_limit=REGIME_MILP_TIME_LIMIT[])
+            y, st, inf = solve_news(M1, q1; tol=1e-8, Mb=M[T+1:N, :], qb=q[T+1:N], n_c=1, time_limit=time_limit)
             if st != :ok
                 msg = st == :no_solution && inf.proof ? proof : inf.message
-                throw(ObcError(st, 0, st == :no_solution && !inf.proof ? "no solution within the news horizon (the linear complementarity problem has none)" : msg))
+                throw(ObcError(st, 0, st == :no_solution && !inf.proof ? "no solution within the news horizon (the linear complementarity problem has none)" : msg,
+                               st == :no_solution && inf.proof ? :proof : nothing))
             end
         end
         zsol = y .> 1e-9 * max(1.0, maximum(abs, y))
     else
         st, _ = highs_lp(zeros(2T), -hcat(M, G), fill(-Inf, N), q, zeros(2T), vcat(fill(Inf, T), ones(T)))      # y >= 0, 0 <= z <= 1, q + M y + G z >= 0
-        st == :infeasible && throw(ObcError(:no_solution, 0, proof))
+        st == :infeasible && throw(ObcError(:no_solution, 0, proof, :proof))
         milp || throw(ObcError(:no_solution, 0, "integer programme not attempted (milp = false)"))
         sc = max(maximum(abs, q), 1e-12)
         dg = abs.(diag(M[1:T, :]))
@@ -725,18 +744,40 @@ function _solve_lcp(rg::RegimeOBC, init::AbstractVector, shock::AbstractVector; 
         rlo = vcat(fill(-Inf, T), -q, fill(-Inf, T))
         rhi = vcat(zeros(T), fill(Inf, N), Om .- q[1:T])
         st, x = highs_milp(vcat(zeros(T), ones(T)), A, rlo, rhi, zeros(2T), vcat(fill(U, T), ones(T)), vcat(falses(T), trues(T));
-                           time_limit=REGIME_MILP_TIME_LIMIT[])
+                           time_limit=time_limit)
         if isempty(x)
-            st == :time_limit && throw(ObcError(:not_converged, 0, "the integer programme did not finish in $(REGIME_MILP_TIME_LIMIT[]) s"))
+            st == :time_limit && throw(ObcError(:not_converged, 0, "the integer programme did not finish in $(time_limit) s"))
             throw(ObcError(:no_solution, 0, "no solution found within the news horizon by the integer programme (the linear relaxation is feasible, so this is not a proof)"))
         end
         zsol = x[T+1:2T] .> 0.5
     end
     z = falses(N, 1)
     z[1:T, 1] = zsol
-    w = _regime_wedges(rg, z, info.a)
+    w = _regime_wedges(rg, z, a)
     w === nothing && return nothing
-    z, w, _regime_pcv(rg, info.x, w)
+    z, w
+end
+
+"""
+    _lcp_from(rg, a, base) -> (M, q, G)
+
+`obc_lcp` from the state-dependent inputs: the alternative residuals `a` of all blocks on the no-wedge path (`nb T`) and `base`, that of the primary equation over `N`
+periods. `obc_lcp` computes both from `[init; shock]`; the higher-order solver from the order-2 expected path. Needs the tie structure (`_tie`).
+"""
+function _lcp_from(rg::RegimeOBC, a::AbstractVector, base::AbstractVector; tol::Real=1e-8)
+    tie = _tie(rg)
+    T, N = rg.T, rg.N
+    s_g, s_y = tie.s_g, tie.s_y
+    M = (s_g * s_y) .* tie.Mraw
+    q = s_g .* base
+    G = zeros(N, T)
+    asec = reduce(vcat, [a[(i-1)*T+1:i*T]' for i in tie.secondary])          # n_sec x T
+    f = -(tie.Coi * asec)
+    for (o, blk) in enumerate(tie.secondary)
+        G .+= s_g .* tie.Mblocks[blk] .* f[o, :]'
+    end
+    maximum(abs, G) <= tol * max(maximum(abs, q), 1e-300) && (G = nothing)
+    M, q, G
 end
 
 # ---------------------------------------------------------------------- the integer programme over regime indicators
@@ -744,11 +785,17 @@ end
 Regime indicators from a mixed-integer programme on the linearised conditions: minimise the number of periods spent in the
 alternative regimes subject to the regime logic (big-M). Slow with several constraints or long horizons; time-limited.
 """
-function _regime_milp(rg::RegimeOBC, init::AbstractVector, shock::AbstractVector, a::AbstractVector)
+function _regime_milp(rg::RegimeOBC, init::AbstractVector, shock::AbstractVector, a::AbstractVector; time_limit::Real=REGIME_MILP_TIME_LIMIT[])
+    x = vcat(init, shock)
+    Yb = _Yb(rg)
+    _regime_milp_core(rg, [Yb[t] * x for t in 1:rg.N], a; time_limit=time_limit)
+end
+
+"`_regime_milp` for the no-wedge path `Y0[t]` (`n` deviations of period `t`, `t = 1..N`): the first-order solution gives `Yb[t] x`, the higher-order solver the expected path."
+function _regime_milp_core(rg::RegimeOBC, Y0::AbstractVector, a::AbstractVector; time_limit::Real=REGIME_MILP_TIME_LIMIT[])
     T, N, n, nb, nc = rg.T, rg.N, rg.ob.n, length(rg.cols), rg.nc
     nw, nz = nb * T, nc * T
-    x = vcat(init, shock)
-    Yw, Yb = _Yw(rg), _Yb(rg)
+    Yw = _Yw(rg)
     Db, Dr = zeros(nc * N, nw), zeros(nc * N, nw)
     b0, r0 = zeros(nc * N), zeros(nc * N)
     for (j, (d_b, d_r)) in enumerate(_conditions(rg))
@@ -756,7 +803,7 @@ function _regime_milp(rg::RegimeOBC, init::AbstractVector, shock::AbstractVector
             g = d[n+1:2n]
             for t in 1:N
                 D[(j-1)*N+t, :] = g' * Yw[t]
-                d0[(j-1)*N+t] = dot(g, Yb[t] * x) + d[end]
+                d0[(j-1)*N+t] = dot(g, Y0[t]) + d[end]
             end
         end
     end
@@ -791,9 +838,9 @@ function _regime_milp(rg::RegimeOBC, init::AbstractVector, shock::AbstractVector
     end
     A = reduce(vcat, rows)
     st, xs = highs_milp(vcat(zeros(nw), ones(nz)), A, reduce(vcat, lo), reduce(vcat, hi), vcat(fill(-W, nw), zeros(nz)),
-                        vcat(fill(W, nw), ones(nz)), vcat(falses(nw), trues(nz)); time_limit=REGIME_MILP_TIME_LIMIT[])
+                        vcat(fill(W, nw), ones(nz)), vcat(falses(nw), trues(nz)); time_limit=time_limit)
     if st == :time_limit && isempty(xs)
-        throw(ObcError(:not_converged, 0, "the integer programme over regime sequences did not finish in $(REGIME_MILP_TIME_LIMIT[]) s " *
+        throw(ObcError(:not_converged, 0, "the integer programme over regime sequences did not finish in $(time_limit) s " *
                                           "(this big-M formulation is slow with several constraints or long horizons)"))
     end
     isempty(xs) && throw(ObcError(:no_solution, 0, "no regime sequence within the news horizon satisfies the model (linearised conditions)"))

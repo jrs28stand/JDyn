@@ -795,7 +795,7 @@ function obc_ho_simulate(h::ObcHO, shocks::AbstractMatrix; init=nothing)
 end
 
 # ------------------------------------------------------------------------------------ entry point (simulate with obc_order / obc_cubature)
-const _OBC_HO_CACHE = WeakKeyDict{Occbin,Dict{Any,ObcHO}}()
+const _OBC_HO_CACHE = WeakKeyDict{Occbin,Dict{Any,Any}}()
 
 "The `obc_order` value as an Int (1 or 2)."
 function _obc_order(x)
@@ -824,7 +824,7 @@ function _simulate_obc_ho(ob::Occbin, shocks_in::AbstractMatrix; horizon::Intege
                           max_check_ahead_periods::Real, init, exo_pos, ignored::NamedTuple, order::Integer, cubature::Bool,
                           periods_of_uncertainty::Integer, qmc_level::Integer, regions::Integer, m_diagnostic=:s,
                           milp_time_limit::Real=0.1, failure_tolerance::Real=0.0,
-                          undecided_tolerance=0.005, undecided_min_points=3)
+                          undecided_tolerance=0.005, undecided_min_points=3, formulation::Symbol=:lcp, note::AbstractString="")
     m, n, n_exo = ob.model, ob.n, ob.n_exo
     changed = [String(key) for (key, v) in pairs(ignored) if !isequal(v, getfield(_OBC_IGNORED_DEFAULTS, key))]
     isempty(changed) || warn_once(m, "obc_order = $order: OccBin options of the regime iteration are not used (ignored): " * join(sort(changed), ", "))
@@ -837,33 +837,42 @@ function _simulate_obc_ho(ob::Occbin, shocks_in::AbstractMatrix; horizon::Intege
     shocks = zeros(n_periods, n_exo)
     shocks[1:S, exo_idx] = Float64.(shocks_in)
     check = Int(min(check_ahead_periods, max_check_ahead_periods))
-    key = (Int(horizon), check, Int(order), cubature, Int(periods_of_uncertainty), Int(qmc_level), Int(regions), Float64(tol), m_diagnostic, Float64(milp_time_limit), Float64(failure_tolerance),
+    key = (formulation, Int(horizon), check, Int(order), cubature, Int(periods_of_uncertainty), Int(qmc_level), Int(regions), Float64(tol), m_diagnostic, Float64(milp_time_limit), Float64(failure_tolerance),
            Float64(undecided_tolerance), Int(undecided_min_points))
-    h = get!(() -> obc_ho(ob; order=order, horizon=horizon, check_ahead=check, cubature=cubature, periods_of_uncertainty=periods_of_uncertainty,
-                          qmc_level=qmc_level, regions=regions, tol=tol, m_diagnostic=m_diagnostic,
-                          cubature_milp_time_limit=milp_time_limit, cubature_failure_tolerance=failure_tolerance,
-                          cubature_undecided_tolerance=undecided_tolerance, cubature_undecided_min_points=undecided_min_points), get!(() -> Dict{Any,ObcHO}(), _OBC_HO_CACHE, ob), key)
+    mk() = formulation == :regime ?
+        obc_ho_regime(ob; order=order, horizon=horizon, check_ahead=check, cubature=cubature, periods_of_uncertainty=periods_of_uncertainty,
+                      qmc_level=qmc_level, regions=regions, tol=tol, cubature_milp_time_limit=milp_time_limit, cubature_failure_tolerance=failure_tolerance,
+                      cubature_undecided_tolerance=undecided_tolerance, cubature_undecided_min_points=undecided_min_points) :
+        obc_ho(ob; order=order, horizon=horizon, check_ahead=check, cubature=cubature, periods_of_uncertainty=periods_of_uncertainty,
+               qmc_level=qmc_level, regions=regions, tol=tol, m_diagnostic=m_diagnostic,
+               cubature_milp_time_limit=milp_time_limit, cubature_failure_tolerance=failure_tolerance,
+               cubature_undecided_tolerance=undecided_tolerance, cubature_undecided_min_points=undecided_min_points)
+    h = get!(mk, get!(() -> Dict{Any,Any}(), _OBC_HO_CACHE, ob), key)
     foreach(k -> h.stats[k] = 0, keys(h.stats))
     y0 = init === nothing || isempty(init) ? nothing : Float64.(vec(collect(init)))
     y0 === nothing || length(y0) == n || throw(ArgumentError("init needs $n values (declaration order)"))
-    sim = obc_ho_simulate(h, shocks; init=y0)
+    sim = formulation == :regime ? obc_hor_simulate(h, shocks; init=y0) : obc_ho_simulate(h, shocks; init=y0)
     T = h.T
+    nw = formulation == :regime ? h.nb : h.nc                      # wedge blocks (one per switched equation under the regime formulation)
+    blockcon = formulation == :regime ? h.rg.jb : collect(1:h.nc)
     status = fill(:ok, n_periods)
-    infos = Any[(solver=:ho, cubature=cubature, order=order, lcp=h.stats[:lcp], cubature_points=h.stats[:cubature_points],
+    infos = Any[(solver=:ho, formulation=formulation, cubature=cubature, order=order, lcp=get(h.stats, formulation == :regime ? :regime : :lcp, 0),
+                 cubature_points=h.stats[:cubature_points],
                  relevant_points=h.stats[:relevant_points], relevant=sim.relevant[t], dropped=sim.dropped[t],
                  dropped_a=sim.dropped_a[t], dropped_b=sim.dropped_b[t], dropped_c=sim.dropped_c[t]) for t in 1:n_periods]
     history = Vector{Vector{Tuple{Vector{Int},Vector{Int}}}}()
     diag = _Diag[]
+    ncons = h.nc
     for t in 1:n_periods
-        bi = falses(T, h.nc)
-        for c in 1:h.nc, s in 1:T
-            bi[s, c] = sim.wedges[t, (c-1)*T+s] > tol
+        bi = falses(T, ncons)
+        for b in 1:nw, s in 1:T
+            abs(sim.wedges[t, (b-1)*T+s]) > tol && (bi[s, blockcon[b]] = true)
         end
-        push!(history, [_map_regime(view(bi, :, c)) for c in 1:h.nc])
+        push!(history, [_map_regime(view(bi, :, c)) for c in 1:ncons])
         push!(diag, (max_err=[0.0], violates=[false], n_viol=[0.0], selected=nothing))
     end
     ss = fill((ob.P, ob.Q, zeros(n)), n_periods)
-    news = ObcNews(:news, T, [c.name for c in h.sys.cons], sim.wedges, status, infos, :lcp, nothing)
+    news = ObcNews(:news, T, formulation == :regime ? String[c["name"] for c in m.occbin_constraints] : [c.name for c in h.sys.cons], sim.wedges, status, infos, formulation, nothing, String(note))
     OccbinResult(sim.with_bound, sim.without_bound, Matrix{Float64}(shocks_in), history, ob.ys, zeros(Int, n_periods), exo_idx,
                  falses(n_periods), diag, m.endo_names, m.exo_names, ss, news)
 end
