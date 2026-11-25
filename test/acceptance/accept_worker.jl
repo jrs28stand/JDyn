@@ -9,6 +9,10 @@
 #                  <workdir>/done.<n>         when the whole command (incl. the second call) is finished; reply.<n>.json is final
 #   driver writes  <workdir>/quit             to stop the worker
 using JDyn, Logging, JSON, SparseArrays, Zlib_jll
+# JDYN_PATCH=file1.jl:file2.jl: definitions loaded into JDyn after `using JDyn` (development only: avoids a precompile per edit)
+for f in split(get(ENV, "JDYN_PATCH", ""), ":"; keepempty=false)
+    Base.include(JDyn, f)
+end
 
 const JD = JDyn
 const WORK = isempty(ARGS) ? mktempdir() : ARGS[1]
@@ -194,8 +198,12 @@ function classify(e)
     "error", string(t) * ": " * msg
 end
 
+# JDYN_ACCEPT_RNG=octave: the workspace's stream, the particle filters and the MCMC samplers draw Octave's numbers bit for bit
+# (`dynare(file; random=:octave)`), one stream in file order as Dynare under Octave does, and the result json says "rng": "octave"
+# so that the comparator compares the random-number dependent fields too.
+const OCTAVE_RNG = get(ENV, "JDYN_ACCEPT_RNG", "") == "octave"
 function rng_kwargs()
-    get(ENV, "JDYN_ACCEPT_RNG", "") == "octave" ? (; particle_rng=:octave, mcmc_rng=:octave) : (;)
+    OCTAVE_RNG ? (; random=:octave, particle_rng=:octave, mcmc_rng=:octave) : (;)
 end
 
 function run_cmd(c::AbstractDict, n::Int)
@@ -209,6 +217,7 @@ function run_cmd(c::AbstractDict, n::Int)
     matp = c["mat"]
     kw = merge(rng_kwargs(), isempty(args) ? (;) : (; extra_args=args))
     info = Dict{String,Any}("status" => "ok", "message" => "", "load_s" => LOAD_S[], "warmup_s" => WARMUP_S[])
+    OCTAVE_RNG && (info["rng"] = "octave")
     lg = Collect(0)
     ws = nothing
     try

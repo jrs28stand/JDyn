@@ -297,7 +297,7 @@ function _intersect_stable(a, b)
 end
 
 function _compute_variance_decomposition(R::Rules, Sigma, o, A, aa, ghu_s, stationary, idx_stat, nvars, var_stationary)
-    R.nexo == 1 && return ones(nvars, 1)
+    R.nexo == 1 && return ones(size(R.ghu, 1), 1)         # compute_variance_decomposition.m: ones(size(ghu,1),1), all endo_nbr rows, not only the requested ones
     cs = get_lower_cholesky_covariance(Sigma; add_tiny=o["add_tiny_number_to_cholesky"])
     b1 = ghu_s * cs
     b2 = R.ghu[idx_stat, :] * cs

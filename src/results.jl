@@ -101,7 +101,8 @@ function build_M(m::Model)
     M.Sigma_e = copy(m.Sigma_e)
     M.Correlation_matrix = copy(declared_correlation_matrix(m))
     M.sigma_e_is_diagonal = isdiag(m.Sigma_e)
-    M.H = Matrix{Float64}(LinearAlgebra.Diagonal([get(m.measurement_errors, v, 0.0) for v in m.varobs]))
+    M.H = me_H(m, m.varobs)
+    M.Correlation_matrix_ME = me_corr_matrix(m, m.varobs)
     aux = Any[]
     for a in get_or(m.raw, "aux_vars", [])
         s = MStruct()
@@ -199,6 +200,10 @@ function _sync_model!(ws)
         ws.M_.Sigma_e = copy(m.Sigma_e)
     end
     ws.M_.Correlation_matrix = copy(declared_correlation_matrix(m))
+    if !haskey(ws.state, :H)                      # no estimation has set the measurement-error covariance
+        ws.M_.H = me_H(m, m.varobs)
+        ws.M_.Correlation_matrix_ME = me_corr_matrix(m, m.varobs)
+    end
     _mark_synced!(ws)
     m
 end
@@ -275,7 +280,7 @@ function _store_params!(ws, p)
 end
 
 # ---------------------------------------------------------------------- oo_
-function _store_dr!(oo::MStruct, dr::AbstractDict, n::Int)
+function _store_dr!(oo::MStruct, dr::AbstractDict, n::Int; sol=nothing, kos::Bool=false)
     D = MStruct()
     old = get(oo, "dr", nothing)
     old isa MStruct && haskey(old, "eigval") && (D.eigval = old.eigval)
@@ -288,11 +293,87 @@ function _store_dr!(oo::MStruct, dr::AbstractDict, n::Int)
         haskey(dr, k) && (D[k] = Matrix{Float64}(dr[k]))
     end
     haskey(dr, "ghs2") && (D.ghs2 = _col(dr["ghs2"]))
-    if haskey(dr, "ghx") && haskey(dr, "state_var")      # dr.Gy (dyn_first_order_solver): the transition matrix of the predetermined variables
+    ex = sol === nothing ? (;) : sol.extra
+    if haskey(ex, :gx) && !kos
+        # dyn_first_order_solver.m / stochastic_solvers.m: gx, Gy (= hx, the transition matrix of the states, in levels also under
+        # loglinear, where Dynare converts only ghx and ghu), sdim and edim; the simplified purely backward branch sets no gx or Gy
+        # but full_rank = 1
+        if ex.backward
+            D.full_rank = 1.0
+        else
+            D.gx = ex.gx
+            D.Gy = ex.hx
+        end
+        D.sdim = Float64(ex.sdim); D.edim = Float64(ex.edim)
+    elseif haskey(dr, "ghx") && haskey(dr, "state_var")      # dr.Gy: the transition matrix of the predetermined variables
         rows = findall(v -> Int(v) in Int.(dr["state_var"]), Int.(dr["order_var"]))
         length(rows) == size(dr["ghx"], 2) && (D.Gy = Matrix{Float64}(dr["ghx"])[rows, :])
     end
+    if kos       # k_order_pert.m copies Dynare++'s folded tensors, and with pruning the pruned ones
+        for i in 0:Int(get(dr, "order", 1))
+            g = get(dr, "g_$i", nothing)
+            g === nothing || (D["g_$i"] = Matrix{Float64}(g))
+        end
+        if get(dr, "pruning", false) === true
+            P = MStruct()
+            for i in 0:Int(get(dr, "order", 1))
+                g = get(dr, "pruning_g_$i", nothing)
+                g === nothing || (P["g_$i"] = Matrix{Float64}(g))
+            end
+            D.pruning = P
+        end
+    end
     oo.dr = D
+end
+
+"""
+`dr.fuu` of dyn_second_order_solver.m: the (equation-ordered) vector `g1(:,lead)*ghuu(lead,:)*vec(Sigma_e) + g2(:,lead,lead)*kron(ghu(lead,:),ghu(lead,:))*vec(Sigma_e)`,
+the second-order terms of the forward-looking variables that enter the `ghs2` equation.
+"""
+function _dr_fuu(m::Model, dr::AbstractDict, J::AbstractMatrix)
+    n = m.n_endo
+    ys = Vector{Float64}(dr["ys"])
+    params = haskey(dr, "params") ? Vector{Float64}(dr["params"]) : copy(m.params)
+    ov = Int.(dr["order_var"]); inv = invperm(ov)
+    ghu = Matrix{Float64}(dr["ghu"])[inv, :]                   # declaration order
+    ghuu = Matrix{Float64}(dr["ghuu"])[inv, :]
+    Sig = Matrix{Float64}(m.Sigma_e)
+    vecS = vec(Sig)
+    lead = findall(>(0), m.lead_lag_incidence[:, 3])
+    fuu = zeros(n)
+    for j in lead
+        fuu .+= J[:, 2n+j] .* dot(ghuu[j, :], vecS)
+    end
+    r, c, v = dynamic_sparse_derivs(m, 2, vcat(ys, ys, ys), exo_steady(m), params, ys)
+    for k in eachindex(r)
+        c1, c2 = c[k, 1], c[k, 2]
+        (2n < c1 <= 3n && 2n < c2 <= 3n) || continue
+        a, b = c1 - 2n, c2 - 2n
+        w = dot(ghu[a, :], Sig * ghu[b, :])
+        fuu[r[k]] += v[k] * w * (a == b ? 1.0 : 2.0)
+    end
+    fuu
+end
+
+"The `varexo_det` terms of stochastic_solvers.m (dr.exo_det_length, ghud, and at order 2 ghxud, ghudud, ghuud) as Dynare stores them."
+function _store_exo_det_dr!(D::MStruct, m::Model, dr::AbstractDict)
+    ed = try
+        exo_det_decision_rules(m, dr)
+    catch e
+        e isa ModelError || rethrow()
+        warn_once(m, "varexo_det: the deterministic-exogenous decision rules are not stored in oo_.dr ($(e.msg))")
+        return D
+    end
+    L = Int(ed["exo_det_length"])
+    D.exo_det_length = Float64(L)
+    D.ghud = Cell(Any[Matrix{Float64}(x) for x in ed["ghud"]], (L, 1))
+    if haskey(ed, "ghxud")
+        D.ghxud = Cell(Any[Matrix{Float64}(x) for x in ed["ghxud"]], (L, 1))
+        D.ghuud = Cell(Any[Matrix{Float64}(x) for x in ed["ghuud"]], (L, 1))
+        items = Any[haskey(ed["ghudud"], (j, k)) ? Matrix{Float64}(ed["ghudud"][(j, k)]) : zeros(0, 0) for k in 1:L for j in 1:L]
+        D.ghudud = Cell(items, (L, L))
+    end
+    D
 end
 
 _shock_list(v, m) = v isa AbstractVector{<:AbstractString} ? String.(v) : v isa Cell ? String.(collect(v)) :
@@ -319,41 +400,44 @@ function _stoch_simul(ws, m, oo, var_list, shocks, rng)
     pruning = _optb(ws, "pruning", false)
     order > 1 && m.max_deriv_order < order && throw(ModelError("stoch_simul(order=$order) needs derivatives of order $order: run dynare(...; output=\"$(order == 2 ? "second" : "third")\")"))
     solved = pop!(ws.state, :solved_dr, nothing)        # discretionary_policy: the rules are not the perturbation solution
+    # stoch_simul.m: oo_.exo_simul is filled with the exogenous steady state over max(periods,1) + lags + leads before anything is solved
+    if m.n_exo > 0
+        nper = max(_opti(ws, "periods", 0), 1) + Int(m.raw["model_info"]["maximum_lag"]) + Int(m.raw["model_info"]["maximum_lead"])
+        oo.exo_simul = repeat(permutedims(Float64.(exo_steady(m))), nper, 1)
+    end
+    if get(ws.state, :logged_ss, false) === true && haskey(oo, "steady_state")       # "if options_.logged_steady_state: undo this"
+        ss = vec(Float64.(oo.steady_state)); mask = log_mask(m)
+        length(ss) == m.n_endo && (oo.steady_state = _col([mask[i] ? exp(ss[i]) : ss[i] for i in 1:m.n_endo]))
+        ws.state[:logged_ss] = false
+    end
+    kos = _optb(ws, "k_order_solver", false) || order >= 3       # Dynare solves with the k-order library (g_0 ... g_k, no gx or Gy)
+    sol = nothing
     if solved !== nothing
         dr, p, eigv = solved
     else
         sol = first_order(m)                      # also gives dr.eigval, which Dynare's resol stores at every order
-        dr, p = order == 1 ? (as_dr(sol), sol.params) : (d = k_order(m; order=order, pruning=pruning); (d, d["params"]))
+        dr, p = (order == 1 && !kos) ? (as_dr(sol), sol.params) :
+                (d = k_order(m; order=order, pruning=pruning); (d, d["params"]))
         eigv = sol.eigenvalues
     end
     _store_params!(ws, p)
-    _store_dr!(oo, dr, m.n_endo)
+    _store_dr!(oo, dr, m.n_endo; sol=sol, kos=kos && solved === nothing)
+    if solved === nothing && !kos
+        order == 2 && (oo.dr.fuu = _col(_dr_fuu(m, dr, sol.jacobian)))
+        n_exo_det(m) > 0 && _store_exo_det_dr!(oo.dr, m, dr)
+    end
     oo.dr.eigval = _eigcol(eigv)
-    oo.steady_state = _col(dr["ys"])
-    oo.exo_steady_state = _col(exo_steady(m))
+    # stoch_simul.m leaves oo_.steady_state alone (the initval values, or the last `steady`): resol only fills oo_.dr.ys. Under
+    # loglinear it logs oo_.steady_state (log_variable) once and flags options_.logged_steady_state, undone at the next solve.
+    if _optb(ws, "loglinear", false) && get(ws.state, :logged_ss, false) !== true
+        ss = vec(Float64.(get(oo, "steady_state", zeros(m.n_endo))))
+        mask = log_mask(m)
+        length(ss) == m.n_endo && (oo.steady_state = _col([mask[i] ? log(ss[i]) : ss[i] for i in 1:m.n_endo]))
+        ws.state[:logged_ss] = true
+    end
     var_list = isempty(var_list) ? orig_endo_names(m) : String.(collect(var_list))
     oo.var_list = _cellcol(var_list)
     ivar = [m.ie[v] for v in var_list]
-    nirf = _opti(ws, "irf", 40)
-    if nirf > 0
-        irfs = get(oo, "irfs", MStruct())
-        cs = get_lower_cholesky_covariance(m.Sigma_e)
-        relative = _optb(ws, "relative_irf", false)
-        for sname in _shock_list(_getpath(ws.options_, "irf_shocks", nothing), m)
-            i = m.ix[sname]
-            cs[i, i] > 5e-7 || continue                           # stoch_simul.m: no IRF for (near) zero variance
-            impulse = order > 1 && relative ? cs[:, i] ./ cs[i, i] ./ 100 : cs[:, i]   # GIRFs: shock normalised to 0.01
-            y = order == 1 ? irf(dr, impulse; periods=nirf) :
-                irf(dr, impulse; Sigma_e=m.Sigma_e, periods=nirf, order=order, pruning=pruning,
-                    drop=_opti(ws, "drop", 100), replic=_opti(ws, "replic", 50),
-                    rng=rng === nothing ? dynare_rng(ws) : rng)
-            relative && order == 1 && (y = 100 .* y ./ cs[i, i])
-            for j in ivar
-                irfs[string(m.endo_names[j], "_", sname)] = _row(y[:, j])
-            end
-        end
-        oo.irfs = irfs
-    end
     periods = _opti(ws, "periods", 0)
     if periods > 0
         ex = if shocks !== nothing
@@ -363,7 +447,8 @@ function _stoch_simul(ws, m, oo, var_list, shocks, rng)
             r = rng === nothing ? dynare_rng(ws) : rng
             iv = findall(!=(0), diag(m.Sigma_e))
             e = zeros(periods, m.n_exo)
-            e[:, iv] .= randn(r, periods, length(iv)) * Matrix(cholesky(Symmetric(m.Sigma_e[iv, iv])).U)
+            # simult.m: transpose(randn(nxs, periods)) * chol(Sigma_e(iv, iv)): the draws fill period by period
+            e[:, iv] .= permutedims(randn(r, length(iv), periods)) * Matrix(cholesky(Symmetric(m.Sigma_e[iv, iv])).U)
             e
         end
         # stoch_simul.m: the simulation starts from M_.endo_histval (histval), else from the steady state
@@ -375,8 +460,8 @@ function _stoch_simul(ws, m, oo, var_list, shocks, rng)
     end
     if !_optb(ws, "nomoments", false) && (order <= 2 || (order == 3 && pruning && periods == 0))
         mom = try
-            periods > 0 ? simulated_moments(permutedims(oo.endo_simul); ivar=ivar, shocks=oo.exo_simul, dr=dr, model=m) :
-                          theoretical_moments(m, dr; var_list=var_list)
+            periods > 0 ? simulated_moments(permutedims(oo.endo_simul); ivar=ivar, shocks=oo.exo_simul, dr=dr, model=m, order=order) :
+                          theoretical_moments(m, dr; var_list=var_list, order=order, pruning=pruning)
         catch e
             e isa Union{ArgumentError,ModelError} || rethrow()
             warn_once(m, "stoch_simul: moments not computed ($(sprint(showerror, e)))")
@@ -396,6 +481,27 @@ function _stoch_simul(ws, m, oo, var_list, shocks, rng)
                 mom.kurtosis === nothing || (oo.kurtosis = _col(mom.kurtosis))
             end
         end
+    end
+    # stoch_simul.m draws the simulation first, then the (generalised) IRFs: one random stream, in that order
+    nirf = _opti(ws, "irf", 40)
+    if nirf > 0
+        irfs = get(oo, "irfs", MStruct())
+        cs = get_lower_cholesky_covariance(m.Sigma_e)
+        relative = _optb(ws, "relative_irf", false)
+        for sname in _shock_list(_getpath(ws.options_, "irf_shocks", nothing), m)
+            i = m.ix[sname]
+            cs[i, i] > 5e-7 || continue                           # stoch_simul.m: no IRF for (near) zero variance
+            impulse = order > 1 && relative ? cs[:, i] ./ cs[i, i] ./ 100 : cs[:, i]   # GIRFs: shock normalised to 0.01
+            y = order == 1 ? irf(dr, impulse; periods=nirf) :
+                irf(dr, impulse; Sigma_e=m.Sigma_e, periods=nirf, order=order, pruning=pruning,
+                    drop=_opti(ws, "drop", 100), replic=_opti(ws, "replic", 50),
+                    rng=rng === nothing ? dynare_rng(ws) : rng)
+            relative && order == 1 && (y = 100 .* y ./ cs[i, i])
+            for j in ivar
+                irfs[string(m.endo_names[j], "_", sname)] = _row(y[:, j])
+            end
+        end
+        oo.irfs = irfs
     end
     oo
 end
@@ -592,8 +698,21 @@ function occbin_solver!(ws::DynareWorkspace; options...)
     sim.shocks_sequence = Matrix{Float64}(r.shocks)
     sim.exo_pos = _col(r.exo_pos)
     sim.regime_history = _regime_history_cell(r.regime_history)
+    sim.ys = _col(r.ys)
+    sim.error_flag = 0.0
     occ = get(ws.oo_, "occbin", MStruct())
     occ.simul = sim
+    # occbin.unpack_simulations.m: the simulations by variable name (and the shocks used)
+    lin, pw, sss = MStruct(), MStruct(), MStruct()
+    for (i, v) in enumerate(ws.model.endo_names)
+        lin[v] = _col(r.linear[:, i]); pw[v] = _col(r.piecewise[:, i]); sss[v] = Float64(r.ys[i])
+    end
+    occ.endo_linear = lin; occ.endo_piecewise = pw; occ.endo_ss = sss
+    ex = MStruct()
+    for (j, p) in enumerate(r.exo_pos)
+        j <= size(r.shocks, 2) && (ex[ws.model.exo_names[j]] = _col(r.shocks[:, j]))
+    end
+    occ.exo = ex
     ws.oo_.occbin = occ
     ws
 end
@@ -611,11 +730,16 @@ stoch_simul!(var_list::AbstractVector; kw...) = stoch_simul!(_current(), var_lis
 set_param_value!(name::AbstractString, v::Real) = set_param_value!(_current(), name, v)
 
 """
-    dynare(modfile; output=nothing, shocks=Dict(), rng=nothing, seed=nothing, kw...) -> DynareWorkspace
+    dynare(modfile; output=nothing, shocks=Dict(), rng=nothing, seed=nothing, random=:julia, kw...) -> DynareWorkspace
 
 Run a .mod file as `dynare modfile` does and return M_, options_ and oo_ as MATLAB-style structs:
 `ws.oo_.endo_simul`, `ws.oo_.dr.ghx`, `ws.oo_.irfs.y_e`, `ws.M_.params`, ... (Julia reads them with
 MATLAB's syntax). `@dynare "model.mod"` also defines `M_`, `options_` and `oo_` in the caller's module.
+
+`random=:octave` gives Octave's random numbers bit for bit (the Mersenne twister and ziggurat of Octave 8.4): the workspace's
+stream becomes an `OctaveRNG`, so the file's own `rand`/`randn`/`randi`/`randperm`/`rng`/`set_dynare_seed` calls and Dynare's
+commands (simulated shocks, forecast draws, particle filters, MCMC) consume one stream in file order, as Dynare under Octave
+does. The default `random=:julia` keeps the seeded Xoshiro stream (reproducible, not Octave's numbers).
 
 Commands run where they stand in the file, with the calibration of that point, and MATLAB lines read and
 write their results (`irf1 = oo_.irfs.y_e;`, `oo_.exo_simul(2, 1) = 0.1;`). Afterwards, re-run them on the
@@ -628,7 +752,8 @@ otherwise shocks are drawn from the workspace's random stream (`seed=n` seeds it
 seed 0 like Dynare's 'default'; `set_dynare_seed(...)` lines of the file act as in Dynare; an explicit `rng` replaces
 the stream). The draws are Julia's, reproducible run to run but not MATLAB's: see docs/RESULTS.md, "Random draws".
 """
-function dynare(modfile::AbstractString; output=nothing, shocks=Dict{Int,Any}(), rng=nothing, seed=nothing, particle_rng=nothing, mcmc_rng=nothing, _json_dir=nothing, plots::Bool=false, plots_backend::Symbol=:svg, kw...)
+function dynare(modfile::AbstractString; output=nothing, shocks=Dict{Int,Any}(), rng=nothing, seed=nothing, particle_rng=nothing, mcmc_rng=nothing, _json_dir=nothing, plots::Bool=false, plots_backend::Symbol=:svg, random::Symbol=:julia, kw...)
+    random in (:julia, :octave) || throw(ArgumentError("random must be :julia (default) or :octave"))
     if output === nothing
         # derivatives up to the highest order a stoch_simul statement asks for (Dynare's default is 2)
         output = occursin(r"order\s*=\s*3", read(modfile, String)) ? "third" : "second"
@@ -636,13 +761,17 @@ function dynare(modfile::AbstractString; output=nothing, shocks=Dict{Int,Any}(),
     wsref = Ref{Any}(nothing)
     nss = Ref(0)
     factory = function (m)
+        random === :octave && use_octave_random!(m)                  # one Octave stream for simulations and the file's rand/randn (src/matlab/rng.jl)
         set_dynare_seed!(m, seed === nothing ? "default" : seed)     # Dynare seeds its stream with 'default' at start-up
         particle_rng === nothing || set_rng_kind!(m, particle_rng)   # :octave = Octave's numbers in the particle filters (src/octave_rng.jl)
         mcmc_rng === nothing || set_mcmc_rng!(m, mcmc_rng)           # :octave = Dynare's random numbers in the MCMC samplers (src/mcmc_driver.jl)
         ws = DynareWorkspace(m, build_M(m), build_options(m), MStruct(), Dict{String,Any}())
         ws.oo_.exo_det_steady_state = n_exo_det(m) > 0 ? _col(exo_det_steady(m)) : zeros(0, 0)
         ws.oo_.dynare_version = "7.2"
+        ws.oo_.steady_state = zeros(m.n_endo, 1)           # the driver's `oo_.steady_state = zeros(endo_nbr, 1)`; initval and steady fill it
+        ws.oo_.exo_steady_state = zeros(m.n_exo, 1)
         ws.state[:matlab_options] = Dict{String,Any}()
+        m.session.host.M.results = ws.M_
         m.session.host.oo.results = ws.oo_          # MATLAB lines of the file see (and write) this oo_
         _pf_register_host!(ws)                      # perfect_foresight_solver(M_, options_, oo_) & co. (src/pf_functions.jl)
         ws.state[:plots] = plots; ws.state[:plots_backend] = plots_backend
@@ -656,6 +785,7 @@ function dynare(modfile::AbstractString; output=nothing, shocks=Dict{Int,Any}(),
         ALLOW_RANDOM[] = allow0
     end
     ws = wsref[]
+    m.session.host.M.results = nothing
     m.session.host.oo.results = nothing             # the struct now belongs to the workspace alone
     _apply_matlab_options!(ws)
     # M_ as the driver leaves it at the end of the file (declarations, final calibration); histval kept
@@ -666,6 +796,7 @@ function dynare(modfile::AbstractString; output=nothing, shocks=Dict{Int,Any}(),
         ws.M_[k] = fresh[k]
     end
     ws.M_.endo_histval = h
+    haskey(ws.state, :CME) && (ws.M_.Correlation_matrix_ME = ws.state[:CME])
     haskey(ws.state, :H) && (ws.M_.H = ws.state[:H])           # the measurement-error covariance estimation left (results_estimation.jl)
     _mark_synced!(ws)
     # Dynare writes <fname>/Output/<fname>_results.mat; not while precompiling (the fixture lives in the package source)
@@ -712,6 +843,14 @@ function _run_in_place!(ws, st, nss, shocks, rng)
     m = ws.model
     kind = st["statementName"]
     _apply_matlab_options!(ws)
+    if kind == "set_time"
+        ws.state[:set_time] = string(get(st, "period", ""))
+        return
+    elseif kind == "estimation_data"                     # the `data` command: read by the next estimation (results_estimation.jl)
+        o = get_or(st, "options", nothing)
+        ws.state[:dataset] = o isa AbstractDict ? Dict{String,Any}(String(k) => v for (k, v) in o) : Dict{String,Any}()
+        return
+    end
     _apply_options!(ws.options_, st)
     if kind == "endval"                                # (learnt_in=p > 1 is news for the expectation-errors commands, M_.learnt_endval: oo_ is not touched)
         haskey(st, "learnt_in") && _pf_period(st["learnt_in"], "learnt_in") != 1 || _endval_learnt_in!(ws, st)

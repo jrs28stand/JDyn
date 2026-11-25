@@ -54,7 +54,7 @@ const _DECOMP_COSMETIC = Set(["colormap", "fig_name", "graph_format", "nodisplay
 const _SM_REFUSED = Dict("smoother_redux" => "smoother_redux",
     "occbin" => "OccBin smoothing", "noconstant" => "noconstant (Dynare's store_smoother_results ignores it, so its output mixes two conventions)", "partial_information" => "partial information", "kalman_algo5" => "the pruned skewed filter")
 
-_unwrap1(v) = (v isa AbstractVector && length(v) == 1) ? v[1] : v
+_unwrap1(v) = (v isa AbstractArray && length(v) == 1) ? v[1] : v
 _flag(v) = !(v === false || v === 0 || v === 0.0 || v === nothing || v == "")
 _tonum(v) = v isa AbstractString ? parse(Float64, v) : Float64(v)
 
@@ -839,7 +839,7 @@ function _smooth_linear(m::Model, data=nothing; sol=nothing, estimation=nothing,
             Q = Matrix{Float64}(m.Sigma_e)
             extra = sort([v for v in keys(m.measurement_errors) if !(v in varobs)])
             isempty(extra) || throw(SmootherError("measurement error declared on non-observed variable(s) $extra"))
-            Hme = Matrix(Diagonal(Float64[get(m.measurement_errors, v, 0.0) for v in varobs]))
+            Hme = me_H(m, varobs)
             if sol === nothing
                 sol = _first_order_checked(m, nothing, qz, loglinear, lik_init)
             elseif sol.loglinear != loglinear
