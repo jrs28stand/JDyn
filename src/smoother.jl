@@ -31,7 +31,7 @@ const _SM_DEFAULTS = Dict{String,Any}("datafile" => nothing, "first_obs" => 1, "
     "loglinear" => false, "logdata" => false, "presample" => 0, "diffuse_filter" => false, "lik_init" => 1,
     "kalman_algo" => 0, "kalman_tol" => 1e-10, "diffuse_kalman_tol" => 1e-6, "qz_criterium" => nothing,
     "filtered_vars" => false, "filter_step_ahead" => nothing, "filter_covariance" => false,
-    "smoothed_state_uncertainty" => false, "parameter_set" => "calibration", "varobs" => nothing,
+    "smoothed_state_uncertainty" => false, "filter_decomposition" => false, "parameter_set" => "calibration", "varobs" => nothing,
     "replicate_dynare_bugs" => false, "Harvey_scale_factor" => 10.0,
     "use_univariate_smoother_if_singularity_is_detected" => false, "noprint" => false, "heteroskedastic_filter" => false)
 "Set by `_smoother_multivariate` when it stops because F is singular in a stationary period (Dynare's error flag 422)."
@@ -109,7 +109,7 @@ function _resolve_options(m::Model, user::Dict{String,Any}; extra_kinds=())
     for k in ("kalman_tol", "diffuse_kalman_tol", "Harvey_scale_factor")
         opts[k] = _tonum(_unwrap1(opts[k]))
     end
-    for k in ("loglinear", "logdata", "diffuse_filter", "filtered_vars", "filter_covariance", "smoothed_state_uncertainty",
+    for k in ("loglinear", "logdata", "diffuse_filter", "filtered_vars", "filter_covariance", "smoothed_state_uncertainty", "filter_decomposition",
               "replicate_dynare_bugs")
         opts[k] = _flag(_unwrap1(opts[k]))
     end
@@ -154,6 +154,7 @@ Base.@kwdef mutable struct SmootherResult
     loglinear::Bool
     FilteredVariablesKStepAhead::Union{Nothing,Array{Float64,3}} = nothing
     FilteredVariablesKStepAheadVariances::Union{Nothing,Array{Float64,4}} = nothing
+    FilteredVariablesShockDecomposition::Union{Nothing,Array{Float64,4}} = nothing   # (steps, n_endo, n_shocks, nobs + max step)
     filter_step_ahead::Vector{Int} = Int[]
     Variance::Union{Nothing,Array{Float64,3}} = nothing
     State_uncertainty::Union{Nothing,Array{Float64,3}} = nothing
@@ -198,7 +199,7 @@ routine reports a singular forecast-error variance (the caller then switches to 
 three defects of Dynare 7.2 in the diffuse phase. `a_pred` is the state forecast of period 1, `a_zero` the mean of the period-0
 state (zero unless `filter_initial_state` is used).
 """
-function _smoother_multivariate(T, Z, R, Q, H, Pinf1, Pstar1, Y, di, nk, kalman_tol, dk_tol, want_V, want_PK, compat, a_pred, a_zero)
+function _smoother_multivariate(T, Z, R, Q, H, Pinf1, Pstar1, Y, di, nk, kalman_tol, dk_tol, want_V, want_PK, compat, a_pred, a_zero; want_decomp=false)
     mm = size(T, 1)
     pp, smpl = size(Y)
     Tt = T'
@@ -347,6 +348,26 @@ function _smoother_multivariate(T, Z, R, Q, H, Pinf1, Pstar1, Y, di, nk, kalman_
         t += 1
     end
 
+    # ---- filter decomposition (missing_DiffuseKalmanSmootherH1_Z): shock contributions to the k-step ahead filtered values
+    decomp = nothing
+    if want_decomp
+        rr = size(R, 2)
+        decomp = zeros(nk, mm, rr, smpl + nk)
+        ZRQinv = inv(Z * (R * Matrix(qvec ? Qv[:, :, 1] : Q) * R') * Z')
+        for t in max(d, 1)+1:smpl
+            d_ = di[t]
+            isempty(d_) && continue
+            ZZ = Z[d_, :]
+            eta = QRt_at(t) * (ZZ' * (iFv[t] * v[d_, t]))
+            AAA = P[:, :, t] * ZZ' * ZRQinv[d_, d_] * ((ZZ * R) .* eta')
+            decomp[1, :, :, t+1] = AAA
+            for h in 2:nk
+                AAA = T * AAA
+                decomp[h, :, :, t+h] = AAA
+            end
+        end
+    end
+
     # ---- backward pass
     alphahat = zeros(mm, smpl)
     etahat = zeros(size(Q, 1), smpl)
@@ -429,7 +450,7 @@ function _smoother_multivariate(T, Z, R, Q, H, Pinf1, Pstar1, Y, di, nk, kalman_
             V0 = Pstar_init - Pstar_init * (Tt * N[1] * T) * Pstar_init - x' - x - Pinf_init * (Tt * N2[1] * T) * Pinf_init
         end
     end
-    (alphahat=alphahat, etahat=etahat, updated=atilde, P=P, aK=aK, PK=PK, V=V, V0=V0, d=d, alphahat0=alphahat0)
+    (alphahat=alphahat, etahat=etahat, updated=atilde, P=P, aK=aK, PK=PK, V=V, V0=V0, d=d, alphahat0=alphahat0, decomp=decomp)
 end
 
 # ====================================================================== core: univariate smoother
@@ -438,7 +459,7 @@ Port of `missing_DiffuseKalmanSmootherH3_Z` (no OccBin): observations are proces
 measurement-error covariance (correlated errors are handled by the caller through an enlarged state vector, as Dynare).
 `compat=true` keeps a defect of Dynare 7.2 in the smoothed state uncertainty of the diffuse phase.
 """
-function _smoother_univariate(T, Z, R, Q, Hd, Pinf1, Pstar1, Y, di, nk, kalman_tol, dk_tol, want_V, want_PK, compat, a_pred, a_zero)
+function _smoother_univariate(T, Z, R, Q, Hd, Pinf1, Pstar1, Y, di, nk, kalman_tol, dk_tol, want_V, want_PK, compat, a_pred, a_zero; want_decomp=false)
     mm = size(T, 1)
     pp, smpl = size(Y)
     Tt = T'
@@ -538,6 +559,33 @@ function _smoother_univariate(T, Z, R, Q, Hd, Pinf1, Pstar1, Y, di, nk, kalman_t
     end
     P1[:, :, t] = P[:, :, t]
 
+    # ---- filter decomposition (missing_DiffuseKalmanSmootherH3_Z)
+    decomp = nothing
+    if want_decomp
+        rr = size(R, 2)
+        decomp = zeros(nk, mm, rr, smpl + nk)
+        ZRQinv = inv(Z * QQ * Z')
+        for t in max(d, 1)+1:smpl
+            ri_d = zeros(mm)
+            for i in reverse(di[t])
+                if Fi[i, t] > kalman_tol
+                    Zi = Z[i, :]
+                    ri_d = Zi / Fi[i, t] * v[i, t] + ri_d - Zi * (dot(Ki[:, i, t], ri_d) / Fi[i, t])
+                end
+            end
+            eta = QRt * ri_d
+            AAA = P1[:, :, t] * Z' * ZRQinv * Z * R
+            Ttok = Matrix{Float64}(I, mm, mm)
+            for h in 1:nk
+                BBB = Ttok * AAA
+                for j in 1:rr
+                    decomp[h, :, j, t+h] = eta[j] * BBB[:, j]
+                end
+                Ttok = T * Ttok
+            end
+        end
+    end
+
     # ---- backward pass
     alphahat = zeros(mm, smpl)
     etahat = zeros(size(Q, 1), smpl)
@@ -611,7 +659,7 @@ function _smoother_univariate(T, Z, R, Q, Hd, Pinf1, Pstar1, Y, di, nk, kalman_t
         end
     end
     (d == smpl && diffuse) && @warn "the diffuse filter never left the diffuse phase: the data do not identify the initial conditions of the non-stationary variables"
-    (alphahat=alphahat, etahat=etahat, updated=a, P=P1, aK=aK, PK=PK, V=V, V0=V0, d=d, alphahat0=alphahat0)
+    (alphahat=alphahat, etahat=etahat, updated=a, P=P1, aK=aK, PK=PK, V=V, V0=V0, d=d, alphahat0=alphahat0, decomp=decomp)
 end
 
 # ====================================================================== parameter sets
@@ -932,6 +980,8 @@ function _smooth_linear(m::Model, data=nothing; sol=nothing, estimation=nothing,
     fsa = opts["filter_step_ahead"]
     nk = isempty(fsa) ? 1 : maximum(fsa)
     want_V, want_PK = opts["smoothed_state_uncertainty"], opts["filter_covariance"]
+    want_decomp = _flag(_unwrap1(opts["filter_decomposition"]))
+    want_decomp && isempty(fsa) && (want_decomp = false)         # stored only with filter_step_ahead (store_smoother_results.m)
 
     # heteroskedastic_filter (src/heteroskedastic.jl): time-varying Q, multivariate smoother only
     het = _flag(_unwrap1(opts["heteroskedastic_filter"]))
@@ -940,7 +990,7 @@ function _smooth_linear(m::Model, data=nothing; sol=nothing, estimation=nothing,
     out = nothing
     if algo in (1, 3)
         _SINGULAR_F[] = false
-        out = _smoother_multivariate(G, Z, Hs, Qs, Hme, Pinf, Pstar, Yd, di, nk, ktol, dtol, want_V, want_PK, compat, a_pred, a_zero)
+        out = _smoother_multivariate(G, Z, Hs, Qs, Hme, Pinf, Pstar, Yd, di, nk, ktol, dtol, want_V, want_PK, compat, a_pred, a_zero; want_decomp)
         if out === nothing
             # DsgeSmoother.m: stochastic singularity in a stationary period is an error (print_info) unless
             # use_univariate_smoother_if_singularity_is_detected is set (or noprint)
@@ -969,10 +1019,11 @@ function _smooth_linear(m::Model, data=nothing; sol=nothing, estimation=nothing,
         Hd = expanded ? zeros(pp) : diag(Hme)
         ap = a_pred === nothing ? nothing : (expanded ? vcat(a_pred, zeros(pp)) : a_pred)
         az = a_zero === nothing ? nothing : (expanded ? vcat(a_zero, zeros(pp)) : a_zero)
-        out = _smoother_univariate(ST, Zx, R1, Qx, Hd, Pinf, Pstar, Yd, di, nk, ktol, dtol, want_V, want_PK, compat, ap, az)
+        out = _smoother_univariate(ST, Zx, R1, Qx, Hd, Pinf, Pstar, Yd, di, nk, ktol, dtol, want_V, want_PK, compat, ap, az; want_decomp)
     end
     alphahat, etahat, updated, aK, Pout = out.alphahat, out.etahat, out.updated, out.aK, out.P
     PKout, Vout, V0out, alpha0 = out.PK, out.V, out.V0, out.alphahat0
+    decomp = out.decomp
     eps = permutedims(Yd) .- permutedims(alphahat[mf, :])                 # NaN where the observation is missing
     if expanded && algo in (2, 4)
         k = 1:n
@@ -981,6 +1032,7 @@ function _smooth_linear(m::Model, data=nothing; sol=nothing, estimation=nothing,
         alphahat, updated, alpha0 = alphahat[k, :], updated[k, :], alpha0[k]
         aK = aK[:, k, :]
         PKout === nothing || (PKout = PKout[:, k, k, :])
+        decomp === nothing || (decomp = decomp[:, k, :, :])
         Pout = Pout[k, k, :]
         Vout === nothing || (Vout = Vout[k, k, :])
         V0out === nothing || (V0out = V0out[k, k])
@@ -999,7 +1051,7 @@ function _smooth_linear(m::Model, data=nothing; sol=nothing, estimation=nothing,
     step[mf] = trend_coeff
     sv, uv = alpha .+ cst .+ full_trend, upd .+ cst .+ full_trend
     fv = permutedims(aK[1, :, 2:smpl+1]) .+ cst .+ full_trend .+ step'
-    kstep = kvar = nothing
+    kstep = kvar = kdec = nothing
     if !isempty(fsa)
         mx = maximum(fsa)
         kc = reshape(const_all, 1, n, 1)
@@ -1011,6 +1063,7 @@ function _smooth_linear(m::Model, data=nothing; sol=nothing, estimation=nothing,
             end
         end
         want_PK && (kvar = PKout[fsa, :, :, :])
+        kdec = decomp === nothing ? nothing : decomp[fsa, :, :, :]
     end
     nm = m.endo_names
     cols(M, names) = Dict{String,Vector{Float64}}(v => M[:, i] for (i, v) in enumerate(names))
@@ -1024,7 +1077,7 @@ function _smooth_linear(m::Model, data=nothing; sol=nothing, estimation=nothing,
         Init_State=Dict{String,Float64}(v => alpha0[i] + const_all[i] for (i, v) in enumerate(nm)),
         Init_State_Vector=alpha0 .+ ys_level,        # Dynare adds the level steady state, also with loglinear
         SteadyState=ys_level, loglinear=loglinear,
-        FilteredVariablesKStepAhead=kstep, FilteredVariablesKStepAheadVariances=kvar, filter_step_ahead=copy(fsa),
+        FilteredVariablesKStepAhead=kstep, FilteredVariablesKStepAheadVariances=kvar, FilteredVariablesShockDecomposition=kdec, filter_step_ahead=copy(fsa),
         Variance=want_PK ? Pout : nothing, State_uncertainty=want_V ? Vout : nothing,
         Init_State_uncertainty=want_V ? V0out : nothing,
         smoothed=alpha, updated=upd, init_state=alpha0, shocks=permutedims(etahat), measurement_errors=eps,

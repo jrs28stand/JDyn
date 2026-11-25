@@ -484,13 +484,13 @@ const _HONOURED_EST = Set(["datafile", "first_obs", "nobs", "loglinear", "logdat
     "mh_nblck", "mh_jscale", "mh_drop", "mh_init_scale_factor", "order", "use_univariate_filters_if_singularity_is_detected",
     "rescale_prediction_error_covariance", "cova_compute", "mh_conf_sig", "optim_opt", "gstep", "Harvey_scale_factor",
     "lyapunov_complex_threshold", "mode_check.status", "nodiagnostic",
-    "smoother", "filtered_vars", "filter_step_ahead", "filter_covariance", "smoothed_state_uncertainty", "forecast", "forecasts.conf_sig",
+    "smoother", "filtered_vars", "filter_step_ahead", "filter_covariance", "smoothed_state_uncertainty", "filter_decomposition", "forecast", "forecasts.conf_sig",
     "sub_draws", "nodecomposition", "ar", "conditional_variance_decomposition", "contemporaneous_correlation", "moments_varendo",
     "bayesian_irf", "irf", "irf_shocks", "relative_irf", "consider_all_endogenous", "consider_all_endogenous_and_auxiliary",
     "consider_only_observed", "posterior_max_subsample_draws", "heteroskedastic_filter",
     "mode_file", "load_mh_file", "mh_recover", "posterior_sampling_method", "posterior_sampler_options", "mcmc_jumping_covariance",
     "mh_tune_jscale", "mh_tune_guess", "load_results_after_load_mh", "dsge_var", "dsge_varlag", "endogenous_prior",
-    "mh_posterior_mode_estimation"])
+    "mh_posterior_mode_estimation", "selected_variables_only"])
 # preprocessor option names -> the names used here
 const _EST_ALIASES = Dict("posterior_sampler_options.posterior_sampling_method" => "posterior_sampling_method",
     "posterior_sampler_options.sampling_opt" => "posterior_sampler_options", "MCMC_jumping_covariance" => "mcmc_jumping_covariance",

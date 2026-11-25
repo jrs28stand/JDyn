@@ -1339,7 +1339,7 @@ bi!("eval") do I, a, nout
     end
     run_parsed(I, body, sc, nout)
 end
-bi!("evalin", "assignin", "evalc", "source", "dynare", "inputname", "builtin", "cellfun", "arrayfun", "structfun", "str2num") do I, a, nout
+bi!("evalin", "assignin", "evalc", "source", "dynare", "inputname", "builtin", "structfun", "str2num") do I, a, nout
     throw(Unsupported("this function manipulates workspaces or runs code that cannot be analysed", "eval"))
 end
 
@@ -1368,7 +1368,7 @@ const MUTATORS = Set(["evalin", "assignin", "run", "source", "dynare", "set_shoc
     "set_parameters_locally", "load_params_and_steady_state", "dynare_estimation", "dynare_estimation_1",
     "set_dynare_random_generator_state", "initvalf", "histvalf", "global_initialization", "clearvars",
     "set_local_param_value", "set_shock_stderr_value", "set_param_value", "eval", "evalc", "builtin",
-    "str2num", "cellfun", "arrayfun", "structfun", "feval", "set_measurement_errors", "set_exogenous_variables_for_simulation",
+    "str2num", "structfun", "feval", "set_measurement_errors", "set_exogenous_variables_for_simulation",
     "sur", "surgibbs", "dyn_ols", "olseqs", "pooled_ols", "pooled_fgls", "olsgibbs", "dynare_estimation_init",
     "set_prior", "osr1", "simulated_moments_estimation", "prior_posterior_statistics",
     "discretionary_policy", "draw_init_state_from_smoother", "dsge_conditional_likelihood_1", "dsge_likelihood",
