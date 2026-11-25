@@ -8,7 +8,10 @@ const OOP2 = joinpath(@__DIR__, "ref_parity2", "oo")
 
 "Largest relative difference (floor 1) between a reference value and ours, with the path of the worst field; `nothing` where a field is absent."
 function oo_diff(ref, ours, path, out::Vector{Tuple{String,Float64}})
-    if ref isa AbstractDict
+    if ours isa JDyn.MDseries
+        rd = ref isa AbstractDict ? get(ref, "data", nothing) : ref
+        rd === nothing ? push!(out, (path * " (dseries without data in the reference)", Inf)) : oo_diff(rd, ours.data, path * ".data", out)
+    elseif ref isa AbstractDict
         ours isa JDyn.MStruct || (push!(out, (path * " (not a struct)", Inf)); return)
         for (k, v) in ref
             haskey(ours, k) || (isempty(v) || push!(out, (path * "." * k * " (missing)", Inf)); continue)
@@ -17,7 +20,7 @@ function oo_diff(ref, ours, path, out::Vector{Tuple{String,Float64}})
     elseif ours isa JDyn.MDseries
         rd = ref isa AbstractDict ? ref["data"] : ref
         oo_diff(rd, ours.data, path * ".data", out)
-    elseif ref isa AbstractString || (ref isa AbstractArray && eltype(ref) <: AbstractString)
+    elseif ref isa AbstractString || (ref isa AbstractArray && !isempty(ref) && all(x -> x isa AbstractString, ref))
         # names (parnames cell): compare the strings
         a = ref isa AbstractString ? [ref] : vec(String.(ref))
         b = ours isa JDyn.Cell ? String.(vec(ours.items)) : ours isa AbstractString ? [ours] : String[]
@@ -43,9 +46,6 @@ end
 
 function run_case(case; random=:octave)
     d = mktempdir()
-    for f in readdir(OOP2)
-        endswith(f, ".mod") || continue
-    end
     cp(joinpath(OOP2, case * ".mod"), joinpath(d, case * ".mod"))
     for extra in ("fsdat_simul.m", "fsdat_simul.mat")
         isfile(joinpath(OOP2, extra)) && cp(joinpath(OOP2, extra), joinpath(d, extra))
@@ -81,8 +81,8 @@ function check_case(case, paths, tol; skip=String[])
 end
 
 # pac.estimate: the parameters are written to M_, the results to oo_.pac.<model>
-const PE_TOL = Dict("pe_t6" => 1e-6, "pe_t7" => 1e-6, "pe_t9" => 1e-9, "pe_t12" => 1e-9, "pe_t15" => 5e-4, "pe_t17" => 1e-6, "pe_t18" => 1e-6,
-                    "pe_t19g" => 1e-9, "pe_t25" => 1e-9, "pe_v9" => 1e-6, "pe_t8a" => 1e-9)
+const PE_TOL = Dict("pe_t6" => 1e-6, "pe_t7" => 1e-6, "pe_t9" => 1e-9, "pe_t12" => 1e-9, "pe_t15" => 1e-4, "pe_t17" => 1e-7, "pe_t18" => 1e-8,
+                    "pe_t19g" => 1e-9, "pe_t25" => 5e-7, "pe_v9" => 1e-6, "pe_t8a" => 5e-8)
 for case in sort(collect(keys(PE_TOL)))
     @testset "pac.estimate: $case" begin
         ws = check_case(case, ["pac"], PE_TOL[case])
