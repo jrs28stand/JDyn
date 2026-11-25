@@ -370,6 +370,7 @@ Base.@kwdef struct PosteriorSmootherStatistics
     filter_step_ahead::Vector{Int} = Int[]
     params::Matrix{Float64} = zeros(0, 0)
     draws::Union{Nothing,Dict{String,Any}} = nothing
+    loglinear::Bool = false
 end
 Base.show(io::IO, r::PosteriorSmootherStatistics) = print(io, "PosteriorSmootherStatistics(", r.n_draws, " draws, ", length(r.var_names), " variables)")
 
@@ -437,12 +438,7 @@ function posterior_smoother_statistics(est::Estimation, mc::Union{Nothing,MCMCRe
     density === nothing || (dens_on = density)
     theta = _theta_draws(est, mc, params, sub_draws, drop, rng, "posterior_smoother_statistics")
     nd = size(theta, 1)
-    names = var_list === nothing ? _estimation_var_list_est(est) : String.(collect(var_list))
-    isempty(names) && (names = orig_endo_names(m))
-    for v in names
-        haskey(m.ie, v) || throw(EstimationError("The following symbols are not endogenous variables: $v"))
-    end
-    names = unique(names)
+    names = moment_variable_list(est; var_list=var_list)       # check_list_of_variables.m: also consider_all_endogenous(_and_auxiliary)
     sel = Int[m.ie[v] for v in names]
     if fv && fsa[1] != 1
         @warn "oo_.FilteredVariables of Dynare 7.2 is the forecast $(fsa[1]) period(s) ahead shifted by one period (pm3.m reads the first element of filter_step_ahead as if it were 1); reproduced here"
@@ -501,6 +497,7 @@ function posterior_smoother_statistics(est::Estimation, mc::Union{Nothing,MCMCRe
         fa === nothing || (d["filter_step_ahead"] = fa)
         kw2[:draws] = d
     end
+    kw2[:loglinear] = _est_flag(get(est.options, "loglinear", false))
     PosteriorSmootherStatistics(; kw2...)
 end
 
@@ -531,6 +528,7 @@ function store_smoother_statistics!(oo::MStruct, r::PosteriorSmootherStatistics)
     if any(x -> x !== nothing, (r.trend, r.trend_coeff, r.init_state))
         Sm = get(oo, "Smoother", nothing)
         Sm isa MStruct || (Sm = MStruct(); oo["Smoother"] = Sm)
+        Sm["loglinear"] = r.loglinear          # prior_posterior_statistics.m (read by smoother2histval)
         for (key, sd) in (("Trend", r.trend), ("TrendCoeff", r.trend_coeff), ("Init_State", r.init_state))
             sd === nothing || (Sm[key] = _store_series!(MStruct(), sd))
         end

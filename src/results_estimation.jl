@@ -255,8 +255,9 @@ function _store_dr_estimation!(oo::MStruct, m::Model, sol=nothing)
     D.restrict_columns = _col(Int[findfirst(==(cnt.nstatic + j), k2) for j in 1:nspred])
     if sol !== nothing
         gh = Matrix{Float64}(ghx(sol))
-        ss = get(oo, "steady_state", nothing)   # levels, as Dynare's dr.ys (sol.ys is in logs under loglinear)
-        D.ys = (ss isa AbstractArray && length(ss) == length(sol.ys)) ? _col(Float64.(vec(ss))) : _col(sol.ys)
+        # dr.ys is the steady state at the parameters of the last resolution (the mode, the posterior mean, ... the smoother ran at), in
+        # levels (sol.ys is in logs under loglinear); oo_.steady_state keeps the one at the initial values
+        D.ys = _col(Float64.(vec(sol.steady_state)))
         D.ghx = gh
         D.ghu = Matrix{Float64}(ghu(sol))
         D.state_var = _row(sol.state_var)
@@ -441,6 +442,7 @@ function _estimation!(ws::DynareWorkspace, st, var_list, data, seed, options)
     for v in vl
         haskey(m.ie, v) || throw(EstimationError("estimation: $v is not an endogenous variable"))
     end
+    _undo_logged_ss!(ws)                       # dynare_estimation.m: a steady state logged by stoch_simul(loglinear) is undone
     fsa = _fsa(ws)
     smoother_flag = _optb(ws, "smoother", false)
     wants_filter = _optb(ws, "filtered_vars", false) || !isempty(fsa)
@@ -737,6 +739,7 @@ function _calib_smoother!(ws::DynareWorkspace, st, var_list, options)
         sol0 === nothing || (ys0 = sol0.steady_state)
     end
     oo.steady_state = _col(ys0)
+    ws.state[:logged_ss] = false               # levels (evaluate_smoother does not touch options_.logged_steady_state)
     O.noconstant = 0.0
     _store_smoother_results!(oo, m, res; only=_selected_only(ws, m, String.(collect(var_list))))
     _store_dr_estimation!(oo, m, res.solution)
