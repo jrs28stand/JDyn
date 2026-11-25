@@ -525,6 +525,7 @@ end
 # PCRE through Julia's Regex.  Output order as Octave: start, end, token extents, match, tokens, names, split; selectors
 # 'match', 'tokens', 'names', 'start', 'end', 'split', 'once' reorder the outputs; a cell array of strings maps over its elements.
 function _re_one(str::AbstractString, pat::AbstractString, opts::Vector{String}, nout::Int, icase::Bool)
+    occursin(r"\(\?<[A-Za-z]", pat) && _unsup("regexp with named tokens")
     once = "once" in opts
     sel = [o for o in opts if o in ("match", "tokens", "names", "start", "end", "split", "tokenExtents")]
     rx = Regex(pat, icase || "ignorecase" in opts ? "i" : "")
