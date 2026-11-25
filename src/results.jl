@@ -779,6 +779,8 @@ function _run_in_place!(ws, st, nss, shocks, rng)
         evaluate_planner_objective!(ws)
     elseif kind == "osr"
         osr!(ws, String.(get_or(st, "symbol_list", String[])); rng=rng)
+    elseif kind == "extended_path"
+        _extended_path_statement!(ws, st)               # src/extended_path.jl
     elseif kind == "occbin_solver"
         occbin_solver!(ws)
     elseif kind == "occbin_write_regimes_xls"

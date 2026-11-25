@@ -109,18 +109,57 @@ function _bwd_options(ws)
     o, algo
 end
 
+# backward_model.initialize: the initial conditions of an empty first argument come from M_.endo_histval and M_.exo_histval, as a
+# dseries (from 1Y) of orig_maximum_lag periods. Dynare 7.2 reads the history of the auxiliary variable of a lagged exogenous
+# variable (type 3) at `M_.exo_histval(M_.orig_endo_nbr+i)`, an element of another variable (a defect): corrected by default
+# (the exogenous variable's own value), reproduced under `replicate_dynare_bugs=true`.
+function _histval_dseries(ws)
+    m = ws.model
+    n = m.n_endo; no = orig_endo_nbr(m)
+    h = ws.M_.endo_histval
+    (h isa AbstractArray && length(h) == n) || throw(BackwardError("no initial conditions: use histval or pass a dseries"))
+    h = Float64.(vec(h))
+    eh = get(ws.M_, "exo_histval", nothing)
+    if !(eh isa AbstractMatrix && size(eh) == (m.n_exo, 1))
+        eh = try _pf_replay(m, nothing, nothing, (), ()).exo_histval catch; nothing end
+    end
+    xh = eh === nothing ? zeros(m.n_exo) : Float64.(vec(eh))
+    L = Int(get(m.info, "orig_maximum_lag", get(m.info, "maximum_lag", 1)))
+    oel = Int(get(m.info, "orig_maximum_endo_lag", 1)); oxl = Int(get(m.info, "orig_maximum_exo_lag", 0))
+    aux = get_or(m.raw, "aux_vars", [])
+    yinit = zeros(no, L); yinit[:, 1] = h[1:no]
+    if oel > 1
+        for (i, a) in enumerate(aux)
+            get(a, "type", 0) == 1 || continue
+            yinit[Int(a["orig_index"]), abs(Int(a["orig_lead_lag"]))+1] = h[no+i]
+        end
+        yinit = yinit[:, end:-1:1]
+    end
+    xinit = zeros(m.n_exo, L)
+    if oxl > 0
+        bugs = _optb(ws, "replicate_dynare_bugs", false)
+        for (i, a) in enumerate(aux)
+            get(a, "type", 0) == 3 || continue
+            k = Int(a["orig_index"]); c = abs(Int(a["orig_lead_lag"])) + 1
+            if bugs
+                no + i <= length(xh) || throw(BackwardError("index out of bound; value $(no + i) out of bound $(length(xh))"))
+                xinit[k, c] = xh[no+i]
+            else
+                xinit[k, c] = c == 1 ? xh[k] : 0.0
+            end
+        end
+        xinit = xinit[:, end:-1:1]
+    end
+    names = vcat(m.endo_names[1:no], m.exo_names)
+    MDseries(hcat(Matrix(yinit'), Matrix(xinit')), names, copy(names), MDates(1, collect(1.0:L)), fill("", length(names)),
+             Pair{String,Vector{Any}}[])
+end
+
 function _backward_initial(ws, initialconditions)
     m = ws.model
     n = m.n_endo
     if initialconditions === nothing || (initialconditions isa AbstractArray && isempty(initialconditions))
-        h = ws.M_.endo_histval
-        (h isa AbstractArray && length(h) == n) || throw(BackwardError("no initial conditions: use histval or pass a dseries"))
-        eh = get(ws.M_, "exo_histval", nothing)
-        if !(eh isa AbstractMatrix && size(eh) == (m.n_exo, 1))
-            eh = try _pf_replay(m, nothing, nothing, (), ()).exo_histval catch; nothing end
-        end
-        X0 = eh === nothing ? zeros(1, m.n_exo) : reshape(Float64.(vec(eh)), 1, m.n_exo)
-        return reshape(Float64.(vec(h)), n, 1), X0
+        initialconditions = _histval_dseries(ws)
     end
     d = initialconditions
     d isa MDseries || throw(BackwardError("First input argument must be a dseries object or an empty array!"))
@@ -265,19 +304,25 @@ function simul_static_model(ws::DynareWorkspace, periods::Integer; innovations=n
         b = MStruct(); b.shocks = X[:, findall(>(0), diag(m.Sigma_e))]; ws.oo_.bnlms = b
     end
     o, algo = _bwd_options(ws)
-    Y = fill(NaN, n, T)
+    # as Dynare: `oo_.endo_simul(:,t) = ...` assigns into the endo_simul the workspace already has (columns beyond the new
+    # sample stay), else creates it
+    Y0 = get(ws.oo_, "endo_simul", nothing)
+    Y = Y0 isa AbstractMatrix && size(Y0, 1) == n ? Matrix{Float64}(Y0) : zeros(n, 0)
+    size(Y, 2) < T && (Y = hcat(Y, zeros(n, T - size(Y, 2))))
     for t in 1:T
         x = X[t, :]
         fun = z -> static_resid(m, z, x, m.params)
         jac = z -> static_jac(m, z, x, m.params)
         r = try _dynare_solve(fun, jac, _bwd_repair_guess(ws, fun, jac, zeros(n)); tolf=o["dynatol.f"], tolx=o["dynatol.x"], maxit=o["simul.maxit"], rng=dynare_rng(ws), algo=algo) catch e
             e isa Union{LinearAlgebra.SingularException,DomainError} || rethrow(); (nothing, false) end
-        r[2] ? (Y[:, t] = r[1]) : @warn "simul_static_model: nonlinear solver failed in period $t"
+        r[2] ? (Y[:, t] = r[1]) : (@warn "simul_static_model: nonlinear solver failed in period $t"; Y[:, t] .= NaN)
     end
     ws.oo_.endo_simul = Y; ws.oo_.exo_simul = X
     no = orig_endo_nbr(m); names = vcat(m.endo_names[1:no], m.exo_names)
-    dts = start isa MDates && !isempty(start.time) ? MDates(start.freq, start.time[1] .+ collect(0.0:T-1)) : MDates(1, collect(1.0:T))
-    MDseries(hcat(Matrix(Y[1:no, :]'), X), names, copy(names), dts, fill("", length(names)), Pair{String,Vector{Any}}[])
+    N = size(Y, 2)
+    dts = start isa MDates && !isempty(start.time) ? MDates(start.freq, start.time[1] .+ collect(0.0:N-1)) : MDates(1, collect(1.0:N))
+    Xp = vcat(X, fill(NaN, N - T, size(X, 2)))
+    MDseries(hcat(Matrix(Y[1:no, :]'), Xp), names, copy(names), dts, fill("", length(names)), Pair{String,Vector{Any}}[])
 end
 
 """
