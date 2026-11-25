@@ -35,6 +35,7 @@ from accept_manifest import load_manifest  # noqa: E402
 from accept_octave import cost, prepare_scratch, relid  # noqa: E402
 
 SRC = Path(os.environ.get("DYNARE_SRC", "/root/ref/dynare-7.2"))
+TAG = os.environ.get("ACCEPT_TAG", "accj")      # distinct per clone when several run at once (work folders are shared under /var/tmp)
 WORKER = HERE / "accept_worker.jl"
 SKIP_FOLDERS = ("heterogeneity/",)          # heterogeneous-agent models: out of both correctness and timing until a port supports them
 MAX_RSS_GB = 2.5                              # restart a worker above this resident size (Julia keeps memory)
@@ -52,7 +53,7 @@ class Worker:
 
     def __init__(self, idx, jl_args):
         self.idx, self.jl_args = idx, jl_args
-        self.dir = Path("/var/tmp") / f"accj_worker{idx}"
+        self.dir = Path("/var/tmp") / f"{TAG}_worker{idx}"
         self.proc = None
         self.n = 0                      # commands sent to the current process
         self.tests = 0
@@ -69,7 +70,7 @@ class Worker:
         env.setdefault("GKSwstype", "100")
         env.setdefault("OPENBLAS_NUM_THREADS", "1")
         cmd = ["nice", "-n", "10", "julia", f"--project={ROOT}", *self.jl_args, str(WORKER), str(self.dir)]
-        logf = open(self.dir.parent / f"accj_worker{self.idx}.log", "ab")
+        logf = open(self.dir.parent / f"{TAG}_worker{self.idx}.log", "ab")
         logf.write(f"\n=== {time.ctime()} starting worker\n".encode())
         t0 = time.time()
         self.proc = subprocess.Popen(cmd, stdout=logf, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, env=env, start_new_session=True)
@@ -77,7 +78,7 @@ class Worker:
         while not (self.dir / "ready").exists():
             if _stop.is_set() or self.proc.poll() is not None or time.time() - t0 > 1500:
                 self.kill()
-                raise RuntimeError("worker did not start; see " + str(self.dir.parent / f"accj_worker{self.idx}.log"))
+                raise RuntimeError("worker did not start; see " + str(self.dir.parent / f"{TAG}_worker{self.idx}.log"))
             time.sleep(0.2)
         self.load_s = float((self.dir / "ready").read_text().split()[0])
         log(f"worker {self.idx} ready (load_s={self.load_s}, pid {self.proc.pid})")
@@ -142,7 +143,7 @@ class Worker:
         if how != "ok":
             tail = ""
             try:
-                tail = (self.dir.parent / f"accj_worker{self.idx}.log").read_bytes()[-600:].decode(errors="replace").replace("\n", " | ")
+                tail = (self.dir.parent / f"{TAG}_worker{self.idx}.log").read_bytes()[-600:].decode(errors="replace").replace("\n", " | ")
             except OSError:
                 pass
             self.kill()
@@ -199,7 +200,7 @@ def run_setup(w, m, scratch, timeout):
 
 
 def run_entry(w, entry, mods, out, ref, timeout, ref_artifacts):
-    scratch = Path(tempfile.mkdtemp(prefix="accj_", dir="/var/tmp"))
+    scratch = Path(tempfile.mkdtemp(prefix=f"{TAG}_", dir="/var/tmp"))
     setups = set(setup_mods(entry, mods))
     try:
         prepare_scratch(entry, SRC, scratch)

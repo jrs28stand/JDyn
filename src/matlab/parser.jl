@@ -12,6 +12,8 @@ const COMMAND_WORDS = Set(["close", "clear", "clc", "hold", "format", "warning",
     "dynare", "type", "which", "mex", "import", "syms", "tic", "toc", "legend", "colormap",
     "shading", "rng", "beep", "commandwindow", "dbclear", "keyboard", "print", "run"])
 const _CMD_RE = r"^\s*([A-Za-z_]\w*)[ \t]+(?![=(;,]|[-+*/^<>~&|.:]?=|[-+*/^<>&|:](?:\s|$)|\.[*/^\\'])(\S[^;,%]*)(.*)$"
+# Dynare's date literals (2005Q1, 1990Y, 2000M3, 2001W5, 1999H2 ...): the preprocessor writes `dates('2005Q1')` for them
+const _DATELIT_RE = r"\G\d+(?:[YyAa]|[Qq][1-4]|[Mm](?:1[0-2]|[1-9])|[Ww](?:5[0-3]|[1-4]\d|[1-9])|[Hh][12]|[Ss][12])(?![\w.])"
 const _NUM_RE = r"\G(?:\d+(?:\.(?![*/^\\'])\d*)?|\.\d+)(?:[eEdD][+-]?\d+)?"
 const _ID_RE = r"\G[A-Za-z]\w*"
 const _OPS2 = Set(["==", "~=", "!=", "<=", ">=", "&&", "||", ".*", "./", ".\\", ".^", ".'"])
@@ -106,6 +108,16 @@ function tokenize(lines::Vector)
                 end
                 i = j; ws = false
                 continue
+            end
+            if isdigit(c)
+                md = match(_DATELIT_RE, text, i)
+                if md !== nothing
+                    lit = String(md.match)
+                    push!(toks, Tok(:id, "dates", ws, ln, i)); push!(toks, Tok(:op, "(", false, ln, i))
+                    push!(toks, Tok(:str, lit, false, ln, i)); push!(toks, Tok(:op, ")", false, ln, i))
+                    i += ncodeunits(lit); ws = false
+                    continue
+                end
             end
             if isdigit(c) || c == '.'
                 m = match(_NUM_RE, text, i)

@@ -743,6 +743,7 @@ function _calib_smoother!(ws::DynareWorkspace, st, var_list, options)
     _set_estimation_options!(ws, m, nobs, est === nothing ? 0 : est.n, _fsa(ws), isnan(first_obs0) ? 1.0 : first_obs0, res.options["lik_init"])
     _gui!(oo, "ran_calib_smoother")
     est === nothing || _fig_est!(ws, :smoother, est; res=res)       # src/plots_hooks.jl
+    ws.state[:last_smoother] = res                                  # read by shock_decomposition (src/results_shockdec.jl)
     ws
 end
 

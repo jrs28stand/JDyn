@@ -83,11 +83,10 @@ const _OCC_SETUP_COPIED = Set(["simul.periods", "simul.curb_retrench", "simul.ma
 
 # options the filters accept only at their default value (Dynare acts on them; JDyn does not implement them)
 const _OCC_REFUSED = Dict{String,Any}(
-    "likelihood.loss_function_regime_guess" => false, "likelihood.number_of_initial_periods_with_extra_regime_guess" => 0,
     "likelihood.restrict_state_space" => true, "filter.particle.status" => false, "filter.init_periods_using_particles" => false,
     "likelihood.init_regime_history" => nothing, "likelihood.init_binding_indicator" => nothing,
     "smoother.init_regime_history" => nothing, "smoother.init_binding_indicator" => nothing,
-    "smoother.first_period_occbin_update" => 1, "solver.solve_algo" => 3)
+    "solver.solve_algo" => 3)
 
 "Option name of the manual (`likelihood_maxit`) or of options_.occbin (`likelihood.maxit`) -> key."
 function _occ_key(name::AbstractString)
@@ -125,7 +124,7 @@ OccBin likelihood, filter and smoother options as Dynare 7.2 has them in `option
 statements: `set_default_options.m`, then for each `occbin_setup` in order the options `occbin.setup` copies (the
 others have no effect in Dynare 7.2 and are reported once with a warning), and the `simul_*` options of
 `occbin_solver`. `overrides` (keys `"likelihood_maxit"` or `"likelihood.maxit"`) are applied last; options Dynare acts
-on but JDyn does not implement (`loss_function_regime_guess`, particle filters, `init_regime_history`, ...) raise.
+on but JDyn does not implement (particle filters, `init_regime_history`, ...) raise.
 """
 function occbin_filter_options(m::Model, overrides=nothing; what="OccBin filtering")
     o = copy(OCCBIN_FILTER_DEFAULTS)
@@ -485,11 +484,12 @@ mutable struct _Step
     pre_error::Int
     iF1::Matrix{Float64}
     L1::Matrix{Float64}
+    P1_t::Matrix{Float64}            # the prediction covariance of period t (P1(:,:,2) of kalman_update_engine.m), for findmin's weights
 end
 function _Step(ctx, a_prev, a1_1, P_prev, P1_1, di1, di2, y2, TT2, RR2, CC2, v1, Fi1, Ki1, univariate::Bool)
     s = _Step(ctx, Vector{Float64}(a_prev), Vector{Float64}(a1_1), Matrix{Float64}(P_prev), Matrix{Float64}(P1_1), Vector{Int}(di1),
               Vector{Int}(di2), Vector{Float64}(y2), TT2, RR2, CC2, Vector{Float64}(v1), Vector{Float64}(Fi1), Matrix{Float64}(Ki1),
-              univariate, 0, zeros(0, 0), zeros(0, 0))
+              univariate, 0, zeros(0, 0), zeros(0, 0), zeros(0, 0))
     if !univariate
         Z, H, mm = ctx.Z, ctx.H, ctx.mm
         ZZ1 = Z[s.di1, :]
@@ -833,8 +833,16 @@ function _engine(ctx::_PKFContext, t::Int, step::_Step, regimes_pair)
             use.lik < best.lik && (best = use)
         end
     end
-    (loss_fn && (info0 != 0 || info1 != 0)) &&
-        throw(EstimationError("the loss-function regime guess of the piecewise Kalman filter (occbin.findmin) is not implemented"))
+    if loss_fn && (info0 != 0 || info1 != 0)
+        res_f = _findmin(ctx, step)
+        if res_f !== nothing
+            c = _algo(ctx, step; regimes0=[res_f.regime_history[1], base], guess_regime=true)
+            if c.error_flag == 0 && !(c.regimes[1] in regvec)
+                push!(regvec, c.regimes[1]); push!(likvec, c.lik)
+            end
+            (c.error_flag == 0 && c.lik < best.lik) && (best = c)
+        end
+    end
     if length(likvec) > 1
         mn = minimum(likvec)
         best.lik = -2 * log(sum(exp.(-(likvec .- mn) ./ 2))) + mn
@@ -847,6 +855,37 @@ function _engine(ctx::_PKFContext, t::Int, step::_Step, regimes_pair)
         end
     end
     best
+end
+
+const FINDMIN_CALLS = Ref(0)      # number of occbin.findmin calls (tests)
+
+"""
+`occbin.findmin` + `occbin.cost_function`: the regime guess from the shocks that minimise the distance between the model's
+first-period OccBin solution and the observables (scaled by the forecast variance of the observables), found with Octave's
+`fminsearch` (src/fminsearch_octave.jl). Returns the OccBin solution at the minimum, or `nothing` if it fails.
+"""
+function _findmin(ctx::_PKFContext, step::_Step)
+    FINDMIN_CALLS[] += 1
+    di = step.di2
+    Z = ctx.Z
+    err_index = findall(!iszero, diag(ctx.Q))
+    obs = [findfirst(!iszero, view(Z, i, :)) for i in di]
+    obs_decl = ctx.r[obs]
+    current_obs = step.y2[di] .+ ctx.ob.ys[obs_decl]
+    ZZ = Z[di, :]
+    weights = diag(ZZ * step.P1_t * ZZ')
+    init = zeros(ctx.n)
+    init[ctx.r] = step.a_prev
+    sim = copy(ctx.sim)
+    run(x) = _occ_solve(ctx.ob, reshape(Float64.(x), 1, :), init, sim; exo_pos=err_index)
+    function cost(x)
+        flag, out = run(x)
+        flag != 0 && return 1.0e10
+        sum((out.piecewise[1, obs_decl] .- current_obs) .^ 2 ./ weights) / length(di)
+    end
+    y = fminsearch_octave(cost, zeros(length(err_index)))[1]
+    flag, out = run(y)
+    flag != 0 ? nothing : out
 end
 
 "The two-constraint brute-force regime guesses of kalman_update_engine.m."
@@ -959,6 +998,34 @@ function _pkf_forward(ctx::_PKFContext, Y::AbstractMatrix, a::AbstractVector, P:
         QQ = R * Q * R'
         t == 1 && (Pinit = copy(P1[1]); ainit = a1[:, 1])
         di = data_index[t]
+        if univariate && t < fpou
+            # missing_DiffuseKalmanSmootherH3_Z.m before first_period_occbin_update: the linear univariate filter with the base-regime matrices
+            if t == 1
+                a = T * a + C
+                P = T * P * T' + QQ
+                a1[:, 1] = a; P1[1] = P
+            end
+            at, Pt = copy(a), copy(P)
+            Hd = diag(H)
+            for ii in di
+                Zi = Z[ii, :]
+                vv[ii, t] = Y[ii, t] - dot(Zi, at)
+                Fi[ii, t] = dot(Zi, Pt * Zi) + Hd[ii]
+                Ki[t][:, ii] = Pt * Zi
+                if Fi[ii, t] > tol
+                    at = at + Ki[t][:, ii] * vv[ii, t] / Fi[ii, t]
+                    Pt = Pt - Ki[t][:, ii] * Ki[t][:, ii]' / Fi[ii, t]
+                    Pt = (Pt + Pt') / 2
+                end
+            end
+            a0[:, t] = at; P0[t] = Pt
+            Tn, Cn = TT[t+1], CC[t+1]
+            a = Tn * at + Cn
+            P = Tn * Pt * Tn' + RR[t+1] * Q * RR[t+1]'
+            P = (P + P') / 2
+            aK[:, t+1] = a
+            continue
+        end
         if t < fpou || !use_updated
             # the linear branch (Dynare uses it before first_period_occbin_update)
             if isempty(di)
@@ -993,6 +1060,7 @@ function _pkf_forward(ctx::_PKFContext, Y::AbstractMatrix, a::AbstractVector, P:
                 _Step(ctx, a0[:, t-1], a1[:, t-1], P0[t-1], P1[t-1], data_index[t-1], di, Y[:, t], TT[t], RR[t], CC[t], vv[:, t-1],
                       Fi[:, t-1], Ki[t-1], univariate)
             end
+            step.P1_t = P
             res = _engine(ctx, t, step, (regimes_[t], regimes_[t+1]))
             likx = res.lik
             (!univariate && t < fbra && res.regimes[1] != base) && (likx = Inf)
@@ -1167,8 +1235,8 @@ function occbin_smoother(ob::Occbin, Y::AbstractMatrix, Q::AbstractMatrix, H::Ab
     ctx = _PKFContext(ob, order_var, Z, H, Q, o; prefix="smoother", kalman_tol=kalman_tol)
     data_index === nothing && (data_index = _all_index(Y))
     state_dr = collect(counts.nstatic+1:counts.nstatic+counts.npred+counts.nboth)
-    Int(o["smoother.first_period_occbin_update"]) == 1 ||
-        throw(EstimationError("smoother_first_period_occbin_update other than 1 is not implemented"))
+    fpou_s = Int(o["smoother.first_period_occbin_update"])
+    fpou_s >= 1 || throw(EstimationError("smoother_first_period_occbin_update must be a positive integer"))
     T0, R0 = ctx.T0, ctx.R0
     P_init = if lik_init == 1
         lyapunov_symm(T0, R0 * ctx.Q * R0'; qz_criterium=qz_criterium)[1]
@@ -1188,7 +1256,7 @@ function occbin_smoother(ob::Occbin, Y::AbstractMatrix, Q::AbstractMatrix, H::Ab
     la, la1, lP1, lv, lFi, lKi = _tv_forward(ctx, Y, a_init, P_init, data_index, TTl, RRl, CCl)
     lin_alpha, lin_eta, lin_alpha0 = _univariate_backward(ctx, la1, lP1, lv, lFi, lKi, TTl, RRl, data_index, a_init, P_init)
     # 2. real-time smoother
-    rt = _pkf_forward(ctx, Y, a_init, P_init; data_index=data_index, univariate=true, check_inf=false)
+    rt = _pkf_forward(ctx, Y, a_init, P_init; data_index=data_index, univariate=true, check_inf=false, first_period_occbin_update=fpou_s)
     rt_ok = rt.error_code == 0
     if rt_ok
         alphahat, etahat, alphahat0 = _univariate_backward(ctx, rt.a1, rt.P1, rt.v, rt.Fi, rt.Ki, rt.TT, rt.RR, data_index,
@@ -1236,7 +1304,7 @@ function occbin_smoother(ob::Occbin, Y::AbstractMatrix, Q::AbstractMatrix, H::Ab
         a_c = zeros(n)
         a_c[state_dr] = alphahat0[state_dr]
         rc = _pkf_forward(ctx, Y, a_c, zeros(n, n); data_index=data_index, univariate=true, check_inf=false,
-                          regimes_init=vcat([regime_history[1]], regime_history))
+                          first_period_occbin_update=1, regimes_init=vcat([regime_history[1]], regime_history))
         if rc.error_code != 0
             error_flag = 322
         else

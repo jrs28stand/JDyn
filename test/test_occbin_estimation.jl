@@ -263,7 +263,8 @@ end
     o3 = @test_logs (:warn, r"smoother.max_number_of_iterations") match_mode=:any occbin_filter_options(m2)
     @test o3["likelihood.inversion_filter"] && o3["smoother.max_number_of_iterations"] == 10 && o3["smoother.periods"] == 200
     # options Dynare acts on but JDyn does not implement raise
-    @test_throws EstimationError occbin_filter_options(m, Dict("likelihood_loss_function_regime_guess" => true))
+    # likelihood.loss_function_regime_guess is implemented since parity2 (findmin regime guess, test_parity2_occbin.jl)
+    @test occbin_filter_options(m, Dict("likelihood_loss_function_regime_guess" => true))["likelihood.loss_function_regime_guess"] == true
     @test_throws EstimationError occbin_filter_options(m, Dict("filter.particle.status" => true))
     @test_throws ArgumentError occbin_filter_options(m, Dict("nonsense" => 1))
     # IVF: exactly as many shocks as observables, no measurement errors

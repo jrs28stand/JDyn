@@ -790,12 +790,14 @@ function dynare(modfile::AbstractString; output=nothing, shocks=Dict{Int,Any}(),
     _apply_matlab_options!(ws)
     # M_ as the driver leaves it at the end of the file (declarations, final calibration); histval kept
     h = ws.M_.endo_histval
+    h_x = get(ws.M_, "exo_histval", nothing)
     fresh = build_M(m)
     empty!(ws.M_._keys); empty!(ws.M_._vals)
     for k in keys(fresh)
         ws.M_[k] = fresh[k]
     end
     ws.M_.endo_histval = h
+    h_x === nothing || (ws.M_.exo_histval = h_x)
     haskey(ws.state, :CME) && (ws.M_.Correlation_matrix_ME = ws.state[:CME])
     haskey(ws.state, :H) && (ws.M_.H = ws.state[:H])           # the measurement-error covariance estimation left (results_estimation.jl)
     _mark_synced!(ws)
@@ -916,6 +918,8 @@ function _run_in_place!(ws, st, nss, shocks, rng)
         _calib_smoother!(ws, st, String.(get_or(st, "symbol_list", String[])), (;))
     elseif kind in ("forecast", "conditional_forecast", "plot_conditional_forecast")
         _forecast_statement!(ws, kind, st, rng)          # src/forecast.jl
+    elseif kind in _P2_KINDS
+        _p2_statement!(ws, kind, st)                    # src/results_parity2.jl
     elseif !(kind in _QUIET_KINDS)
         warn_once(m, "dynare(): '$kind' does not fill oo_ yet")
     end
