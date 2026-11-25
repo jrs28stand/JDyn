@@ -247,9 +247,10 @@ function _smoother2histval!(ws, st)
     nothing
 end
 
-const _P2_KINDS = Set(["smoother_2_histval", "smoother2histval"])
+const _P2_KINDS = Set(["smoother_2_histval", "smoother2histval", "shock_decomposition"])
 "Statements of the parity2 batch, called from `_run_in_place!` (src/results.jl)."
 function _p2_statement!(ws, kind, st)
     kind in ("smoother_2_histval", "smoother2histval") && return _smoother2histval!(ws, st)
+    kind == "shock_decomposition" && return _sd_statement!(ws, st)
     nothing
 end
