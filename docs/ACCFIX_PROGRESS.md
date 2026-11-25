@@ -31,3 +31,16 @@ then the comparator), commit.
 - With JDYN_ACCEPT_RNG=octave (worker now uses random=:octave and writes "rng":"octave") exo_simul/endo_simul/irfs/moments of simulated runs
   are compared and match for arima/mod1, stochastic_simulations/example1, burnside_1, neo_growth, multi_leads.
 - Dev flow: edits in /tmp/devsrc, tested via JDYN_PATCH overlays (worker loads patch files after `using JDyn`), merged to src at milestones.
+
+## Final state
+- Items done: 1 (exo_simul, dr.gx/Gy/sdim/edim/g_i/fuu/exo-det rules, variance decomposition size, Octave RNG layout/order of draws), 2 (endo_vars_for_moment_computations,
+  mh_posterior_mode_estimation, analytic_derivation with a note, selected_variables_only, optim NumgradAlgorithm & unused keys now warn), 3 (occbin.* fields).
+- Not done: filter_decomposition / FilteredVariablesShockDecomposition (design: 4D decomposition from P, iF, v, Z, R, Q inside the smoother passes), recursive
+  estimation (vector nobs/first_obs), prior/posterior_function (needs calling a user MATLAB function), oo_.trend_component.*.ar, oo_.var.*, Ramsey steady_state,
+  dr after estimation at the estimated point, dsge-var smoother length, SingularException in kalman_filter_smoother algo3/algoH1/algoH3, interpreter items (5),
+  backward-model fields (gaps agent), AIM eigval (needs aim_solver), partial_information (PCL solver).
+- Tests changed: test_estimation.jl and test_optimizers.jl (unused optim keys warn instead of EstimationError), test_results.jl (steady-state re-run test reads
+  oo_.dr.ys: stoch_simul does not touch oo_.steady_state, as Dynare). Failing and not caused by this branch: test_matlab.jl (sprintf('%d\n') and zeros(2,2,2)
+  refusal tests, from the gaps merge), test_plots*.jl (Plots not installed here).
+- Harness note: 5 ids (AIM/fs2000_b1L1L, steady_state/homotopy/homotopy2_test, ms-dsge/test_ms_dsge, Trend_prefilter_MC and _first_obs_MC) report "no .mat written"
+  even with --jobs 1 (setup-entry interplay in accept_jdyn.py: e.g. looks for pac/var-6/example1.mod); not a JDyn result.
