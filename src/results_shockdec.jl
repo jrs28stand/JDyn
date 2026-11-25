@@ -96,14 +96,13 @@ function _sd_statement!(ws, st)
     O.parameter_set = pset
     res = nothing
     try
-        _calib_smoother!(ws, nothing, String[], (; parameter_set=pset))
+        _calib_smoother!(ws, nothing, String[], Dict{Symbol,Any}(:parameter_set => pset))
         res = ws.state[:last_smoother]
     finally
         for k in collect(keys(oo)); haskey(saved, k) || delete!(oo, k); end
         for k in keys(saved); oo[k] = saved[k]; end
         ps_saved === nothing || (O.parameter_set = ps_saved)
     end
-    res.loglinear && throw(Unsupported("shock_decomposition of a forecast with loglinear (the forecast paths are not in logs)", "option"))
     init_state = Int(_optf(ws, "shock_decomp.init_state", 0))
     n = length(m.endo_names)
     ys = res.SteadyState
@@ -118,6 +117,7 @@ function _sd_statement!(ws, st)
             z[:, nx+1, t] = z[:, nx+2, t] - vec(sum(z[:, 1:nx, t]; dims=2))
         end
     else
+        res.loglinear && throw(Unsupported("shock_decomposition of a forecast with loglinear (Dynare's forecast paths and dr.ys are logged: not validated)", "option"))
         present = !(isempty(String(_optf(ws, "datafile", "")))) || haskey(ws.state, :dataset)
         smoothed = present ? res.smoothed : zeros(0, n)
         shocks = present ? res.shocks : zeros(0, size(res.H, 2))

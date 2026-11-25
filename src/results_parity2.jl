@@ -57,11 +57,9 @@ function _p2_occbin_forecast(I, a, nout)
     if replic == 0
         # forecast.m (replic = 0) leaves options_.occbin.simul.exo_pos at what occbin.setup put there: the columns of the
         # surprise shocks. With fewer shocks than the model has, the SHOCKS (all of them) do not fit and Dynare stops.
-        pos = _getpath(opts, "occbin.simul.exo_pos", nothing)
-        if _p2_empty(pos)
-            occ = get(ws.oo_, "occbin", nothing)
-            sim = occ isa MStruct ? get(occ, "simul", nothing) : nothing
-            pos = sim isa MStruct ? get(sim, "exo_pos", nothing) : nothing
+        pos = nothing
+        if any(st -> get(st, "surprise", false) == true, get(m.options, "shock_paths", Any[]))
+            pos = last(surprise_shocks(ob))           # options_.occbin.simul.exo_pos as occbin.setup sets it
         end
         if !_p2_empty(pos) && length(pos) != m.n_exo
             throw(Unsupported("occbin.forecast: with replic = 0 Dynare's solver uses options_.occbin.simul.exo_pos left by occbin.setup ($(length(pos)) of " *
