@@ -295,18 +295,38 @@ _tmax(ind::AbstractMatrix) = maximum(_last_regime_start(view(ind, :, j)) for j i
 # The rule of period i depends only on the regimes of periods i..Tmax (backward recursion from the reference rule), so rules are
 # memoised per Occbin object in a trie keyed from the end: node (parent, regime code) -> rule. Every rule is computed by exactly
 # the arithmetic of the uncached recursion, so results are bit for bit the same.
-struct _RuleTrie
+#
+# The trie is bounded: at extreme parameter vectors the inversion filter's root search visits hundreds of thousands of distinct regime
+# guesses (soak test: 231,000 nodes, 1.3 GB, 23 s in one evaluation). `OCCBIN_RULE_MEMO_BYTES` is the budget per Occbin object (bytes of
+# the stored rules); a rule that would exceed it is computed and used but not stored, and so is every rule further up that guess (its
+# parent is not a node), exactly as the un-memoised code computes it. The memo is only a memo: results do not depend on the budget.
+# Ordinary use stores far less than 1% of the default (docs/OBC_HO_PROGRESS.md, "Rule memo budget").
+const OCCBIN_RULE_MEMO_BYTES = Ref(128 * 2^20)
+mutable struct _RuleTrie
     child::Dict{Tuple{Int,Int},Int}
     rules::Vector{Tuple{Matrix{Float64},Matrix{Float64},Vector{Float64}}}
+    bytes::Int                  # bytes held by the stored rules
+    refused::Int                # rules computed but not stored because the budget was reached (for diagnostics)
 end
 const _RULE_TRIES = WeakKeyDict{Occbin,_RuleTrie}()
+"High-water mark of one trie since start-up (or the last `reset_rule_memo_peak!`): `[nodes, bytes]`."
+const _RULE_MEMO_PEAK = [0, 0]
+reset_rule_memo_peak!() = (_RULE_MEMO_PEAK .= 0; nothing)
+
+"The memo trie of `ob` and its size: `(nodes, bytes, refused)`; `nodes` counts stored rules."
+function rule_memo_stats(ob::Occbin)
+    t = get(_RULE_TRIES, ob, nothing)
+    t === nothing ? (nodes=0, bytes=0, refused=0) : (nodes=length(t.rules), bytes=t.bytes, refused=t.refused)
+end
 
 "Time-varying rules `y_t = T_t y_{t-1} + R_t u_t + C_t` for t = 1..Tmax (vector of tuples)."
 function _rules(ob::Occbin, ind::AbstractMatrix, Tmax::Int)
     n, k = ob.n, ob.k
-    trie = get!(() -> _RuleTrie(Dict{Tuple{Int,Int},Int}(), Tuple{Matrix{Float64},Matrix{Float64},Vector{Float64}}[]), _RULE_TRIES, ob)
+    trie = get!(() -> _RuleTrie(Dict{Tuple{Int,Int},Int}(), Tuple{Matrix{Float64},Matrix{Float64},Vector{Float64}}[], 0, 0), _RULE_TRIES, ob)
     out = Vector{Tuple{Matrix{Float64},Matrix{Float64},Vector{Float64}}}(undef, Tmax)
-    node = 0
+    node = 0                                  # -1: the previous rule was not stored (budget reached), `prev` holds it
+    prev = (ob.P, ob.P, zeros(n))
+    rule_bytes = 8 * (n * n + n * ob.n_exo + n)
     for i in Tmax:-1:1
         reg = ntuple(j -> Bool(ind[i, j]), k)
         if i == Tmax
@@ -318,15 +338,24 @@ function _rules(ob::Occbin, ind::AbstractMatrix, Tmax::Int)
         for (j, r) in enumerate(reg)
             r && (code |= 1 << (j - 1))
         end
-        key = (node, code)
-        id = get(trie.child, key, 0)
+        id = node >= 0 ? get(trie.child, (node, code), 0) : 0
         if id == 0
-            Tn, Cn = node == 0 ? (ob.P, zeros(n)) : (trie.rules[node][1], trie.rules[node][3])
+            Tn, Cn = node == 0 ? (ob.P, zeros(n)) : node > 0 ? (trie.rules[node][1], trie.rules[node][3]) : (prev[1], prev[3])
             C, B, A, J, D = regime_matrices(ob, reg)
             sol = -((B + A * Tn) \ hcat(C, J, A * Cn + D))
-            push!(trie.rules, (sol[:, 1:n], sol[:, n+1:n+ob.n_exo], sol[:, end]))
-            id = length(trie.rules)
-            trie.child[key] = id
+            rule = (sol[:, 1:n], sol[:, n+1:n+ob.n_exo], sol[:, end])
+            if node >= 0 && trie.bytes + rule_bytes <= OCCBIN_RULE_MEMO_BYTES[]
+                push!(trie.rules, rule)
+                trie.bytes += rule_bytes
+                id = length(trie.rules)
+                trie.child[(node, code)] = id
+                id > _RULE_MEMO_PEAK[1] && (_RULE_MEMO_PEAK[1] = id; _RULE_MEMO_PEAK[2] = max(_RULE_MEMO_PEAK[2], trie.bytes))
+            else
+                trie.refused += 1
+                out[i] = prev = rule
+                node = -1
+                continue
+            end
         end
         out[i] = trie.rules[id]
         node = id

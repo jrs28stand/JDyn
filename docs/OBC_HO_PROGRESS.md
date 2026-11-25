@@ -5,6 +5,12 @@ Branch `obc-ho` (pushed to `origin wip/obc-ho`), based on `wip/obc` at 5f0d3a0. 
 
 ## State / next step
 
+MAINTENANCE TASK (three jobs, started 2026-11-25). Job 1 (bound the OccBin rule memo): DONE, see "Rule memo budget" below. Job 2 (news-filter "horizon too short" status, opt-in
+`obc_horizon_max`): not started. Job 3 (merge `main` into `obc-ho`, tighten the `bf` replay): not started, do it after job 2 is pushed.
+Resume: `source /root/jl/jdyn_env.sh; julia --project=. test/<file>.jl` (one file at a time; first run after a `src` edit precompiles for ~4 minutes). Push only to `origin obc-ho:wip/obc-ho`.
+
+(Older state, cubature port:)
+
 CUBATURE PORT (current task; spec: pydyn docs/OBC_HO_PERF.md). Steps 1-6 DONE (full average with cached factorisations; defaults full average + level 11; up-front M diagnostic; failure handling; two
 constraints at higher order; regions = k with DynareOBC's splitting, validated against ref_o2cub4.mat). Cross-port checks vs pydyn done for steps 1, 4, 5. NEXT: final report to the coordinator (see the sections
 "Step 1" timing table, "Steps 4 and cross-port checks", "Step 5", "Step 6" below).
@@ -136,3 +142,28 @@ Timing, zlb2 (two constraints), per period, 100 periods, minimum of 5: level 9: 
 each region contributes (its size) x (solution at q + R mean(xi of the region)); failures classified as for points, a failed region counts all its points (`unexamined` = regions not yet solved). Fewer relevant points than regions: each is its own region.
 Not default; like one region it does not price tail risk (documented). Validation (test_obc_ho.jl "four regions", nk, horizon 32+32, level 9, regions=4, DynareOBC's root and points injected, ref_o2cub4.mat): periods agreeing to < 1e-12 are counted against
 the reference (JDyn: 294 of 300 agree to < 1e-12, six differ up to 0.0061; pydyn: 294 of 300, six differ by up to 0.006 from near-ties of the Otsu split); the test requires >= 290 and max < 0.01.
+
+
+## Rule memo budget (maintenance job 1)
+Background (pydyn soak test, `soak/repro/occbin_rule_trie_memory.py`): at extreme parameter vectors the inversion filter's root search visits hundreds of thousands of distinct regime
+guesses and `_RuleTrie` memoised them all. Reproduced in JDyn: NKM (Dynare's tests/occbin/filter, `occest_nkm.mod`), vector (109.65435, 2.234926, 0.645373, 0.660980, 0.9999999229, 0.78819, 0.0042891, 0.0101122, 6.0573e-05), news not involved
+(`obc_method = occbin`), inversion filter: **231,173 nodes, `Base.summarysize` 1,294 MB, peak RSS 2.3-2.6 GB, 15-23 s, ends with code 304** (pydyn: 232,740 nodes; the count varies with the random root search).
+Note: pydyn builds `Occbin` with its own default `qz_criterium` (1 + 1e-6), JDyn passes the estimation's (1 - 1e-6, Dynare's choice for lik_init 1); at the vector above rhos = 0.99999992 exceeds
+1 - 1e-6, so JDyn stops with a Blanchard-Kahn failure (code 3) unless `qz_criterium` is set to 1 + 1e-6 as in the reproducer (done in the test and the scripts). A difference between the ports, not changed.
+
+Change (`src/occbin.jl`): `OCCBIN_RULE_MEMO_BYTES` (a `Ref`, default 128 MiB) is the budget per Occbin object, counted as 8 (n^2 + n n_exo + n) bytes per stored rule. A rule that would exceed it is computed
+by the same arithmetic and used, but not stored; the rest of that guess is computed the same way (the parent is not a node), as the un-memoised code. `_RuleTrie` gained `bytes` and `refused`;
+`rule_memo_stats(ob)` gives `(nodes, bytes, refused)`; `_RULE_MEMO_PEAK`/`reset_rule_memo_peak!()` the high-water mark of one trie. Nothing else changed.
+The Python port (read only) has the same idea with a byte budget of 384 MiB (`rule_memo_bytes`); JDyn's default is 128 MiB (see below), the semantics are the same.
+
+Numbers (machine shared with another agent, load average 2-3 on 2 cores, noted per measurement):
+- Largest trie of any Occbin object over `test/test_occbin_memo.jl`'s battery (NKM 4 vectors, small NKM 3, rbc two constraints with PKF and smoother, bf 6 vectors, simulations of rbc_occbin, obc_zlb, nk_zlb2, obc_zlb2): **858 nodes, 0.52 MiB**.
+  Over 300 NKM evaluations in a random walk (1% perturbations): 15-16 nodes (80-86 kB) per evaluation. Default 128 MiB = 245x the largest ordinary trie (>= 20x asked); about 24,000 nodes at the NKM's 5.4 kB per node.
+- Extreme vector, one evaluation (including the same random search; times vary by +-30% with it): before 15.5 s / peak RSS 2,338 MB; default 128 MiB 11.1 s / 951 MB; 16 MiB 19.4 s / 737 MB (3,120 nodes);
+  budget 0 (no memo at all) 39.8 s / 746 MB. The baseline RSS of a JDyn session is about 700 MB, so the memo adds at most the budget plus garbage. The memo still pays off (no memo is 3x slower),
+  so the budget is not set small. The failure itself (code 304) still takes 11 s: the budget fixes memory, not the length of the search.
+- Lifetime: `_RULE_TRIES` is a WeakKeyDict on the Occbin object, and the filter builds a new Occbin per evaluation, so tries are released with it: after 300 evaluations (full GC every 50) live tries 0, GC live bytes flat at 36.6 MB, RSS flat at 714 MB. No accumulation.
+- Normal path, one `log_posterior` (min of 5, ms, NKM vectors 1-4 / small NKM 1-3), before (f477d7d) vs after, load average about 2: 68.9 75.2 65.0 69.2 / 47.2 46.8 48.7 against 78.1 63.8 64.1 67.6 / 43.7 48.0 47.9: no measurable difference (noise +-10%).
+- Bit for bit: `test/test_occbin_memo.jl` (12 + 3 + 3 assertions, ~2 min) runs the whole battery (57 results: log posterior and its failure code, every field of the inversion filter result with a fixed `rng`, PKF result, smoother, simulations)
+  under the default budget, budget 0, 40 kB (about 7 nodes) and 400 kB, and compares with `same` (Float64 bit patterns, `isequal` structure): all identical, and the trie never exceeds the budget. The last testset is the reproducer
+  (budget 16 MiB: code 304, trie <= 16 MiB, 12 s). It is not "fast" (the failing search itself takes 11-12 s); the whole file takes about 2 minutes.
