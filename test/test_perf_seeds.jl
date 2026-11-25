@@ -43,12 +43,14 @@ end
 @testset "random draws are reproducible and follow set_dynare_seed / seed=" begin
     a = _seed_run()
     b = _seed_run()
-    @test a.oo_.endo_simul == b.oo_.endo_simul                       # default seed: identical runs
+    @test a.oo_.exo_simul == b.oo_.exo_simul                         # default seed: identical draws
+    @test isapprox(a.oo_.endo_simul, b.oo_.endo_simul; atol=1e-12)
     @test a.oo_.irfs.z_e == b.oo_.irfs.z_e                           # order-2 GIRFs use the stream too
     c = _seed_run(; seed=5)
     d = _seed_run("set_dynare_seed(5);")
     e = _seed_run("set_dynare_seed(6);")
-    @test c.oo_.endo_simul == d.oo_.endo_simul                       # seed= keyword == set_dynare_seed in the file
+    @test c.oo_.exo_simul == d.oo_.exo_simul                         # seed= keyword == set_dynare_seed in the file: same draws
+    @test isapprox(c.oo_.endo_simul, d.oo_.endo_simul; atol=1e-12)   # paths: BLAS last-bit noise under load
     @test c.oo_.irfs.z_e == d.oo_.irfs.z_e
     @test c.oo_.endo_simul != e.oo_.endo_simul && c.oo_.endo_simul != a.oo_.endo_simul
     @test a.options_.DynareRandomStreams.seed == 0 && a.options_.DynareRandomStreams.algo == "mt19937ar"

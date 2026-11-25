@@ -735,6 +735,10 @@ function _exec_statement!(m::Model, st)
     elseif kind == "initval_file" && any(k -> haskey(get_or(st, "options", Dict{String,Any}()), k), ("series", "first_obs", "last_obs", "first_simulation_period", "last_simulation_period"))
         throw(ModelError("initval_file with the options series, first_obs, last_obs, first_simulation_period or last_simulation_period is not implemented " *
                          "(only datafile/filename and nobs are)"))
+    elseif kind == "extended_path"
+        # run where it stands by dynare() (src/extended_path.jl); its options are written into options_.ep there
+    elseif kind in ("estimation_data", "set_time")
+        # the `data` command and set_time are read by dynare() where they stand (src/results.jl, src/results_estimation.jl)
     elseif kind in ("native", "verbatim", "perfect_foresight_controlled_paths", "initval_file") || kind in _LATEX_KINDS || kind in _SEMI_KINDS
         # native lines are run by the MATLAB session
     else
@@ -751,6 +755,38 @@ blocks (calibrated ones included; `var a, b = value` covariances do not enter it
 """
 declared_correlation_matrix(m::Model) = get!(() -> Matrix{Float64}(LinearAlgebra.I, m.n_exo, m.n_exo), m.options, "Correlation_matrix")::Matrix{Float64}
 
+"Calibrated covariances of pairs of measurement errors (`M_.H` off-diagonal entries), keyed by the two names (both orders)."
+me_offdiag(m::Model) = get!(() -> Dict{Tuple{String,String},Float64}(), m.options, "ME_offdiag")::Dict{Tuple{String,String},Float64}
+"Declared correlations of pairs of measurement errors (`M_.Correlation_matrix_ME` off-diagonal entries), keyed by the two names (both orders)."
+me_corr_entries(m::Model) = get!(() -> Dict{Tuple{String,String},Float64}(), m.options, "ME_corr")::Dict{Tuple{String,String},Float64}
+
+"`M_.H` for the observed variables `names`: calibrated variances on the diagonal, covariances of `shocks` blocks off it."
+function me_H(m::Model, names::AbstractVector{<:AbstractString})
+    p = length(names)
+    H = zeros(p, p)
+    for (i, a) in enumerate(names)
+        H[i, i] = get(m.measurement_errors, a, 0.0)
+    end
+    for ((a, b), v) in me_offdiag(m)
+        i, j = findfirst(==(a), names), findfirst(==(b), names)
+        (i === nothing || j === nothing) &&
+            throw(ModelError("measurement-error covariance of $a and $b: both must be observed variables (varobs)"))
+        H[i, j] = v
+    end
+    H
+end
+"`M_.Correlation_matrix_ME` for the observed variables `names` (identity plus the declared correlations)."
+function me_corr_matrix(m::Model, names::AbstractVector{<:AbstractString})
+    p = length(names)
+    C = Matrix{Float64}(LinearAlgebra.I, p, p)
+    for ((a, b), v) in me_corr_entries(m)
+        i, j = findfirst(==(a), names), findfirst(==(b), names)
+        (i === nothing || j === nothing) && continue
+        C[i, j] = v
+    end
+    C
+end
+
 "One shocks block, applied in Dynare's order: reset, variances, covariances, correlations."
 function _shocks!(m::Model, st)
     ix, S = m.ix, m.Sigma_e
@@ -758,6 +794,7 @@ function _shocks!(m::Model, st)
         S .= 0
         m.options["Correlation_matrix"] = Matrix{Float64}(LinearAlgebra.I, m.n_exo, m.n_exo)
         empty!(m.measurement_errors)
+        empty!(me_offdiag(m)); empty!(me_corr_entries(m))
     end
     for (key, pw) in (("variance", 1), ("stderr", 2))
         for d in get_or(st, key, [])
@@ -771,8 +808,20 @@ function _shocks!(m::Model, st)
     end
     for key in ("covariance", "correlation")
         for d in get_or(st, key, [])
-            if !haskey(ix, d["name"]) || !haskey(ix, d["name2"])
-                push!(m.unhandled_statements, "shocks: measurement-error covariance")
+            if !haskey(ix, d["name"]) && !haskey(ix, d["name2"])
+                # covariance / correlation of two measurement errors: M_.H(i,j) and M_.Correlation_matrix_ME(i,j) (kept by name)
+                val = _value(m, d[key])
+                a, b = d["name"], d["name2"]
+                if key == "correlation"
+                    me_corr_entries(m)[(a, b)] = val
+                    me_corr_entries(m)[(b, a)] = val
+                    val *= sqrt(get(m.measurement_errors, a, 0.0) * get(m.measurement_errors, b, 0.0))
+                end
+                me_offdiag(m)[(a, b)] = val
+                me_offdiag(m)[(b, a)] = val
+                continue
+            elseif !haskey(ix, d["name"]) || !haskey(ix, d["name2"])
+                push!(m.unhandled_statements, "shocks: covariance between a structural shock and a measurement error")
                 continue
             end
             i, j = ix[d["name"]], ix[d["name2"]]

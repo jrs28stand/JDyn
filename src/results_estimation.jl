@@ -37,6 +37,80 @@ function _fsa(ws)
     sort(unique(Int.(round.(vec(Float64.(v))))))
 end
 
+# ---- the `data` command (Dynare's options_.dataset): file, first_obs, last_obs, nobs, dates
+const _DATE_EXPR = r"^\s*(?:dates\(\s*'([^']+)'\s*\)|'?([0-9]+[A-Za-z][0-9]*|-?[0-9]+-[0-9]+-[0-9]+)'?)\s*$"
+
+function _date_of(v)
+    v isa AbstractVector && length(v) == 1 && (v = v[1])
+    v isa AbstractString || return nothing
+    mt = match(_DATE_EXPR, v)
+    mt === nothing && return nothing
+    string2date(String(something(mt.captures[1], mt.captures[2])))
+end
+
+"First date (freq, time) of a data file: INIT__ of a .m or .mat file, the first column of a .csv file; else `nothing`."
+function _data_start_date(path::AbstractString)
+    isfile(path) || return nothing
+    ext = lowercase(splitext(path)[2])
+    if ext == ".m"
+        mt = match(r"^\s*INIT__\s*=\s*['\"]([^'\"]+)['\"]"m, read(path, String))
+        return mt === nothing ? nothing : string2date(String(mt.captures[1]))
+    elseif ext == ".mat"
+        t = try MAT.matread(path) catch; return nothing end
+        v = get(t, "INIT__", nothing)
+        return v isa AbstractString ? string2date(v) : nothing
+    elseif ext == ".csv"
+        rows = filter(!isempty, strip.(readlines(path)))
+        length(rows) > 1 || return nothing
+        return string2date(String(strip(split(rows[2], ',')[1])))
+    end
+    nothing
+end
+
+"Rewrite the datafile, first_obs and nobs keywords as the `data` command says (observation numbers counted from 1)."
+function _apply_dataset!(ws, kw)
+    d = get(ws.state, :dataset, nothing)
+    d === nothing && return
+    for k in ("series", "xls_sheet", "xls_range")
+        haskey(d, k) && throw(EstimationError("data($k=...) is not supported: use a .m, .mat or .csv file"))
+    end
+    haskey(d, "file") || throw(EstimationError("the data command needs a file"))
+    haskey(kw, :datafile) && String(kw[:datafile]) != String(d["file"]) &&
+        throw(EstimationError("You cannot simultaneously use the data command and the datafile option"))
+    file = String(d["file"])
+    kw[:datafile] = file
+    p = isabspath(file) ? file : joinpath(ws.model.mod_dir, file)
+    if !(lowercase(splitext(p)[2]) in (".m", ".mat", ".csv"))
+        found = [p * e for e in (".m", ".mat", ".csv") if isfile(p * e)]
+        length(found) == 1 && (p = found[1])
+    end
+    start = _data_start_date(p)
+    if start === nothing && haskey(ws.state, :set_time)
+        start = _date_of(String(ws.state[:set_time]))        # set_time: the first date of the sample
+    end
+    function index(v, what)
+        dt = _date_of(v)
+        if dt === nothing
+            v isa AbstractVector && length(v) == 1 && (v = v[1])
+            return Int(round(Float64(v isa AbstractString ? parse(Float64, v) : v)))
+        end
+        start === nothing && throw(EstimationError("data($what=...): the data file has no dates (INIT__ in a .m/.mat file, a first column of dates in a .csv file) and set_time was not used"))
+        dt[1] == start[1] || throw(EstimationError("data($what=...): the date is at another frequency than the data"))
+        Int(round(dt[2] - start[2])) + 1
+    end
+    first = haskey(d, "first_obs") ? index(d["first_obs"], "first_obs") : 1
+    first < 1 && throw(EstimationError("makedataset: first_obs cannot be less than the first date in the dataset"))
+    nobs = haskey(d, "nobs") ? index(d["nobs"], "nobs") : nothing
+    if haskey(d, "last_obs")
+        last = index(d["last_obs"], "last_obs")
+        nobs !== nothing && last != first + nobs - 1 && throw(EstimationError("makedataset: Options last_obs, first_obs and nobs are not consistent!"))
+        nobs = last - first + 1
+    end
+    kw[:first_obs] = first
+    nobs === nothing ? delete!(kw, :nobs) : (kw[:nobs] = nobs)
+    nothing
+end
+
 """
 Keywords of `Estimation` from options_: the options estimation reads (the ones it acts on or ignores on purpose, those of
 the file's `estimation` statements, and `user`), in the form `_flat_options` gives them. The smoother options, which this
@@ -58,6 +132,7 @@ function _estimation_kwargs(ws, user)
         _isnan_scalar(v) && continue                          # first_obs = NaN is Dynare's "not set"
         kw[Symbol(k)] = v
     end
+    _apply_dataset!(ws, kw)
     # options_.order is always read (Dynare's estimation resets it to 1; the table of defaults would hide a 2)
     kw[:order] = _opti(ws, "order", 1)
     (occ = _occbin_overrides(ws)) === nothing || (kw[:occbin] = occ)
@@ -185,8 +260,19 @@ function _store_dr_estimation!(oo::MStruct, m::Model, sol=nothing)
         D.ghx = gh
         D.ghu = Matrix{Float64}(ghu(sol))
         D.state_var = _row(sol.state_var)
-        D.sdim = Float64(nspred)
-        D.edim = Float64(cnt.nboth + cnt.nfwrd)
+        ex = hasproperty(sol, :extra) ? sol.extra : (;)
+        if haskey(ex, :gx)                        # the resolution's own QZ results (levels, as Dynare's dr)
+            D.eigval = _eigcol(sol.eigenvalues)
+            D.sdim = Float64(ex.sdim); D.edim = Float64(ex.edim)
+            if ex.backward
+                D.full_rank = 1.0
+            else
+                D.gx = ex.gx; D.Gy = ex.hx
+            end
+        else
+            D.sdim = Float64(nspred)
+            D.edim = Float64(cnt.nboth + cnt.nfwrd)
+        end
     end
     oo.dr = D
 end
@@ -200,7 +286,7 @@ oo_.Smoother, oo_.SmoothedVariables, oo_.UpdatedVariables, oo_.FilteredVariables
 oo_.SmoothedShocks and oo_.SmoothedMeasurementErrors from a `SmootherResult` (store_smoother_results.m): every variable
 a (nobs x 1) column, fields created in decision-rule order as Dynare does, the smoother's own results removed first.
 """
-function _store_smoother_results!(oo::MStruct, m::Model, res::SmootherResult)
+function _store_smoother_results!(oo::MStruct, m::Model, res::SmootherResult; only=nothing)
     if res.occbin !== nothing                   # OccBin: oo_.occbin.smoother; nothing else is written if the smoother failed
         _store_occbin_smoother!(oo, m, res)
         res.occbin.smoother.error_flag == 0 || return oo
@@ -228,9 +314,13 @@ function _store_smoother_results!(oo::MStruct, m::Model, res::SmootherResult)
     res.Variance === nothing || (S.Variance = res.Variance)
     C, I = MStruct(), MStruct()
     SV, FV, UV = MStruct(), MStruct(), MStruct()
+    # selected_variables_only: bayestopt_.smoother_saved_var_list holds the variables of the list after the command (k3) only;
+    # the observed variables keep their Constant (set for all of them in store_smoother_results.m)
+    keep(v) = only === nothing || v in only
     for i in ord
         v = nm[i]
-        C[v] = _col(res.Constant[v])
+        (keep(v) || v in varobs) && (C[v] = _col(res.Constant[v]))
+        keep(v) || continue
         I[v] = res.Init_State[v]
         SV[v] = _col(res.SmoothedVariables[v])
         nk && (FV[v] = _col(res.FilteredVariables[v]))
@@ -264,13 +354,23 @@ function _store_smoother_results!(oo::MStruct, m::Model, res::SmootherResult)
     oo
 end
 
+"The variables the smoother results are kept for under `selected_variables_only` (the list after the command, else all original endogenous ones), or `nothing`."
+function _selected_only(ws, m::Model, vl)
+    _optb(ws, "selected_variables_only", false) || return nothing
+    # dynare_estimation_init.m: classical forecasts need every variable, the option is then ignored
+    _optb(ws, "forecast", false) && return nothing
+    Set(isempty(vl) ? orig_endo_names(m) : vl)
+end
+
 "M_ as set_all_parameters.m leaves it: params, Sigma_e, Correlation_matrix, H (the model follows)."
 function _apply_theta!(ws, est::Estimation, theta)
     m = ws.model
     apply_estimates!(m, est, theta)
-    _, H = covariances(est, theta)
+    _, H, CME = _covariances(est, theta)
     _model_to_M!(ws)
     ws.M_.H = Matrix{Float64}(H)
+    ws.M_.Correlation_matrix_ME = Matrix{Float64}(CME)
+    ws.state[:CME] = copy(ws.M_.Correlation_matrix_ME)
     ws.state[:H] = copy(ws.M_.H)                 # dynare() rebuilds M_ at the end of the file and keeps this H
     C = copy(declared_correlation_matrix(m))          # estimated correlations replace their entries (set_all_parameters.m)
     Cs = _corr(m.Sigma_e)
@@ -337,8 +437,6 @@ function _estimation!(ws::DynareWorkspace, st, var_list, data, seed, options)
     stopts = st === nothing ? Dict{String,Any}() : (o = get_or(st, "options", nothing); o isa AbstractDict ? o : Dict{String,Any}())
     # EstimationStatement::writeOutput: options_.order = 1 unless the statement gives an order
     (haskey(stopts, "order") || haskey(options, :order)) || (O.order = 1.0)
-    _optb(ws, "selected_variables_only", false) &&
-        throw(EstimationError("selected_variables_only is not supported by the oo_ writer (oo_.SmoothedVariables would not have Dynare's layout)"))
     vl = String.(collect(var_list))
     for v in vl
         haskey(m.ie, v) || throw(EstimationError("estimation: $v is not an endogenous variable"))
@@ -368,6 +466,12 @@ function _estimation!(ws::DynareWorkspace, st, var_list, data, seed, options)
             @warn "estimation: mode_compute=0 without a mode_file: Dynare returns before the Metropolis-Hastings run, so mh_replic=$(o["mh_replic"]) is not used"
         end
         initial_estimation_checks(est)
+        if _optb(ws, "debug", false)         # initial_estimation_checks.m: with options_.debug the objective at the initial (or mode-file) values
+            theta_init = isempty(mfile) ? est.x0 : match_mode_file(est, read_mode_file(m, mfile); mode_compute=o["mode_compute"])[1]
+            fv, finfo = _dsge_likelihood(est, theta_init; bounds=(est.lb, est.ub))[1:2]
+            finfo == 0 || throw(EstimationError("the likelihood at the initial parameters cannot be computed: $(est.last_info)"))
+            oo.likelihood_at_initial_parameters = Float64(fv)
+        end
         # Dynare sets M_ to the initial values first; the steady state it stores is the one at those values
         sol0 = try
             first_order(m; params=model_params(est, est.x0), qz_criterium=o["qz_criterium"], loglinear=o["loglinear"])
@@ -404,6 +508,17 @@ function _estimation!(ws::DynareWorkspace, st, var_list, data, seed, options)
             runtime = time() - t0
             theta = copy(mode.x)
             _fig_est!(ws, :mode, est; mode=mode)
+            if !from_file                      # dynare_estimation_1.m: <fname>/Output/<fname>_mode.mat (xparam1, hh, parameter_names, fval)
+                try
+                    out = joinpath(m.mod_dir, m.name, "Output"); mkpath(out)
+                    md = Dict{String,Any}("xparam1" => reshape(copy(mode.x), :, 1), "parameter_names" => reshape(copy(est.names), :, 1),
+                                          "fval" => -mode.log_posterior)
+                    o["cova_compute"] != 0 && mode.hessian !== nothing && (md["hh"] = Matrix{Float64}(mode.hessian))
+                    MAT.matwrite(joinpath(out, m.name * "_mode.mat"), md)
+                catch e
+                    @debug "mode file not written" e
+                end
+            end
             P = get(oo, "posterior", nothing)
             P isa MStruct || (P = MStruct(); oo.posterior = P)
             haskey(P, "optimization") && delete!(P, "optimization")
@@ -454,7 +569,7 @@ function _estimation!(ws::DynareWorkspace, st, var_list, data, seed, options)
     est, theta, res, nobs, lik_init = result
     _apply_theta!(ws, est, theta)
     if res !== nothing
-        _store_smoother_results!(oo, m, res)
+        _store_smoother_results!(oo, m, res; only=_selected_only(ws, m, vl))
         _store_dr_estimation!(oo, m, res.solution)
     end
     _estimation_forecast!(ws, m, est, theta, res, vl)
@@ -621,13 +736,14 @@ function _calib_smoother!(ws::DynareWorkspace, st, var_list, options)
     end
     oo.steady_state = _col(ys0)
     O.noconstant = 0.0
-    _store_smoother_results!(oo, m, res)
+    _store_smoother_results!(oo, m, res; only=_selected_only(ws, m, String.(collect(var_list))))
     _store_dr_estimation!(oo, m, res.solution)
     nobs = size(res.smoothed, 1)
     # evaluate_smoother.m does not reset first_obs to NaN as dynare_estimation_1.m does
     _set_estimation_options!(ws, m, nobs, est === nothing ? 0 : est.n, _fsa(ws), isnan(first_obs0) ? 1.0 : first_obs0, res.options["lik_init"])
     _gui!(oo, "ran_calib_smoother")
     est === nothing || _fig_est!(ws, :smoother, est; res=res)       # src/plots_hooks.jl
+    ws.state[:last_smoother] = res                                  # read by shock_decomposition (src/results_shockdec.jl)
     ws
 end
 

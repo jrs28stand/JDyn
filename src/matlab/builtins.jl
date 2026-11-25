@@ -241,8 +241,15 @@ function _var(I, a, nout)
 end
 BUILTINS["var"] = _var
 BUILTINS["std"] = (I, a, nout) -> ret(sqrt.(farr(_var(I, a, nout))))
-bi!("cumsum", "cumprod") do I, a, nout
-    _unsup("cumsum/cumprod")
+for (nm, fn) in (("cumsum", cumsum), ("cumprod", cumprod))
+    BUILTINS[nm] = function (I, a, nout)
+        _nargs(a, 1, 2, nm)
+        x = farr(a[1])
+        isempty(x) && return ret(x)
+        ax = _dim_arg(x, a, 2)
+        ax === nothing && return ret(x)
+        ret(fn(x; dims=ax))
+    end
 end
 
 # diff(x), diff(x, n), diff(x, n, dim): differences along the first non-singleton dimension (data files of estimation)
@@ -299,6 +306,10 @@ function _anyall!(name, fn)
         _nargs(a, 1, 2, name)
         # any and all look at the non-zero entries; a NaN counts as neither (any(NaN) is false, all(NaN) true)
         x0 = arr(a[1])
+        if name == "all" && eltype(x0) != Bool && any(isnan, x0)
+            ax0 = _dim_arg(x0, a, 2)
+            (ax0 !== nothing && ax0 == 2 && size(x0, 1) > 1) && _unsup("all(X, DIM) of an array containing NaN (MATLAB and Octave differ)")
+        end
         x = eltype(x0) == Bool ? x0 : (name == "any" ? ((x0 .!= 0) .& .!isnan.(x0)) : ((x0 .!= 0) .| isnan.(x0)))
         (isempty(x) && size(x) == (0, 0)) && return name == "all"
         ax = _dim_arg(x, a, 2)
@@ -316,6 +327,7 @@ bi!("find") do I, a, nout
     k = Float64.(findall(!=(0), vec(x)))
     length(a) == 2 && (k = k[1:min(end, as_index_int(a[2]))])
     isrow = size(x, 1) == 1 && size(x, 2) != 1
+    isempty(k) && size(x) == (1, 1) && return zeros(0, 0)
     isempty(k) && return isrow ? zeros(1, 0) : zeros(0, 1)
     ret(isrow ? reshape(k, 1, :) : reshape(k, :, 1))
 end
@@ -648,8 +660,23 @@ function _cfmt(spec::AbstractString, x::Float64)
     if isnan(x) || isinf(x)
         s = isnan(x) ? "NaN" : (x > 0 ? "Inf" : "-Inf")
         m = match(r"%([-+ 0#]*)(\d*)", spec)
+        (x > 0 && occursin('+', m.captures[1])) && (s = "+Inf")
         w = isempty(m.captures[2]) ? 0 : parse(Int, m.captures[2])
         return occursin('-', m.captures[1]) ? rpad(s, w) : lpad(s, w)
+    end
+    pm = match(r"\.(\d*)[a-zA-Z]$", spec)
+    if conv in "diouxX" && x == 0 && pm !== nothing && (isempty(pm.captures[1]) || parse(Int, pm.captures[1]) == 0)
+        m = match(r"%([-+ 0#]*)(\d*)", spec)          # a zero with precision 0 prints no digits
+        w = isempty(m.captures[2]) ? 0 : parse(Int, m.captures[2])
+        return occursin('-', m.captures[1]) ? rpad("", w) : lpad("", w)
+    end
+    if conv in "xXo" && occursin('#', spec) && x == 0
+        spec = replace(spec, "#" => ""; count=1)
+        conv == 'o' && return Printf.format(Printf.Format(spec), BigInt(0))
+    end
+    if conv == 'o' && occursin('#', spec) && x > 0 && x == round(x) && pm !== nothing
+        s0 = Printf.format(Printf.Format(replace(spec, "#" => "")), BigInt(x))
+        startswith(lstrip(s0), "0") && return s0
     end
     if conv in "di"
         if x != round(x)
@@ -680,7 +707,7 @@ function _num2str(x, fmt=nothing)
     end
     x = Float64(x)
     if fmt !== nothing
-        fmt isa AbstractString && return String(lstrip(_sprintf(fmt, Any[x])))     # num2str trims leading blanks
+        fmt isa AbstractString && return String(strip(_sprintf(fmt, Any[x]), [' ', '\t', '\n', '\r', '\v', '\f', '\0']))     # num2str trims leading blanks
         return _cfmt("%." * string(as_index_int(fmt)) * "g", x)
     end
     isnan(x) && return "NaN"
@@ -706,7 +733,8 @@ function _sprintf(fmt::AbstractString, args)
         elseif v isa Cell || v isa MStruct || v isa Handle
             merr("sprintf: wrong type of argument")
         else
-            append!(flat, Float64.(vec(arr(v))))
+            x = arr(v)
+            isempty(x) ? push!(flat, nothing) : append!(flat, Float64.(vec(x)))
         end
     end
     specs = collect(eachmatch(_FMT_RE, fmt))
@@ -727,18 +755,18 @@ function _sprintf(fmt::AbstractString, args)
             end
             (m.captures[2] == "*" || m.captures[3] == "*") && _unsup("sprintf with '*' field width")
             if k > length(flat)
-                if !isempty(flat) || k > 1
-                    if k > 1
-                        broke = true
-                        break
-                    end
-                end
-                continue
+                broke = true                 # out of data: the output stops at this conversion
+                break
             end
             v = flat[k]
+            if v === nothing                 # an empty argument is consumed by a conversion and prints nothing
+                k += 1
+                continue
+            end
             if v isa String && length(v) > 1 && m.captures[4] != "s"
-                # a char array met by a numeric (or %c) conversion is used one character at a time: %d of 'ab' is 97, 98
-                splice!(flat, k, [string(c) for c in v])
+                # a char array met by a numeric (or %c) conversion gives up one character; the rest stays for the next conversion
+                cs = collect(v)
+                splice!(flat, k, [string(cs[1]), String(cs[2:end])])
                 v = flat[k]
             end
             k += 1
@@ -800,6 +828,10 @@ bi!("strsplit") do I, a, nout
     ds = length(a) < 2 ? [" "] : a[2] isa Cell ? [_unescape(_str(x, "strsplit")) for x in a[2].items] : [_unescape(_str(a[2], "strsplit"))]
     collapse = true                       # MATLAB's default: consecutive delimiters count as one
     rest = a[3:end]
+    if length(rest) >= 1 && (rest[1] isa Bool)      # Octave's undocumented logical third argument
+        collapse = rest[1]
+        rest = rest[2:end]
+    end
     while length(rest) >= 2
         key = lowercase(_str(rest[1], "strsplit"))
         key == "collapsedelimiters" || _unsup("strsplit option $(repr(rest[1]))")
@@ -808,7 +840,7 @@ bi!("strsplit") do I, a, nout
     end
     isempty(rest) || merr("strsplit: options must come in name-value pairs")
     any(isempty, ds) && merr("strsplit: delimiters must not be empty")
-    alt = join([replace(d, r"([\\^$.|?*+()\[\]{}])" => s"\\\1") for d in sort(ds; by=length, rev=true)], "|")
+    alt = join([replace(d, r"([\\^$.|?*+()\[\]{}])" => s"\\\1") for d in ds], "|")
     re = Regex(collapse ? "(?:$alt)+" : "(?:$alt)")
     Cell(Any[String(x) for x in split(s, re)])
 end
@@ -925,8 +957,14 @@ function _noop(I, argnodes, sc, nout)
     Any[]
 end
 lazy!(_noop, "disp", "display", "fprintf", "printf", "fdisp", "dprintf", "skipline", "warning", "more", "beep", "fflush",
-      "rng", "format", "clc", "diary", "echo", "commandwindow", "dbstop", "profile",
+      "format", "clc", "diary", "echo", "commandwindow", "dbstop", "profile",
       "close", "hold", "drawnow", "pause", "fclose", "print_info")
+
+# rng: Octave's generator is driven by rng_hook (Octave mode); otherwise it only draws attention and does nothing
+BUILTINS["rng"] = function (I, a, nout)
+    nout > 0 && throw(Unsupported("output of a display or timing function", "display"))
+    Any[]
+end
 
 const PLOT_FUNCS = split("figure plot subplot title legend xlabel ylabel zlabel axis print saveas line bar histogram hist grid box " *
     "plot3 surf mesh colorbar suptitle sgtitle xlim ylim annotation text orient hgsave savefig fill area " *
@@ -944,11 +982,36 @@ lazy!(_plot, PLOT_FUNCS...)
 
 const FILE_FUNCS = split("fopen fread fwrite fgetl fgets fscanf textscan importdata xlsread xlswrite csvread csvwrite " *
     "dlmread dlmwrite readtable writetable readmatrix writematrix delete copyfile movefile rmdir " *
-    "addpath rmpath cd dir ls system unix dos exist_file " *
+    "rmpath cd dir ls system unix dos exist_file " *
     "datatomfile matfile which websave urlread unzip zip tempdir tempname setenv " *
     "open winopen edit type input keyboard dbstack mfilename genpath path userpath")
 _file(I, argnodes, sc, nout) = throw(Unsupported("file-system, shell or interactive functions are not available", "file"))
 lazy!(_file, FILE_FUNCS...)
+
+# addpath(dir, ...): the .m files of the folders become callable (the model folder keeps priority); relative folders are
+# taken from the model folder. Folders that do not exist are an error as in Octave's warning-turned-refusal.
+function _addpath(I, argnodes, sc, nout)
+    paths = String[]
+    for a in argnodes
+        v = ev_multi(I, a, sc, 1)[1]
+        v isa AbstractString || throw(Unsupported("addpath with a non-string argument", "file"))
+        lowercase(v) in ("-begin", "-end", "-frozen") && continue
+        append!(paths, split(v, ':'; keepempty=false))
+    end
+    files = dir_files(I)
+    for p in paths
+        d = isabspath(p) ? p : joinpath(something(I.dir, pwd()), p)
+        isdir(d) || throw(Unsupported("addpath of a folder that does not exist: $p", "file"))
+        for f in readdir(d)
+            if endswith(f, ".m") && occursin(r"^[A-Za-z_]\w*\.m$", f) && !haskey(files, f[1:end-2])
+                files[f[1:end-2]] = joinpath(d, f)
+            end
+        end
+    end
+    nout > 0 && throw(Unsupported("addpath with an output", "file"))
+    Any[]
+end
+lazy!(_addpath, "addpath")
 
 bi!("clock", "now", "date", "datestr", "etime", "datetime", "version", "ver", "computer",
     "ispc", "isunix", "ismac", "matlab_ver_less_than", "octave_ver_less_than", "user_has_matlab_license",
@@ -961,15 +1024,23 @@ end
 const ISOCTAVE = Ref(false)
 BUILTINS["isoctave"] = (I, a, nout) -> ISOCTAVE[]
 
-bi!("error") do I, a, nout
+function _error_from(a)
     isempty(a) && merr("error")
-    a[1] isa MStruct && throw(MatlabError(string(get(a[1], "message", "error")), string(get(a[1], "identifier", "")), true))
+    if a[1] isa MStruct
+        msg = string(get(a[1], "message", "error"))
+        isempty(msg) && return Any[]
+        throw(MatlabError(msg, string(get(a[1], "identifier", "")), true))
+    end
     fmt = a[1] isa AbstractString ? a[1] : "error"
     rest = a[2:end]
     id = ""
-    if !isempty(rest) && occursin(r"^[A-Za-z]\w*(:[\w-]+)+$", fmt) && rest[1] isa AbstractString
+    # Octave: an identifier has a colon inside it and no whitespace or '%'
+    if a[1] isa AbstractString && !occursin(r"[%\s]", fmt) && occursin(':', fmt) && !startswith(fmt, ":") && !endswith(fmt, ":")
+        if isempty(rest)
+            throw(MatlabError("call to error with message identifier '$fmt' requires message", "", true))
+        end
         id = fmt
-        fmt, rest = rest[1], rest[2:end]
+        fmt, rest = rest[1] isa AbstractString ? rest[1] : "error", rest[2:end]
     end
     # error(msg) alone prints msg as it is; with an identifier or arguments it is a format
     msg = try
@@ -977,7 +1048,11 @@ bi!("error") do I, a, nout
     catch
         fmt
     end
+    endswith(msg, "\n") && (msg = msg[1:end-1])
     throw(MatlabError(msg, id, true))
+end
+bi!("error") do I, a, nout
+    _error_from(a)
 end
 bi!("rethrow") do I, a, nout
     _nargs(a, 1, 1, "rethrow")
@@ -988,8 +1063,9 @@ end
 bi!("assert") do I, a, nout
     isempty(a) && merr("assert: argument missing")
     (length(a) >= 2 && !(a[2] isa AbstractString)) && _unsup("assert(observed, expected, tol) form")
-    truth(a[1]) || throw(MatlabError(length(a) > 1 ? _sprintf(a[2], a[3:end]) : "assert (cond) failed", "", true))
-    Any[]
+    truth(a[1]) && return Any[]
+    length(a) > 1 && return _error_from(a[2:end])
+    throw(MatlabError("assert (cond) failed", "", true))
 end
 bi!("exist") do I, a, nout
     name = _str(a[1], "exist")

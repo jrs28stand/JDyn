@@ -13,7 +13,7 @@
 mutable struct RandomStreams
     algo::String          # as Dynare reports it; JDyn's generator is always Xoshiro256++
     seed::Int
-    rng::Random.Xoshiro
+    rng::Random.AbstractRNG
 end
 
 const _STREAMS = WeakKeyDict{Any,RandomStreams}()
@@ -23,6 +23,20 @@ const DYNARE_RNG_ALGOS = ("mcg16807", "mlfg6331_64", "mrg32k3a", "mt19937ar", "s
 
 _streams(m) = lock(_STREAMS_LOCK) do
     get!(() -> RandomStreams("mt19937ar", DEFAULT_SEED, Random.Xoshiro(DEFAULT_SEED)), _STREAMS, m)
+end
+
+"""
+    use_octave_random!(m::Model)
+
+Make the model's stream (and the interpreter's `rand`/`randn`/`randi`/`randperm`/`rng`) Octave's generators, seeded with the
+current seed: draws are then Octave's numbers bit for bit (`dynare(file; random=:octave)`; src/matlab/rng.jl).
+"""
+function use_octave_random!(m::Model)
+    st = _streams(m)
+    st.rng isa OctaveRNG || (st.rng = OctaveRNG(st.seed))
+    set_rng_kind!(m, :octave)
+    set_mcmc_rng!(m, :octave)
+    m
 end
 
 "The model's random stream (Dynare's global stream for this workspace)."

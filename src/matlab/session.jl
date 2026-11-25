@@ -5,7 +5,9 @@
 mutable struct HostM <: HostStruct
     h::Any
     cells::Dict{String,Cell}
+    results::Any                   # dynare(): the workspace's M_ (an MStruct); the fields below are read from it
 end
+HostM(h, cells) = HostM(h, cells, nothing)
 mutable struct HostOptions <: HostStruct
     store::MStruct                 # model.matlab_options: what the .mod file assigned
     unknown::Set{String}           # fields a Dynare command has overwritten since
@@ -75,6 +77,7 @@ end
 const _M_SCALARS = ["param_nbr", "endo_nbr", "exo_nbr", "orig_endo_nbr", "exo_det_nbr", "maximum_lag", "maximum_lead",
                     "maximum_endo_lag", "maximum_endo_lead"]
 const _M_NAMES = ["param_names", "endo_names", "exo_names"]
+const _M_HISTVAL = ("endo_histval", "exo_histval")
 field_names(M::HostM) = vcat(["params", "Sigma_e", "fname", "dname"], _M_SCALARS, _M_NAMES)
 function snapshot(M::HostM)
     s = MStruct()
@@ -98,7 +101,7 @@ function restore!(M::HostM, value)
     set_field!(M, "params", value["params"])
     set_field!(M, "Sigma_e", value["Sigma_e"])
 end
-has_field(M::HostM, name) = name in field_names(M) ? true : _semi_has(M.h.model, name) ? true : throw(Unsupported("JDyn does not know whether M_ has a field '$name'", "results"))
+has_field(M::HostM, name) = name in field_names(M) || name in ("H", "Correlation_matrix_ME", "Correlation_matrix") ? true : (name in _M_HISTVAL && M.results !== nothing) ? true : _semi_has(M.h.model, name) ? true : throw(Unsupported("JDyn does not know whether M_ has a field '$name'", "results"))
 get_field(M::HostM, name) = peek_field(M, name)
 function peek_field(M::HostM, name; raw=false)
     h = M.h; m = h.model
@@ -120,6 +123,13 @@ function peek_field(M::HostM, name; raw=false)
     name == "orig_endo_nbr" && return Float64(orig_endo_nbr(m))
     name == "exo_det_nbr" && return Float64(n_exo_det(m))
     name in ("maximum_lag", "maximum_lead", "maximum_endo_lag", "maximum_endo_lead") && return Float64(m.info[name])
+    if name in ("endo_names_tex", "exo_names_tex", "param_names_tex", "endo_names_long", "exo_names_long", "param_names_long")
+        return get!(M.cells, name) do
+            sec = startswith(name, "endo") ? "endogenous" : startswith(name, "exo") ? "exogenous" : "parameters"
+            key = endswith(name, "tex") ? "texName" : "longName"
+            Cell(Any[String(get(d, key, d["name"])) for d in m.raw[sec]], (length(m.raw[sec]), 1))
+        end
+    end
     if name in _M_NAMES
         return get!(M.cells, name) do
             names = name == "param_names" ? m.param_names : name == "endo_names" ? m.endo_names : m.exo_names
@@ -127,7 +137,18 @@ function peek_field(M::HostM, name; raw=false)
         end
     end
     name in ("fname", "dname") && return m.name
+    if name in _M_HISTVAL && M.results !== nothing         # dynare(): M_.endo_histval / exo_histval live in the workspace's M_
+        return haskey(M.results, name) ? deepcopy(M.results[name]) : zeros(0, 0)
+    end
     _semi_has(m, name) && return semi_M(m)[name]          # M_.var, M_.pac, ... (src/pac.jl)
+    if name in ("H", "Correlation_matrix_ME", "Correlation_matrix")      # read-only views of the covariance structure
+        if M.results !== nothing && haskey(M.results, name)
+            return deepcopy(M.results[name])
+        end
+        name == "H" && return me_H(m, m.varobs)
+        name == "Correlation_matrix_ME" && return me_corr_matrix(m, m.varobs)
+        return copy(declared_correlation_matrix(m))
+    end
     throw(Unsupported("M_.$name is not available in JDyn", "results"))
 end
 function set_field!(M::HostM, name, value)
@@ -153,6 +174,8 @@ function set_field!(M::HostM, name, value)
         h.sigma .= v
         h.sigma_tainted = false
         h.nwrites += 1
+    elseif name in _M_HISTVAL && M.results !== nothing
+        M.results[name] = deepcopy(value)
     else
         _unsup("assignment to M_.$name is not supported")
     end
@@ -176,6 +199,9 @@ function assign_sub!(M::HostM, name, args, value)
         size(new) != size(h.sigma) && merr("M_.Sigma_e must not change size")
         h.sigma .= new
         h.nwrites += 1
+    elseif name in _M_HISTVAL && M.results !== nothing
+        cur = haskey(M.results, name) ? M.results[name] : zeros(0, 0)
+        M.results[name] = assign_index(cur, args, value)
     else
         _unsup("assignment to M_.$name is not supported")
     end
@@ -295,7 +321,7 @@ const COMPUTE_KINDS = Set(["steady", "check", "stoch_simul", "estimation", "osr"
     "write_latex_dynamic_model", "write_latex_static_model", "write_latex_original_model",
     "write_latex_steady_state_model", "collect_latex_files", "write_latex_definitions", "occbin_solver",
     "occbin_graph", "occbin_write_regimes_xls", "method_of_moments", "ramsey_policy", "discretionary_policy",
-    "evaluate_planner_objective", "save_params_and_steady_state", "smoother2histval", "dynasave",
+    "evaluate_planner_objective", "save_params_and_steady_state", "smoother2histval", "smoother_2_histval", "dynasave",
     "dynatype", "bvar_density", "bvar_forecast", "bvar_irf", "ms_sbvar_estimation", "ms_sbvar_simulation",
     "ms_sbvar_compute_mdd", "ms_sbvar_compute_probabilities", "ms_sbvar_irf", "ms_sbvar_forecast",
     "ms_sbvar_variance_decomposition", "sbvar", "prior_posterior_function", "generate_irfs",

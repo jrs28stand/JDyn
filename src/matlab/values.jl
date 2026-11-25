@@ -162,6 +162,7 @@ function arr(v)
     v isa Bool && return fill(v, 1, 1)
     v isa Real && return fill(Float64(v), 1, 1)
     v isa AbstractString && _unsup("arithmetic or numeric use of a char array")
+    (v isa Array{Float64} || v isa Array{Bool}) && ndims(v) > 2 && _unsup("this operation on an array with more than two dimensions", "ndarray")
     v isa Tainted && _unsup("value depends on a statement that was not executed: $(v.why)", "tainted")
     merr("a $(mclass(v)) was used where a number is required")
 end
@@ -195,12 +196,13 @@ function mclass(v)
     v isa Cell && return "cell"
     (v isa MStruct || v isa HostStruct) && return "struct"
     v isa Handle && return "function_handle"
-    (v isa Bool || v isa AbstractMatrix{Bool}) && return "logical"
+    (v isa Bool || v isa AbstractArray{Bool}) && return "logical"
     "double"
 end
 
 function shape_of(v)
     v isa AbstractMatrix && return size(v)
+    is_nd(v) && _unsup("this operation on an array with more than two dimensions", "ndarray")
     v isa AbstractString && return isempty(v) ? (0, 0) : (1, length(v))
     v isa Cell && return v.shape
     v isa Tainted && arr(v)
@@ -242,6 +244,7 @@ function _ew(fn, a, b)
     if a isa Real && b isa Real
         return fn(Float64(a), Float64(b))
     end
+    (is_nd(a) || is_nd(b)) && return nd_ew(fn, a, b)
     x, y = farr(a), farr(b)
     _bcast(x, y)
     ret(fn.(x, y))
@@ -268,6 +271,7 @@ power(a, b) = _ew(_pow, a, b)
 
 function mtimes(a, b)
     (a isa Real || b isa Real) && return times(a, b)
+    (is_nd(a) || is_nd(b)) && return nd_mtimes(a, b)
     x, y = farr(a), farr(b)
     (length(x) == 1 || length(y) == 1) && return ret(x .* y)
     size(x, 2) != size(y, 1) && merr("operator *: nonconformant arguments ($(size(x,1))x$(size(x,2)) and $(size(y,1))x$(size(y,2)))")
@@ -282,6 +286,7 @@ end
 
 function mrdivide(a, b)
     b isa Real && return rdivide(a, b)
+    (is_nd(a) || is_nd(b)) && return nd_mdivide(a, b, "/")
     x, y = farr(a), farr(b)
     length(y) == 1 && return ret(x ./ y[1])
     size(x, 2) != size(y, 2) && merr("operator /: nonconformant arguments")
@@ -291,6 +296,7 @@ end
 
 function mldivide(a, b)
     a isa Real && return ldivide(a, b)
+    (is_nd(a) || is_nd(b)) && return nd_mdivide(a, b, "\\")
     x, y = farr(a), farr(b)
     length(x) == 1 && return ret(y ./ x[1])
     size(x, 1) != size(y, 1) && merr("operator \\: nonconformant arguments")
@@ -300,6 +306,7 @@ end
 
 function mpower(a, b)
     (a isa Real && b isa Real) && return power(a, b)
+    (is_nd(a) || is_nd(b)) && return nd_mpower(a, b)
     x, y = farr(a), farr(b)
     (length(x) == 1 && length(y) == 1) && return _pow(x[1], y[1])
     if length(y) == 1 && size(x, 1) == size(x, 2)
@@ -327,6 +334,7 @@ end
 
 function uminus(a)
     a isa Real && return -Float64(a)
+    is_nd(a) && return nd_uminus(a)
     ret(-farr(a))
 end
 
@@ -335,12 +343,14 @@ function lnot(a)
         a != a && merr("NaN cannot be converted to a logical value")
         return a == 0
     end
+    is_nd(a) && return nd_lnot(a)
     x = arr(a)
     (eltype(x) != Bool && any(isnan, x)) && merr("NaN cannot be converted to a logical value")
     ret(x .== 0)
 end
 
 function mtranspose(a)
+    is_nd(a) && return nd_transpose(a)
     a isa AbstractMatrix && return ret(permutedims(a))
     if a isa AbstractString && length(a) > 1
         _unsup("transpose of a char array")
@@ -365,6 +375,7 @@ function _cmp(fn)
             end
             _unsup("comparison of char arrays with ==; use strcmp")
         end
+        (is_nd(a) || is_nd(b)) && return nd_cmp(fn, a, b)
         x, y = arr(a), arr(b)
         _bcast(x, y)
         ret(fn.(x, y))
@@ -383,11 +394,13 @@ function _logical(a)
     x .!= 0
 end
 function el_and(a, b)
+    (is_nd(a) || is_nd(b)) && return nd_and_or(&, a, b)
     x, y = _logical(a), _logical(b)
     _bcast(x, y)
     ret(x .& y)
 end
 function el_or(a, b)
+    (is_nd(a) || is_nd(b)) && return nd_and_or(|, a, b)
     x, y = _logical(a), _logical(b)
     _bcast(x, y)
     ret(x .| y)
@@ -431,6 +444,8 @@ function _cat_parts(parts, dim, what)
         if cur[other] == d[other]
             cur = dim == 1 ? (cur[1] + d[1], cur[2]) : (cur[1], cur[2] + d[2])
             push!(keep, p)
+        elseif d[1] + d[2] == 1 && cur[1] + cur[2] == 1   # both 1x0 or 0x1: the result is 0x0
+            cur = (0, 0); empty!(keep)
         elseif d[1] + d[2] == 1                     # 1x0 or 0x1: skipped
             continue
         elseif cur[1] + cur[2] == 1                 # the result so far is 1x0 or 0x1: replaced
@@ -444,9 +459,14 @@ end
 
 function mhcat(vals)
     any(v -> v isa MObject, vals) && return obj_cat(vals, 2)
+    any(is_nd, vals) && return _nd_hvcat(vals, 2)
     nz = [v for v in vals if !_is00(v)]
     isempty(nz) && return zeros(0, 0)
-    length(nz) == 1 && return nz[1]
+    if length(nz) == 1
+        v1 = nz[1]
+        (v1 isa Bool || (v1 isa AbstractArray{Bool})) && any(v -> v isa AbstractMatrix{Float64}, vals) && return ret(Matrix{Float64}(arr(v1)))
+        return v1
+    end
     textual = any(v -> v isa AbstractString || v isa Cell, nz)
     if !textual
         parts = [arr(v) for v in nz]
@@ -477,9 +497,14 @@ end
 
 function mvcat(vals)
     any(v -> v isa MObject, vals) && return obj_cat(vals, 1)
+    any(is_nd, vals) && return _nd_hvcat(vals, 1)
     nz = [v for v in vals if !_is00(v)]
     isempty(nz) && return zeros(0, 0)
-    length(nz) == 1 && return nz[1]
+    if length(nz) == 1
+        v1 = nz[1]
+        (v1 isa Bool || (v1 isa AbstractArray{Bool})) && any(v -> v isa AbstractMatrix{Float64}, vals) && return ret(Matrix{Float64}(arr(v1)))
+        return v1
+    end
     textual = any(v -> v isa AbstractString || v isa Cell, nz)
     if !textual
         parts = [arr(v) for v in nz]
@@ -533,7 +558,6 @@ end
 "`v(args)` for arrays, strings and cells (returns a cell for cells)."
 function mindex(v, args)
     v isa Tainted && arr(v)
-    v isa Array{Float64,3} && return index3(v, args)         # 3-D arrays: only produced by src/pac.jl (AR matrices)
     if v isa Cell
         items, shp = v.items, v.shape
         a = isempty(items) ? zeros(Int, shp) : reshape(collect(1:length(items)), shp)
@@ -550,6 +574,7 @@ function mindex(v, args)
         all(x -> x isa Real && x == 1, args) && return v
         _unsup("indexing a struct or function handle")
     end
+    (is_nd(v) || length(args) > 2 || any(is_nd, args)) && return nd_index(v, args)
     ret(_index_arr(arr(v), args))
 end
 
@@ -580,7 +605,7 @@ function _index_arr(a::AbstractMatrix, args; keep::Bool=false)
             end
             return (size(ia, 1) == 1 && size(ia, 2) != 1) ? reshape(out, 1, :) : reshape(out, :, 1)
         end
-        if minimum(size(ia)) != 1 || (size(a, 1) != 1 && size(a, 2) != 1)
+        if !(size(ia, 1) == 1 || size(ia, 2) == 1) || length(ia) == 1 || (size(a, 1) != 1 && size(a, 2) != 1) || length(a) == 1
             return reshape(out, size(ia))
         end
         return size(a, 1) == 1 ? reshape(out, 1, :) : reshape(out, :, 1)
@@ -614,11 +639,12 @@ function assign_index(v, args, rhs)
     if v isa AbstractString || rhs isa AbstractString || rhs isa MStruct || rhs isa Handle
         _unsup("indexed assignment with char arrays, structs or handles")
     end
+    (length(args) > 2 || is_nd(v) || is_nd(rhs)) && return nd_assign(v, args, rhs)
     # an undefined variable takes the class of the right-hand side (`clear x; x(3) = true` is logical); `x = []`
     # is double
     a = v === nothing ? (rhs isa Bool || rhs isa AbstractMatrix{Bool} ? zeros(Bool, 0, 0) : zeros(0, 0)) : arr(v)
     r = arr(rhs)
-    deleting = isempty(r) && rhs isa AbstractMatrix
+    deleting = size(r) == (0, 0) && rhs isa AbstractMatrix
     if !deleting
         if eltype(a) == Bool && eltype(r) != Bool
             # the right-hand side is converted to the class of the left one: logical stays logical (NaN is an error)

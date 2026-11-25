@@ -23,6 +23,8 @@ include("matlab/values.jl")
 include("matlab/parser.jl")
 include("matlab/builtins.jl")
 include("matlab/builtins_extra.jl")
+include("matlab/nd.jl")
+include("matlab/rng.jl")
 include("matlab/interp.jl")
 include("matlab/extern.jl")
 include("matlab/dates.jl")
@@ -64,12 +66,20 @@ include("obc_regime.jl")
 include("obc_qmc.jl")
 include("obc_cubature.jl")
 include("obc_ho.jl")
+include("fminsearch_octave.jl")
 include("occbin_filter.jl")
 include("occbin_estimation.jl")
 include("obc_filter.jl")
+include("sobol.jl")
+include("occbin_forecast.jl")
 include("results.jl")
 include("results_policy.jl")
 include("pf_functions.jl")
+include("results_parity2.jl")
+include("pac_estimate.jl")
+include("results_shockdec.jl")
+include("backward.jl")
+include("extended_path.jl")
 include("results_estimation.jl")
 include("seeds.jl")
 include("varexo_det.jl")
@@ -103,7 +113,7 @@ export posterior_irf_dsgevar, dsge_var_posterior, endogenous_log_prior, sample_m
        OccbinDynareBug, error_flag, irf_occbin, occbin_graph_table, surprise_shocks, mod_options, check_constraints,
        occbin_filter_options, inversion_filter, piecewise_kalman_filter, occbin_smoother, occbin_shock_decomposition,
        squeeze_occbin_shock_decomposition, regime_table, write_regime_table, OccbinSmootherResult, PKFResult,
-       InversionFilterResult, occbin_filter, occbin_at, occbin_write_regimes!,
+       InversionFilterResult, occbin_filter, occbin_at, occbin_write_regimes!, occbin_forecast, OccbinForecast, qmc_sequence,
        Estimation, EstimationError, estimate, posterior_mode, sample_posterior, log_likelihood, log_prior, log_posterior,
        smooth, SmootherResult, SmootherError, check_smoother, parameter_vector, prior_mode,
        shock_decomposition, initial_condition_decomposition, ShockDecomposition, shock_groups, group_shocks, init2shocks, apply_init2shocks,
@@ -113,6 +123,8 @@ export posterior_irf_dsgevar, dsge_var_posterior, endogenous_log_prior, sample_m
        dynare, @dynare, DynareWorkspace, build_M, build_options, MStruct, Cell,
        stoch_simul!, ramsey_policy!, discretionary_policy!, evaluate_planner_objective!, osr!, steady!, check!, perfect_foresight_setup!, perfect_foresight_solver!, occbin_solver!, set_param_value!,
        estimation!, calib_smoother!, set_dynare_seed!,
+       simul_backward_model, simul_static_model, backward_model_irf, backward_model_forecast, set_historical_values, model_inversion, BackwardError,
+       extended_path, EPError,
        ramsey_info, is_ramsey, is_discretionary, planner_discount, ramsey_steady_state, planner_objective, evaluate_planner_objective,
        PlannerObjectiveValue, discretionary_policy, DiscretionaryResult, osr, osr_objective, OSRResult, OptimalPolicyError, OSRError,
        DiscretionaryPolicyError, variance_of_endogenous_variables,

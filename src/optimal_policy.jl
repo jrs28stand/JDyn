@@ -338,6 +338,9 @@ end
 
 "`dynare_solve.m` with `options_.jacobian_flag = false` (as dyn_ramsey_static sets it): returns `(x, errorflag)`."
 function _ramsey_dynare_solve(m::Model, fun, z0, tolf, tolx, maxit, solve_algo)
+    # solve_algo 10/11 (mixed complementarity solvers, used with ramsey_constraints) concern the perfect foresight problem;
+    # Dynare computes the Ramsey steady state before the file sets them, with the default algorithm
+    solve_algo in (10, 11) && (solve_algo = 4)
     if solve_algo == 4
         jac = z -> _numjac(fun, Vector{Float64}(z), fun(z))
         z, ok, = _dynare_solve(fun, jac, Vector{Float64}(z0); tolf=tolf, tolx=tolx, maxit=maxit, rng=dynare_rng(m), jacflag=false)

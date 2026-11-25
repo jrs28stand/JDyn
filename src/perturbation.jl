@@ -36,7 +36,10 @@ struct FirstOrderSolution
     params::Vector{Float64}
     loglinear::Bool
     steady_state::Vector{Float64}       # the steady state in levels
+    extra::NamedTuple                   # from the QZ step, in levels as Dynare's dr: gx, hx (= dr.Gy), sdim, edim, nd, full_rank, backward
 end
+FirstOrderSolution(ys, G, H, order_var, state_var, eigenvalues, jacobian, params, loglinear, steady_state) =
+    FirstOrderSolution(ys, G, H, order_var, state_var, eigenvalues, jacobian, params, loglinear, steady_state, (;))
 ghx(s::FirstOrderSolution) = s.G[s.order_var, s.state_var]
 ghu(s::FirstOrderSolution) = s.H[s.order_var, :]
 
@@ -125,7 +128,7 @@ function _ordered_qz(E::Matrix{Float64}, D::Matrix{Float64}, qz_criterium::Real)
 end
 
 """
-    solve_linear_re(fm, f0, fp, fu; qz_criterium, lag, lead) -> (G, H, eigenvalues)
+    solve_linear_re(fm, f0, fp, fu; qz_criterium, lag, lead) -> (G, H, eigenvalues, extra)
 
 Solve `fp E y(+1) + f0 y + fm y(-1) + fu u = 0` for `y = G y(-1) + H u` (Dynare's algorithm: static
 variables removed by QR, ordered QZ on the dynamic block).
@@ -157,6 +160,7 @@ function solve_linear_re(fm, f0, fp, fu; qz_criterium=QZ_CRITERIUM, lag=nothing,
     C = aa[:, nspred+n+1:nspred+n+nsfwrd]
     FU = aa[:, nspred+n+nsfwrd+1:end]
     local S, T, w, eig, sdim
+    full_rank = true
     if nd > 0
         D = zeros(nd, nd); E = zeros(nd, nd)
         D[1:ndyn, 1:npred] .= B[ns+1:end, ns+1:ns+npred]
@@ -190,6 +194,7 @@ function solve_linear_re(fm, f0, fp, fu; qz_criterium=QZ_CRITERIUM, lag=nothing,
         Fw = lu(permutedims(w22); check=false)
         rc = issuccess(Fw) ? LinearAlgebra.LAPACK.gecon!('1', copy(Fw.factors), opnorm(permutedims(w22), 1)) : 0.0
         rc < 1e-9 && throw(BlanchardKahnError("rank condition not satisfied", -log(rc)))
+        full_rank = rc >= 1e-9
         gx = -(Fw \ permutedims(w12))                 # jumpers on states
     else
         gx = zeros(0, nspred)
@@ -214,7 +219,13 @@ function solve_linear_re(fm, f0, fp, fu; qz_criterium=QZ_CRITERIUM, lag=nothing,
     H = zeros(n, k)
     G[ov, sv] .= ghx_
     k > 0 && (H[ov, :] .= -(A_ \ FU))
-    G, H, Vector{ComplexF64}(eig)
+    # Dynare's dr.gx, dr.Gy (= hx), dr.sdim and dr.edim; purely backward models (nsfwrd = 0, no leads) take the simplified branch of
+    # stochastic_solvers.m: edim = number of eigenvalues above the criterion, sdim = nd - edim, full_rank = 1
+    backward = !any(lead)
+    edim = backward ? count(abs.(eig) .> qz_criterium) : length(eig) - sdim
+    extra = (gx=Matrix{Float64}(gx), hx=Matrix{Float64}(hx), sdim=backward ? nd - edim : sdim, edim=edim, nd=nd,
+             full_rank=full_rank, backward=backward)
+    G, H, Vector{ComplexF64}(eig), extra
 end
 
 """Variables Dynare takes logs of under `loglinear`: every endogenous variable except the auxiliary
@@ -271,7 +282,7 @@ function first_order(m::Model; ys=nothing, params=nothing, qz_criterium=nothing,
     J = dynamic_jac(m, vcat(ys, ys, ys), exo_steady(m), params, ys)
     fm, f0, fp, fu = J[:, 1:n], J[:, n+1:2n], J[:, 2n+1:3n], J[:, 3n+1:end]
     lli = m.lead_lag_incidence
-    G, H, eig = solve_linear_re(fm, f0, fp, fu; qz_criterium=JDyn.qz_criterium(m, qz_criterium),
+    G, H, eig, extra = solve_linear_re(fm, f0, fp, fu; qz_criterium=JDyn.qz_criterium(m, qz_criterium),
                                 qz_zero_threshold=JDyn.qz_zero_threshold(m), lag=lli[:, 1] .> 0, lead=lli[:, 3] .> 0)
     order_var, state_var, _ = dr_ordering(lli)
     nonstate = trues(n); nonstate[state_var] .= false
@@ -280,5 +291,5 @@ function first_order(m::Model; ys=nothing, params=nothing, qz_criterium=nothing,
     if loglinear
         ys, G, H = loglinearize(levels, G, H, log_mask(m))
     end
-    FirstOrderSolution(ys, G, H, order_var, state_var, eig, J, params, loglinear, levels)
+    FirstOrderSolution(ys, G, H, order_var, state_var, eig, J, params, loglinear, levels, extra)
 end

@@ -329,7 +329,7 @@ function _nonlinear_dsge_likelihood(est::Estimation, theta::AbstractVector; boun
     if !isempty(est.groups.cx) && !_ispd(Q[est.Q_check, est.Q_check])
         return reject(43, _ispd_penalty(Q[est.Q_check, est.Q_check]), "covariance matrix of the structural shocks is not positive definite (info 43)")
     end
-    if !isempty(est.groups.cn) && !_ispd(Hm[est.H_check, est.H_check])
+    if (!isempty(est.groups.cn) || !isempty(est.calibrated_cov_ME)) && !_ispd(Hm[est.H_check, est.H_check])
         return reject(44, _ispd_penalty(Hm[est.H_check, est.H_check]), "covariance matrix of the measurement errors is not positive definite (info 44)")
     end
     local rf

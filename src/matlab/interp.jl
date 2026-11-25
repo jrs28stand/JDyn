@@ -68,13 +68,14 @@ mutable struct Interp
     func_order::Dict{String,Int}   # order in which functions appear in a file (first = main)
     jlfuncs::Dict{String,Any}      # Julia callables usable as MATLAB functions (numbers in, numbers out)
     session::Any                   # the ModSession running a .mod file, if any
+    rng::Any                       # an OctaveRNG: the interpreter draws Octave's numbers (src/matlab/rng.jl); nothing: JDyn's default mode
 end
 
 function Interp(directory=nothing, host=nothing)
     base = Scope(; is_base=true)
     I = Interp(directory === nothing ? nothing : String(directory), host, Dict{String,Any}(), base, [base],
                Tuple{Any,Int,Int}[], 0, 0, false, Dict{String,Any}(), nothing, zeros(1, 0), nothing, Dict{String,Int}(),
-               Dict{String,Any}(), nothing)
+               Dict{String,Any}(), nothing, nothing)
     if host !== nothing
         I.globals["M_"] = host_M(host)
         I.globals["options_"] = host_options(host)
@@ -182,6 +183,11 @@ function ev(I::Interp, n::EndKw, sc)
     v, k, nargs = I.end_stack[end]
     v isa MDates && return Float64(length(v.time))
     v isa MDseries && return Float64(vobs(v))
+    if is_nd(v)
+        nargs == 1 && return Float64(length(v))
+        sz = size(v)
+        return Float64(k < nargs ? (k <= length(sz) ? sz[k] : 1) : (k <= length(sz) ? prod(sz[k:end]) : 1))
+    end
     shp = v === nothing ? (0, 0) : shape_of(v)
     nargs == 1 && return Float64(shp[1] * shp[2])
     k <= 2 ? Float64(shp[k]) : 1.0
@@ -192,6 +198,7 @@ function ev(I::Interp, n::Unop, sc)
     op == "()" && return v
     v isa MObject && return obj_unop(I, op, v)
     op == "-" && return uminus(v)
+    op == "+" && is_nd(v) && return ndret(Array{Float64}(v))
     op == "+" && return v isa Float64 ? v : ret(farr(v))
     op == "~" && return lnot(v)
     mtranspose(v)
@@ -468,10 +475,15 @@ function mcall(I::Interp, name, args, nargout, sc)
         r === nothing || return r
     end
     f = get(BUILTINS, name, nothing)
-    if f !== nothing
+    if f !== nothing || haskey(_ND_NAMES, name)
         push!(I.scope_stack, sc)
         r = try
-            f(I, args, nargout)
+            ndr = nd_hook(I, name, args, nargout)
+            ndr === nothing && (ndr = rng_hook(I, name, args, nargout))
+            if ndr === nothing && f === nothing
+                throw(Unsupported("unknown function or variable '$name'", "function"))
+            end
+            ndr === nothing ? f(I, args, nargout) : ndr
         catch e
             e isa _JULIA_ERRORS ? throw(matlab_error(e)) : rethrow()
         finally
@@ -681,6 +693,7 @@ function for_values(I::Interp, s, sc)
         return Any[Cell(Any[x], (1, 1)) for x in v.items]
     end
     v isa AbstractString && return Any[string(c) for c in v]
+    is_nd(v) && (v = reshape(v, size(v, 1), :))
     a = arr(v)
     isempty(a) && return Any[]
     size(a, 1) == 1 && return Any[eltype(a) == Bool ? x : Float64(x) for x in a[1, :]]
@@ -767,6 +780,10 @@ function command(I::Interp, s, sc)
         return nothing
     end
     name == "load" && return load_file(I, collect(String, args), sc)
+    if name == "addpath"
+        _addpath(I, Any[Str(String(strip(a, ['\'', '"'])), false) for a in args], sc, 0)
+        return nothing
+    end
     if name == "save"
         push!(I.scope_stack, sc)
         try
@@ -784,6 +801,17 @@ function command(I::Interp, s, sc)
             pop!(I.scope_stack)
         end
     end
+    if name == "set_historical_values" && length(args) == 2   # command syntax: the dseries is a variable of the caller, the period a date literal
+        v = getvar(I, sc, String(args[1]))
+        v === MISSING_ && merr("'$(args[1])' undefined")
+        push!(I.scope_stack, sc)
+        try
+            return BUILTINS["set_historical_values"](I, Any[v, String(strip(args[2], ['\'', '"']))], 0)
+        finally
+            pop!(I.scope_stack)
+        end
+    end
+    if name == "rng"; mcall(I, "rng", Any[a for a in args], 0, sc); return nothing; end
     (name == "disp" || (haskey(LAZY, name) && LAZY[name] === _noop)) && return nothing
     haskey(LAZY, name) && return LAZY[name](I, Any[], sc, 0)
     throw(Unsupported("command '$name'", "function"))
@@ -850,8 +878,9 @@ function _assign_chain(I::Interp, cur, chain, i, value, sc)
 end
 
 "Run MATLAB source in a fresh interpreter (no model); returns the workspace."
-function mrun(text; variables=Dict{String,Any}(), directory=nothing)
+function mrun(text; variables=Dict{String,Any}(), directory=nothing, rng=nothing)
     I = Interp(directory)
+    rng === nothing || (I.rng = rng === :octave ? OctaveRNG(0) : rng isa OctaveRNG ? rng : throw(ArgumentError("rng must be :octave or an OctaveRNG")))
     merge!(I.base.vars, variables)
     body, funcs = mparse(text)
     I.base.funcs = funcs
