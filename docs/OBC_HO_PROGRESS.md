@@ -206,3 +206,8 @@ rejected every proposal (acceptance 0.0 in the small-NKM chain test; chain stuck
 `occbin_solver` refusing `loglinear`: no OBC/OccBin test sets loglinear except `test_occbin_estimation.jl`, which already expects the refusal.
 `obc_method = occbin` is bit for bit main's own OccBin: log posterior (hex) and filter results (filtered shocks, states, residuals, regimes, code; fixed rng) at the 4 NKM, 3 small-NKM stored vectors and 6 bf vectors, 26 comparisons, identical between main 493b529 and the merge.
 bf replay in `test/test_obc_estimation.jl`: `nmis <= 10` tightened to `nmis == 0`; it holds (0 disagreements in 'fails or not' over the 100 replayed states) now that each evaluation's random search is seeded.
+Tests after the merge (each file alone, `julia --project=. test/<file>.jl`, or `test/runtests.jl <files>`): all pass for test_occbin, test_occbin_options, test_occbin_estimation, test_obc, test_obc_news, test_obc_estimation, test_obc_ho, test_occbin_memo, test_obc_horizon,
+and (runtests.jl) test_matlab, first_order, examples, loop, moments, auxiliary, loglinear, review, korder, moments_order2, estimation, perfect_foresight, smoother, shock_decomposition, results, review_findings, review2_findings, results_estimation, perf_seeds,
+forecast, optimizers, acceptance_smoke (0 tests), nonlinear_estimation. test_plotting.jl: environment error (opens /root/jl/src/Dynare.jl/test/models/example1/example1.mod, absent here), not a test failure. NOT run: the files that came with main
+(test_pac, optimal_policy, dseries, posterior, samplers, parity_*, dsge_var, plots, plots_auto).
+State: all three jobs done and pushed; nothing open.
