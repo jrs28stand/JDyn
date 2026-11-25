@@ -678,3 +678,8 @@ bi!("extended_path") do I, a, nout
     st = MStruct(); st.status = status; oo.extended_path = st
     Any[_ep_dseries(m, paths), oo][1:max(nout, 1)]
 end
+
+# extended_path_mc (Monte Carlo of stochastic extended paths) is not implemented: refused rather than guessed.
+bi!("extended_path_mc") do I, a, nout
+    throw(Unsupported("extended_path_mc (Monte Carlo of the extended path)", "function"))
+end

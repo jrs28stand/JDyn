@@ -61,7 +61,10 @@ File `src/extended_path.jl`; hook in `src/results.jl` (`extended_path` statement
   `stack_solve_algo = 0`, linear models, purely backward models (`ep.periods = 1`) and lmmcp (`ep.solve_algo = 10`); homotopy method 2 on failure.
 - Order > 0: full tree (`ep.stochastic.algo = 0`), Tensor-Gaussian-Quadrature and Unscented (also with no positive-variance shock), models with maximum lag and lead 1.
 - `oo_.extended_path.status`, `oo_.endo_simul` (`n x (lag+T)`), `oo_.exo_simul`, `Simulated_time_series` (dseries) as Dynare.
-- Refused: sparse tree (`tree=sparse`), hybrid (`hybrid_order > 1`), Stroud cubatures, `use_first_order_solution_as_initial_guess`, calibrated innovations, `extended_path_mc`, `ep.solve_algo = 11`.
+- Refused: sparse tree (`tree=sparse`), hybrid (`hybrid_order > 1`), Stroud cubatures, `use_first_order_solution_as_initial_guess`, calibrated innovations, `extended_path_mc` (builtin refuses), `ep.solve_algo = 11`.
+- Comparator on the related folders (random=:octave, own scratch prefix `accg_`): model-inversion and stochastic-backward-models run to completion (forward-looking nk-1/nk-2 inversion refused); ecb/backward-models/irf/solow_1 and solow_2 run (solow_1 needed the `set_historical_values ds 1991Q1;` command syntax and `M_.endo_names_tex`); solve_algo_12_14: `solve_algo=12` refused (only 4, 9, 13, 14), others agree; ecb/SUR, pooled_* refused (out of scope: sur/pooled estimation).
+- Tests: `test/test_gaps_backward.jl` (bk-3a, bk-diff-2, bk-7 default vs `replicate_dynare_bugs`), `test/test_gaps_ep.jl` (rbc2, ar_backward, order 2/3 unscented and tensor rules, Stroud refusal); references in `test/ref_gaps/{backward,ep}`.
+- Dev note: the clone needs `JDYN_KORDER_LIB` pointing at the main repo's `deps/korder/libjdyn_korder.so`.
 - Agreement with Octave 8.4 (`random=:octave`): rbc2 (order 0 then 1) 3e-16, rbc_bytecode 6e-16, rbcii 1.4e-11, rbcii_MCP 1.4e-14, linearmodel1 2e-15, ar_backward exact;
   a custom run (order 2 unscented, order 2 and 3 tensor with 3 nodes on the rbc2 model) 1e-15.
 
