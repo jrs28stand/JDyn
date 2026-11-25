@@ -420,7 +420,17 @@ function _undo_logged_ss!(ws)
     D = get(oo, "dr", nothing)
     D isa MStruct && haskey(D, "ys") && (D.ys = unlog(D.ys))
     ws.state[:logged_ss] = false
-    ws.options_.logged_steady_state = 0.0
+    _set_logged_flag!(ws, 0.0)
+    ws
+end
+
+"`options_.logged_steady_state` in options_ and where the file's MATLAB lines read it."
+function _set_logged_flag!(ws, v::Float64)
+    ws.options_.logged_steady_state = v
+    ws.model.matlab_options["logged_steady_state"] = v
+    haskey(ws.state, :matlab_options) && (ws.state[:matlab_options]["logged_steady_state"] = v)
+    sess = ws.model.session
+    sess === nothing || delete!(sess.host.options.unknown, "logged_steady_state")
     ws
 end
 
@@ -431,7 +441,7 @@ function _log_ss!(ws)
     mask = log_mask(m)
     length(ss) == m.n_endo && (oo.steady_state = _col([mask[i] ? log(ss[i]) : ss[i] for i in 1:m.n_endo]))
     ws.state[:logged_ss] = true
-    ws.options_.logged_steady_state = 1.0
+    _set_logged_flag!(ws, 1.0)
     ws
 end
 

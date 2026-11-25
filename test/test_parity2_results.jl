@@ -46,15 +46,18 @@ function oo_diff(ref, ours, path, out::Vector{Tuple{String,Float64}})
         else
             a, b = real.(a), real.(b)
         end
-        both = .!(isnan.(a) .& isnan.(b))
-        push!(out, (path, any(isnan.(a) .!= isnan.(b)) ? Inf : (any(both) ? maximum(abs.(a[both] .- b[both])) / max(1.0, maximum(abs.(a[both]))) : 0.0)))
+        # NaN and infinities must sit in the same places (and be the same infinity)
+        nonfin = .!(isfinite.(a)) .| .!(isfinite.(b))
+        same_nonfin = all((isnan(a[i]) && isnan(b[i])) || a[i] == b[i] for i in findall(nonfin))
+        fin = .!nonfin
+        push!(out, (path, !same_nonfin ? Inf : (any(fin) ? maximum(abs.(a[fin] .- b[fin])) / max(1.0, maximum(abs.(a[fin]))) : 0.0)))
     end
     nothing
 end
 
-function run_case(case; random=:octave)
+function run_case(case; random=:octave, edit=identity)
     d = mktempdir()
-    cp(joinpath(OOP2, case * ".mod"), joinpath(d, case * ".mod"))
+    write(joinpath(d, case * ".mod"), edit(read(joinpath(OOP2, case * ".mod"), String)))
     for extra in ("fsdat_simul.m", "fsdat_simul.mat")
         isfile(joinpath(OOP2, extra)) && cp(joinpath(OOP2, extra), joinpath(d, extra))
     end
@@ -67,8 +70,8 @@ function run_case(case; random=:octave)
     ws, matread(joinpath(OOP2, case * ".mat"))
 end
 
-function check_case(case, paths, tol; skip=String[])
-    ws, ref = run_case(case)
+function check_case(case, paths, tol; skip=String[], edit=identity)
+    ws, ref = run_case(case; edit=edit)
     out = Tuple{String,Float64}[]
     roo = ref["oo_"]
     paths == ["*"] && (paths = [k for k in SD_PATHS if haskey(roo, k)])
@@ -111,5 +114,17 @@ for case in sort(collect(keys(SD_TOL)))
     selected(case) || continue
     @testset "shock_decomposition forecast_type: $case" begin
         check_case(case, ["*"], SD_TOL[case])
+    end
+end
+
+# posterior smoother of a loglinear model with auxiliary variables (consider_all_endogenous_and_auxiliary), smoother2histval from it
+# (Smoother.loglinear), then forecast from those initial values at order 1 levels. Dynare's posterior smoother statistics are -Inf for
+# the auxiliary variable of a lagged exogenous variable (log of its steady state 0): reproduced under replicate_dynare_bugs.
+if selected("sm_ll_aux")
+    @testset "posterior smoother, loglinear auxiliaries: sm_ll_aux" begin
+        check_case("sm_ll_aux", ["steady_state", "dr", "Smoother", "SmoothedVariables", "SmoothedShocks", "UpdatedVariables", "Constant",
+                                 "posterior_mean", "posterior_mode", "forecast"], 1e-6;
+                   skip = ["oo_.dr.eigval"],      # the eigenvalues of the pencil that are infinite: rounding noise (1.3e16 vs 1.3e16)
+                   edit = s -> replace(s, "options_.solve_tolf = 1e-12;" => "options_.solve_tolf = 1e-12;\noptions_.replicate_dynare_bugs = 1;"))
     end
 end

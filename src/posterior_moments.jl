@@ -404,6 +404,15 @@ function _draw_series(est::Estimation, res::SmootherResult, fsa::Vector{Int})
             end
         end
     end
+    # prior_posterior_statistics_core.m adds log(SteadyState) to every variable under loglinear, also to the auxiliary variables of lagged
+    # and led exogenous variables, whose steady state is 0 and which store_smoother_results.m (the frequentist smoother) leaves in levels:
+    # their draws are -Inf there. A Dynare 7.2 defect: corrected by default (the smoothed shock, as the frequentist smoother), reproduced
+    # under replicate_dynare_bugs=true.
+    if _est_flag(get(est.options, "loglinear", false)) && _est_flag(get(res.options, "replicate_dynare_bugs", false))
+        for i in findall(.!log_mask(est.model))
+            cst[:, i] .= -Inf; sv[:, i] .= -Inf; uv[:, i] .= -Inf; init[i] = -Inf
+        end
+    end
     (smooth=sv, update=uv, innov=res.shocks, error=isempty(res.measurement_errors) ? nothing : res.measurement_errors,
      constant=cst, trend=trend, trend_coeff=tcoef, init_state=init, filter_step_ahead=fa)
 end
