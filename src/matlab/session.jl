@@ -883,12 +883,14 @@ function exec_dyn!(s::ModSession, st)
         h.options.defaults_valid = false
         forget!(h.options, get_or(stj, "options", Dict()))
     end
+    # Dynare's steady and stoch_simul write oo_ and M_ only; the workspace variables named after the model's variables
+    # (and <endo>_<shock> irfs) appear when the .mod file calls send_endogenous_variables_to_workspace or
+    # send_irfs_to_workspace, which the interpreter runs itself. Their results were tainted before (shadow_results!), which
+    # made `n0 = n0_fss` in an endval block after 'steady' refuse when the model has an endogenous variable n0.
     if kind == "steady"
         on_solve!(s, true)
-        shadow_results!(s, kind)
     elseif kind == "stoch_simul"
         on_solve!(s, false)
-        shadow_results!(s, kind)
     elseif kind in ("check", "resid")
     elseif !(kind in DECL_KINDS)
         after_compute!(s, kind, "it may have been changed by '$kind'")

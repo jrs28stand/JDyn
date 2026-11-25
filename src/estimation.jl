@@ -785,14 +785,14 @@ function _setup_parameters!(est::Estimation)
             end
             for e in get_or(st, "params", [])
                 nm = _entry_name(e)
-                i = findfirst(==(nm), est.names)
+                i = _find_estimated(est, nm)
                 i === nothing && throw(EstimationError("estimated_params_init: $nm is not estimated"))
                 init[i] = _num(est, e["init_val"])
             end
         elseif k == "estimated_params_bounds"
             for e in get_or(st, "params", [])
                 nm = _entry_name(e)
-                i = findfirst(==(nm), est.names)
+                i = _find_estimated(est, nm)
                 i === nothing && throw(EstimationError("estimated_params_bounds: $nm is not estimated"))
                 lb[i] = _num(est, e["lower_bound"])
                 ub[i] = _num(est, e["upper_bound"])
@@ -865,6 +865,14 @@ end
 # MATLAB's max/min skip NaN (max(x, NaN) == x; NaN only when both are NaN).
 _matlab_max(a, b) = isnan(a) ? b : isnan(b) ? a : max(a, b)
 _matlab_min(a, b) = isnan(a) ? b : isnan(b) ? a : min(a, b)
+
+"Position of an estimated parameter; a correlation is symmetric (`corr a, b` is `corr b, a`)."
+function _find_estimated(est, nm::AbstractString)
+    i = findfirst(==(nm), est.names)
+    i === nothing || return i
+    mt = match(r"^corr (.+), (.+)$", nm)
+    mt === nothing ? nothing : findfirst(==("corr $(mt.captures[2]), $(mt.captures[1])"), est.names)
+end
 
 function _entry_name(e)
     haskey(e, "param") ? e["param"] : haskey(e, "var") ? "stderr $(e["var"])" : "corr $(e["var1"]), $(e["var2"])"
