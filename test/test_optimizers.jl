@@ -94,7 +94,8 @@ end
     # options and refusals
     @test_throws JDyn.EstimationError JDyn.posterior_mode(est; mode_compute=1)
     @test_throws JDyn.EstimationError JDyn.posterior_mode(est; mode_compute=6)
-    @test_throws JDyn.EstimationError JDyn.posterior_mode(JDyn.Estimation(m; optim_opt="'NumgradEpsilon',1e-6"); mode_compute=8)
+    # an optim key the optimiser does not use is warned about, not refused (Dynare ignores it)
+    @test JDyn.posterior_mode(JDyn.Estimation(m; optim_opt="'NumgradEpsilon',1e-6"); mode_compute=8, maxiter=1) isa Any
     @test_throws JDyn.EstimationError JDyn.posterior_mode(JDyn.Estimation(m; optim_opt="'Hessian',2"); mode_compute=5)
     short = JDyn.posterior_mode(JDyn.Estimation(m; optim_opt="'MaxIter',2"); mode_compute=5, compute_hessian=false)
     @test short.iterations == 2 && !short.success

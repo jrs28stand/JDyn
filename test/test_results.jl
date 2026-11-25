@@ -112,5 +112,6 @@ end
     P(n) = M_.params[m.ip[n]]
     # nk_baseline_steadystate.m sets gammma1 = mu_z*mu_I/betta - (1-delta): it follows the new betta
     @test P("gammma1") ≈ P("Lambdax") * exp(P("Lambdamu")) / 0.99 - (1 - P("delta")) rtol = 1e-14
-    @test maximum(abs, JDyn.static_resid(m, vec(oo_.steady_state), nothing, vec(M_.params))) < 1e-10
+    # stoch_simul leaves oo_.steady_state alone (Dynare); the re-solved steady state is oo_.dr.ys
+    @test maximum(abs, JDyn.static_resid(m, vec(oo_.dr.ys), nothing, vec(M_.params))) < 1e-10
 end
