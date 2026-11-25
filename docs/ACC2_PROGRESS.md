@@ -51,3 +51,16 @@ no-comparison 12, xfail 28, excluded 26 (846 tests).
 6. Interpreter refusals not done: see item 2 list; pac.print / var_expectation.print are no-ops, so the 10
    pac/*/substitution and var-expectations/*/substitution files (which @#include the files print writes) still fail at the
    preprocessor (a port of print_expectations.m / write_expectations.m is needed).
+
+## Final numbers (comparator v2 of pydyn-rl 8cce7ee, scope test/acceptance/accept_scope_jdyn.json; outputs /home/claude/acc2_work/final)
+Baseline re-scored with v2 (main code, new runner): match 321, partial 49, refused 135, wrong 145, port-error 49, dynare-failed 61,
+no-comparison 12, xfail 28, excluded 46 (846).
+After this branch: match 351, partial 60, refused 86, wrong 155, port-error 47, dynare-failed 61, no-comparison 12, xfail 28, excluded 46.
+The +10 wrong are tests that were refused and now run: optimiser end-point differences (dr.ys/ghx of ML/Bayesian estimations,
+recursive/ls2003*, hssmc), and two real open bugs:
+ - FilteredVariablesShockDecomposition of the 6 observation_trends_and_prefiltering/calib_smoother files (were partial, "not produced"; now
+   computed but 2e-2..4e-1 off: trend/prefilter/loglinear handling of the decomposition is not as Dynare's).
+ - occbin/model_irrcap_twoconstraints/dynrbc: occbin.simul.shocks_sequence has 169 entries, Dynare 40 (`values (shockssequence)` vector).
+Checked against the pydyn-found list: dr.ys equals oo_.steady_state after steady+stoch_simul (tested); complex eigval kept; irf_shocks unique in
+declaration order; mh_optimal_bandwidth, restrict_var_list/restrict_columns/fuu, forecast horizon already in JDyn; aim_solver done here.
+Test suite: failures fixed (3 tests changed, see commits); remaining failures test_plots*.jl are the missing Plots package in this environment.
