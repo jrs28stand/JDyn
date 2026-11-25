@@ -12,6 +12,7 @@ const COMMAND_WORDS = Set(["close", "clear", "clc", "hold", "format", "warning",
     "dynare", "type", "which", "mex", "import", "syms", "tic", "toc", "legend", "colormap",
     "shading", "rng", "beep", "commandwindow", "dbclear", "keyboard", "print", "run"])
 const _CMD_RE = r"^\s*([A-Za-z_]\w*)[ \t]+(?![=(;,]|[-+*/^<>~&|.:]?=|[-+*/^<>&|:](?:\s|$)|\.[*/^\\'])(\S[^;,%]*)(.*)$"
+const _DATE_LIT_RE = r"\G\d+(?:[YyAa]|[QqMmWwSs]\d{1,2})(?![A-Za-z_0-9])"
 const _NUM_RE = r"\G(?:\d+(?:\.(?![*/^\\'])\d*)?|\.\d+)(?:[eEdD][+-]?\d+)?"
 const _ID_RE = r"\G[A-Za-z]\w*"
 const _OPS2 = Set(["==", "~=", "!=", "<=", ">=", "&&", "||", ".*", "./", ".\\", ".^", ".'"])
@@ -106,6 +107,15 @@ function tokenize(lines::Vector)
                 end
                 i = j; ws = false
                 continue
+            end
+            if isdigit(c)
+                dm = match(_DATE_LIT_RE, text, i)       # the preprocessor's date literals (2000Q1, 1Y, 2010M3, ...) are dates('...')
+                if dm !== nothing
+                    push!(toks, Tok(:id, "dates", ws, ln, i)); push!(toks, Tok(:op, "(", false, ln, i))
+                    push!(toks, Tok(:str, uppercase(dm.match), false, ln, i)); push!(toks, Tok(:op, ")", false, ln, i))
+                    i += ncodeunits(dm.match); ws = false
+                    continue
+                end
             end
             if isdigit(c) || c == '.'
                 m = match(_NUM_RE, text, i)
