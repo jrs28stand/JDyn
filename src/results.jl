@@ -101,7 +101,8 @@ function build_M(m::Model)
     M.Sigma_e = copy(m.Sigma_e)
     M.Correlation_matrix = copy(declared_correlation_matrix(m))
     M.sigma_e_is_diagonal = isdiag(m.Sigma_e)
-    M.H = Matrix{Float64}(LinearAlgebra.Diagonal([get(m.measurement_errors, v, 0.0) for v in m.varobs]))
+    M.H = me_H(m, m.varobs)
+    M.Correlation_matrix_ME = me_corr_matrix(m, m.varobs)
     aux = Any[]
     for a in get_or(m.raw, "aux_vars", [])
         s = MStruct()
@@ -199,6 +200,10 @@ function _sync_model!(ws)
         ws.M_.Sigma_e = copy(m.Sigma_e)
     end
     ws.M_.Correlation_matrix = copy(declared_correlation_matrix(m))
+    if !haskey(ws.state, :H)                      # no estimation has set the measurement-error covariance
+        ws.M_.H = me_H(m, m.varobs)
+        ws.M_.Correlation_matrix_ME = me_corr_matrix(m, m.varobs)
+    end
     _mark_synced!(ws)
     m
 end
@@ -611,11 +616,16 @@ stoch_simul!(var_list::AbstractVector; kw...) = stoch_simul!(_current(), var_lis
 set_param_value!(name::AbstractString, v::Real) = set_param_value!(_current(), name, v)
 
 """
-    dynare(modfile; output=nothing, shocks=Dict(), rng=nothing, seed=nothing, kw...) -> DynareWorkspace
+    dynare(modfile; output=nothing, shocks=Dict(), rng=nothing, seed=nothing, random=:julia, kw...) -> DynareWorkspace
 
 Run a .mod file as `dynare modfile` does and return M_, options_ and oo_ as MATLAB-style structs:
 `ws.oo_.endo_simul`, `ws.oo_.dr.ghx`, `ws.oo_.irfs.y_e`, `ws.M_.params`, ... (Julia reads them with
 MATLAB's syntax). `@dynare "model.mod"` also defines `M_`, `options_` and `oo_` in the caller's module.
+
+`random=:octave` gives Octave's random numbers bit for bit (the Mersenne twister and ziggurat of Octave 8.4): the workspace's
+stream becomes an `OctaveRNG`, so the file's own `rand`/`randn`/`randi`/`randperm`/`rng`/`set_dynare_seed` calls and Dynare's
+commands (simulated shocks, forecast draws, particle filters, MCMC) consume one stream in file order, as Dynare under Octave
+does. The default `random=:julia` keeps the seeded Xoshiro stream (reproducible, not Octave's numbers).
 
 Commands run where they stand in the file, with the calibration of that point, and MATLAB lines read and
 write their results (`irf1 = oo_.irfs.y_e;`, `oo_.exo_simul(2, 1) = 0.1;`). Afterwards, re-run them on the
@@ -628,7 +638,8 @@ otherwise shocks are drawn from the workspace's random stream (`seed=n` seeds it
 seed 0 like Dynare's 'default'; `set_dynare_seed(...)` lines of the file act as in Dynare; an explicit `rng` replaces
 the stream). The draws are Julia's, reproducible run to run but not MATLAB's: see docs/RESULTS.md, "Random draws".
 """
-function dynare(modfile::AbstractString; output=nothing, shocks=Dict{Int,Any}(), rng=nothing, seed=nothing, particle_rng=nothing, mcmc_rng=nothing, _json_dir=nothing, plots::Bool=false, plots_backend::Symbol=:svg, kw...)
+function dynare(modfile::AbstractString; output=nothing, shocks=Dict{Int,Any}(), rng=nothing, seed=nothing, particle_rng=nothing, mcmc_rng=nothing, _json_dir=nothing, plots::Bool=false, plots_backend::Symbol=:svg, random::Symbol=:julia, kw...)
+    random in (:julia, :octave) || throw(ArgumentError("random must be :julia (default) or :octave"))
     if output === nothing
         # derivatives up to the highest order a stoch_simul statement asks for (Dynare's default is 2)
         output = occursin(r"order\s*=\s*3", read(modfile, String)) ? "third" : "second"
@@ -636,6 +647,7 @@ function dynare(modfile::AbstractString; output=nothing, shocks=Dict{Int,Any}(),
     wsref = Ref{Any}(nothing)
     nss = Ref(0)
     factory = function (m)
+        random === :octave && use_octave_random!(m)                  # one Octave stream for simulations and the file's rand/randn (src/matlab/rng.jl)
         set_dynare_seed!(m, seed === nothing ? "default" : seed)     # Dynare seeds its stream with 'default' at start-up
         particle_rng === nothing || set_rng_kind!(m, particle_rng)   # :octave = Octave's numbers in the particle filters (src/octave_rng.jl)
         mcmc_rng === nothing || set_mcmc_rng!(m, mcmc_rng)           # :octave = Dynare's random numbers in the MCMC samplers (src/mcmc_driver.jl)
@@ -643,6 +655,7 @@ function dynare(modfile::AbstractString; output=nothing, shocks=Dict{Int,Any}(),
         ws.oo_.exo_det_steady_state = n_exo_det(m) > 0 ? _col(exo_det_steady(m)) : zeros(0, 0)
         ws.oo_.dynare_version = "7.2"
         ws.state[:matlab_options] = Dict{String,Any}()
+        m.session.host.M.results = ws.M_
         m.session.host.oo.results = ws.oo_          # MATLAB lines of the file see (and write) this oo_
         _pf_register_host!(ws)                      # perfect_foresight_solver(M_, options_, oo_) & co. (src/pf_functions.jl)
         ws.state[:plots] = plots; ws.state[:plots_backend] = plots_backend
@@ -656,6 +669,7 @@ function dynare(modfile::AbstractString; output=nothing, shocks=Dict{Int,Any}(),
         ALLOW_RANDOM[] = allow0
     end
     ws = wsref[]
+    m.session.host.M.results = nothing
     m.session.host.oo.results = nothing             # the struct now belongs to the workspace alone
     _apply_matlab_options!(ws)
     # M_ as the driver leaves it at the end of the file (declarations, final calibration); histval kept
@@ -666,6 +680,7 @@ function dynare(modfile::AbstractString; output=nothing, shocks=Dict{Int,Any}(),
         ws.M_[k] = fresh[k]
     end
     ws.M_.endo_histval = h
+    haskey(ws.state, :CME) && (ws.M_.Correlation_matrix_ME = ws.state[:CME])
     haskey(ws.state, :H) && (ws.M_.H = ws.state[:H])           # the measurement-error covariance estimation left (results_estimation.jl)
     _mark_synced!(ws)
     # Dynare writes <fname>/Output/<fname>_results.mat; not while precompiling (the fixture lives in the package source)
@@ -712,6 +727,14 @@ function _run_in_place!(ws, st, nss, shocks, rng)
     m = ws.model
     kind = st["statementName"]
     _apply_matlab_options!(ws)
+    if kind == "set_time"
+        ws.state[:set_time] = string(get(st, "period", ""))
+        return
+    elseif kind == "estimation_data"                     # the `data` command: read by the next estimation (results_estimation.jl)
+        o = get_or(st, "options", nothing)
+        ws.state[:dataset] = o isa AbstractDict ? Dict{String,Any}(String(k) => v for (k, v) in o) : Dict{String,Any}()
+        return
+    end
     _apply_options!(ws.options_, st)
     if kind == "endval"                                # (learnt_in=p > 1 is news for the expectation-errors commands, M_.learnt_endval: oo_ is not touched)
         haskey(st, "learnt_in") && _pf_period(st["learnt_in"], "learnt_in") != 1 || _endval_learnt_in!(ws, st)

@@ -315,3 +315,10 @@ function make_stream(kind, seed::Real=0)
     kind == :julia && return JuliaStream(Int(seed))
     throw(ArgumentError("unknown random stream $(repr(kind)): use :octave, :julia, a ParticleStream or a function returning one"))
 end
+
+# Random.seed! of an Octave pair (the interpreter's `_oct_mt`, src/matlab/rng.jl): both states from `seed` (rand('state', seed); randn('state', seed))
+function Random.seed!(r::OctaveRNG, seed::Integer)
+    r.u = _oct_mt(Float64(seed)); r.n = _oct_mt(Float64(seed))
+    r
+end
+Random.seed!(r::OctaveRNG) = Random.seed!(r, 0)

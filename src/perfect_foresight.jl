@@ -158,6 +158,12 @@ function _pf_resolve_options(m::Model, pfwee::Bool, kw)
             push!(given, key)
         end
     end
+    sa = get(m.matlab_options, "solve_algo", nothing)          # options_.solve_algo = 10 in the file: lmmcp on the stacked problem
+    if sa isa Real && sa == 10
+        o["lmmcp.status"] = true
+    elseif sa isa Real && sa == 11
+        throw(ModelError("solve_algo=11 (the PATH solver) is not available; use solve_algo=10 (lmmcp)"))
+    end
     _pf_normalize_options!(m, o, given)
     for (st, src) in zip(names, (setup, solver))
         notes = ["$k ($(PF_NOTES[k]))" for k in keys(src) if haskey(PF_NOTES, k)]
