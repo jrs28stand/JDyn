@@ -10,7 +10,7 @@ const COMMAND_WORDS = Set(["close", "clear", "clc", "hold", "format", "warning",
     "addpath", "rmpath", "diary", "echo", "pause", "disp", "dbstop", "profile", "delete",
     "cd", "clearvars", "pkg", "graphics_toolkit", "drawnow", "grid", "box", "axis", "clf",
     "dynare", "type", "which", "mex", "import", "syms", "tic", "toc", "legend", "colormap",
-    "shading", "rng", "beep", "commandwindow", "dbclear", "keyboard", "print", "run"])
+    "shading", "rng", "beep", "commandwindow", "dbclear", "keyboard", "print", "run", "set_historical_values"])
 const _CMD_RE = r"^\s*([A-Za-z_]\w*)[ \t]+(?![=(;,]|[-+*/^<>~&|.:]?=|[-+*/^<>&|:](?:\s|$)|\.[*/^\\'])(\S[^;,%]*)(.*)$"
 const _DATE_LIT_RE = r"\G\d+(?:[YyAa]|[QqMmWwSs]\d{1,2})(?![A-Za-z_0-9])"
 const _NUM_RE = r"\G(?:\d+(?:\.(?![*/^\\'])\d*)?|\.\d+)(?:[eEdD][+-]?\d+)?"

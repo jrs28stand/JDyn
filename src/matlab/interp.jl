@@ -801,6 +801,16 @@ function command(I::Interp, s, sc)
             pop!(I.scope_stack)
         end
     end
+    if name == "set_historical_values" && length(args) == 2   # command syntax: the dseries is a variable of the caller, the period a date literal
+        v = getvar(I, sc, String(args[1]))
+        v === MISSING_ && merr("'$(args[1])' undefined")
+        push!(I.scope_stack, sc)
+        try
+            return BUILTINS["set_historical_values"](I, Any[v, String(strip(args[2], ['\'', '"']))], 0)
+        finally
+            pop!(I.scope_stack)
+        end
+    end
     if name == "rng"; mcall(I, "rng", Any[a for a in args], 0, sc); return nothing; end
     (name == "disp" || (haskey(LAZY, name) && LAZY[name] === _noop)) && return nothing
     haskey(LAZY, name) && return LAZY[name](I, Any[], sc, 0)

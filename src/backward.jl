@@ -637,7 +637,7 @@ bi!("set_historical_values") do I, a, nout
     length(a) == 2 || merr("set_historical_values: two arguments expected")
     ws = _pfo_ws(I)
     ds = a[1]
-    ds isa MDseries || merr("set_historical_values: the first argument must be a dseries")
+    ds isa MDseries || merr("set_historical_values: the first argument must be a dseries (got $(typeof(ds)) $(ds isa JDyn.Tainted ? ds.why : ""))")
     try
         set_historical_values(ws, ds, a[2])
     catch e
