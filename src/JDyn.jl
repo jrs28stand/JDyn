@@ -93,7 +93,7 @@ include("mcmc_driver.jl")
 include("smc.jl")
 include("mcmc_stage.jl")
 include("dsge_var.jl")
-#IDENT-DEV include("identification.jl")
+include("identification.jl")
 
 export posterior_irf_dsgevar, dsge_var_posterior, endogenous_log_prior, sample_mcmc, sample_smc, set_mcmc_rng!, mode_from_file, mcmc_diagnostics, posterior_irf, posterior_forecast, posterior_subsample, posterior_theoretical_moments,
        posterior_smoother_statistics,
