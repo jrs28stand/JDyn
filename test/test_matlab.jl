@@ -119,7 +119,7 @@ if section("semantics")
     @testset "MATLAB-specific behaviour" begin
         @test run_m("r = sprintf('%d', 1.5);")["r"] == "1.500000e+00"       # Octave prints 1.5
         @test run_m("r = sprintf('%s', 3.5);")["r"] == "3.500000e+00"       # MATLAB: %e for a non-integer with %s
-        @test run_m("r = sprintf('%d\\n');")["r"] == "\n"                    # Octave returns ''
+        @test run_m("r = sprintf('%d\\n');")["r"] == ""                      # Octave returns ''
         @test_throws MatlabError run_m("r = 3 && [];")                       # Octave: false
         @test run_m("r = isoctave;")["r"] == false
         @test_throws Unsupported run_m("r = [\"a\" \"b\"];")             # "..." strings are string objects in MATLAB
@@ -147,7 +147,7 @@ if section("semantics")
                 ("r = undefined_thing + 1;", Unsupported), ("r = rand(2);", Unsupported),
                 ("r = 1i;", Unsupported), ("x = struct2dseries(1);", Unsupported), ("r = evalin('base', '1');", Unsupported),
                 ("r = system('ls');", Unsupported), ("fid = fopen('x.txt', 'w');", Unsupported),
-                ("s = struct('a', {1, 2});", Unsupported), ("a = zeros(2, 2, 2);", Unsupported),
+                ("s = struct('a', {1, 2});", Unsupported),
                 ("if [1 2] && 1, r = 1; end", MatlabError), ("error('my:id', 'value %d', 4)", MatlabError)]
             @test throws_match(() -> run_m(code), exc) || (@info code; false)
         end

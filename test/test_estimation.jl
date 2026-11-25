@@ -57,7 +57,7 @@ track!(key, v) = (maxdiffs[key] = max(get(maxdiffs, key, 0.0), v))
     @test Estimation(m; data=joinpath(d, "nk")).data == est.data
     @test_throws JDyn.EstimationError Estimation(m; data=joinpath(d, "nothing_here"))
     # a data script the interpreter cannot follow is refused
-    write(joinpath(d, "bad.m"), "yobs = cumsum(ones(10,1)); piobs = yobs; robs = yobs;")
+    write(joinpath(d, "bad.m"), "yobs = nosuchfunction_xyz(10); piobs = yobs; robs = yobs;")
     @test_throws JDyn.EstimationError Estimation(m; data=joinpath(d, "bad.m"))
     write(joinpath(d, "mat.m"), "yobs = ones(5,2); piobs = ones(5,1); robs = ones(5,1);")
     @test_throws JDyn.EstimationError Estimation(m; data=joinpath(d, "mat.m"), nobs=3)
