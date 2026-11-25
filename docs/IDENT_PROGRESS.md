@@ -42,3 +42,19 @@ Dynare 7.2), tests in `test/test_identification.jl`.
 ## Development notes
 - Editing src/identification.jl triggers a ~9 minute precompile of JDyn.  For development, comment the include in src/JDyn.jl
   (`#IDENT-DEV`) and run the tests with `ID_DEV=1` (the test file then includes the source into JDyn at run time).
+
+## Log / state at hand-over
+Done and committed on branch `ident` (nothing pushed or merged): src/identification.jl, 2-line hook in src/results.jl, include in
+src/JDyn.jl, test/test_identification.jl (219 passing checks over 16 reference cases + 1 refusal test, registered in runtests.jl).
+Cross-port sweep of the identification folder (accept_jdyn.py --only identification/, comparator v2 with the scope file): 13 match,
+2 flagged "not-a-refusal" (the two order 2/3 tests in the scope file).
+Full suite (test/runtests.jl, log /tmp/identfull_11012.log) was started and was still running at hand-over; its result is unknown.
+
+## Exact next steps
+1. Reword the refusal messages in src/identification.jl (lines ~1254, 1304, 1773, 2279: "not ported") to contain "not supported"
+   as well (e.g. "are not supported (not ported; order=1 only)"), because accept_worker.jl classifies a refusal by the regex
+   `not (yet )?(supported|implemented)|unsupported|...`; otherwise the two scope-file tests show as errors.  The refusal test in
+   test/test_identification.jl looks for "not ported": keep both words in the message.  Then precompile (~9 min), rerun
+   `julia --project=. test/test_identification.jl` and the sweep, comparator command in the task notes.
+2. Read the full-suite log (grep "Test Summary" / "Fail"), then `git checkout -- test/ref_parity` (the suite rewrites fixtures; never commit them).
+3. Optional: more Octave references (as2007_QT_equal_autocorr with indno/jweak skipped); orders 2-3 stay parked in the scope file.
