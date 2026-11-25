@@ -122,6 +122,13 @@ function peek_field(M::HostM, name; raw=false)
     name == "orig_endo_nbr" && return Float64(orig_endo_nbr(m))
     name == "exo_det_nbr" && return Float64(n_exo_det(m))
     name in ("maximum_lag", "maximum_lead", "maximum_endo_lag", "maximum_endo_lead") && return Float64(m.info[name])
+    if name in ("endo_names_tex", "exo_names_tex", "param_names_tex", "endo_names_long", "exo_names_long", "param_names_long")
+        return get!(M.cells, name) do
+            sec = startswith(name, "endo") ? "endogenous" : startswith(name, "exo") ? "exogenous" : "parameters"
+            key = endswith(name, "tex") ? "texName" : "longName"
+            Cell(Any[String(get(d, key, d["name"])) for d in m.raw[sec]], (length(m.raw[sec]), 1))
+        end
+    end
     if name in _M_NAMES
         return get!(M.cells, name) do
             names = name == "param_names" ? m.param_names : name == "endo_names" ? m.endo_names : m.exo_names

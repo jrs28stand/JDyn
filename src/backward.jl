@@ -114,6 +114,7 @@ end
 # variable (type 3) at `M_.exo_histval(M_.orig_endo_nbr+i)`, an element of another variable (a defect): corrected by default
 # (the exogenous variable's own value), reproduced under `replicate_dynare_bugs=true`.
 function _histval_dseries(ws)
+    _apply_matlab_options!(ws)
     m = ws.model
     n = m.n_endo; no = orig_endo_nbr(m)
     h = ws.M_.endo_histval
@@ -637,7 +638,7 @@ bi!("set_historical_values") do I, a, nout
     length(a) == 2 || merr("set_historical_values: two arguments expected")
     ws = _pfo_ws(I)
     ds = a[1]
-    ds isa MDseries || merr("set_historical_values: the first argument must be a dseries")
+    ds isa MDseries || merr("set_historical_values: the first argument must be a dseries (got $(typeof(ds)) $(ds isa JDyn.Tainted ? ds.why : ""))")
     try
         set_historical_values(ws, ds, a[2])
     catch e
