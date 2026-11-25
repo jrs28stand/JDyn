@@ -59,11 +59,15 @@ include("optimal_policy.jl")
 include("plotting.jl")
 include("figures.jl")
 include("occbin.jl")
+include("fminsearch_octave.jl")
 include("occbin_filter.jl")
 include("occbin_estimation.jl")
+include("sobol.jl")
+include("occbin_forecast.jl")
 include("results.jl")
 include("results_policy.jl")
 include("pf_functions.jl")
+include("results_parity2.jl")
 include("results_estimation.jl")
 include("seeds.jl")
 include("varexo_det.jl")
@@ -97,7 +101,7 @@ export posterior_irf_dsgevar, dsge_var_posterior, endogenous_log_prior, sample_m
        OccbinDynareBug, error_flag, irf_occbin, occbin_graph_table, surprise_shocks, mod_options, check_constraints,
        occbin_filter_options, inversion_filter, piecewise_kalman_filter, occbin_smoother, occbin_shock_decomposition,
        squeeze_occbin_shock_decomposition, regime_table, write_regime_table, OccbinSmootherResult, PKFResult,
-       InversionFilterResult, occbin_filter, occbin_at, occbin_write_regimes!,
+       InversionFilterResult, occbin_filter, occbin_at, occbin_write_regimes!, occbin_forecast, OccbinForecast, qmc_sequence,
        Estimation, EstimationError, estimate, posterior_mode, sample_posterior, log_likelihood, log_prior, log_posterior,
        smooth, SmootherResult, SmootherError, check_smoother, parameter_vector, prior_mode,
        shock_decomposition, initial_condition_decomposition, ShockDecomposition, shock_groups, group_shocks, init2shocks, apply_init2shocks,
