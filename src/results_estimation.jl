@@ -512,6 +512,11 @@ function _estimation!(ws::DynareWorkspace, st, var_list, data, seed, options)
     stopts = st === nothing ? Dict{String,Any}() : (o = get_or(st, "options", nothing); o isa AbstractDict ? o : Dict{String,Any}())
     # EstimationStatement::writeOutput: options_.order = 1 unless the statement gives an order
     (haskey(stopts, "order") || haskey(options, :order)) || (O.order = 1.0)
+    # no estimated_params block and no optimisation (mode_compute=0): Dynare runs the smoother at the calibrated values, as calib_smoother
+    if !any(s -> get(s, "statementName", "") == "estimated_params", m.statements) && _optf(ws, "mode_compute", 5.0) == 0 &&
+       _optb(ws, "smoother", false)
+        return _calib_smoother!(ws, st, var_list, (;))
+    end
     vl = String.(collect(var_list))
     for v in vl
         haskey(m.ie, v) || throw(EstimationError("estimation: $v is not an endogenous variable"))

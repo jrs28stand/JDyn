@@ -398,6 +398,11 @@ end
 
 function _stoch_simul(ws, m, oo, var_list, shocks, rng)
     order = _opti(ws, "order", 2)
+    if order != 1 && _hessian_eq_zero_dynare(m)           # stoch_simul.m: M_.hessian_eq_zero (a linear model) forces order 1
+        warn_once(m, "stoch_simul: using order = 1 because Hessian is equal to zero")
+        order = 1
+        ws.options_.order = 1.0
+    end
     pruning = _optb(ws, "pruning", false)
     order > 1 && m.max_deriv_order < order && throw(ModelError("stoch_simul(order=$order) needs derivatives of order $order: run dynare(...; output=\"$(order == 2 ? "second" : "third")\")"))
     solved = pop!(ws.state, :solved_dr, nothing)        # discretionary_policy: the rules are not the perturbation solution
@@ -868,6 +873,7 @@ function _run_in_place!(ws, st, nss, shocks, rng)
         _histval!(ws)
         return
     end
+    kind == "estimated_params" && (m.options["estimated_params_executed"] = get(m.options, "estimated_params_executed", 0) + 1)
     kind == "conditional_forecast_paths" && return _cf_paths_statement!(ws, st)
     if kind == "ramsey_model"
         _ramsey_model_statement!(ws, st)           # src/results_policy.jl

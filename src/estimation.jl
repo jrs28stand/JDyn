@@ -688,6 +688,20 @@ end
 _num(est::Estimation, s) = s isa Real ? Float64(s) : Float64(_value(est.model, s))
 
 # ------------------------------------------------------------------ parameters and priors
+"""
+For each `estimated_params` block of the file, in order: does it have the `overwrite` option? Read from the text of the .mod
+file (comments removed); `nothing` when the number of keywords found is not `nblocks` (macro directives can hide or repeat blocks).
+"""
+function _estimated_params_overwrite_flags(m::Model, nblocks::Int)
+    f = joinpath(m.mod_dir, m.name * ".mod")
+    isfile(f) || return nothing
+    txt = read(f, String)
+    txt = replace(txt, r"/\*.*?\*/"s => " ")
+    txt = replace(txt, r"(//|%)[^\n]*" => "")
+    hits = [occursin(r"overwrite", something(mt.captures[1], "")) for mt in eachmatch(r"(?<![\w.])estimated_params\s*(\([^)]*\))?\s*;", txt)]
+    length(hits) == nblocks ? hits : nothing
+end
+
 function _setup_parameters!(est::Estimation)
     m = est.model
     blocks = [st for st in m.statements if get(st, "statementName", "") == "estimated_params"]
@@ -696,8 +710,20 @@ function _setup_parameters!(est::Estimation)
         k in ("estimated_params_remove", "prior", "std_prior", "corr_prior") && throw(EstimationError("$k blocks are not supported"))
     end
     isempty(blocks) && throw(EstimationError("the model has no estimated_params block"))
-    # several blocks: the JSON does not say whether a later block has the 'overwrite' option
-    length(blocks) > 1 && throw(EstimationError("several estimated_params blocks are not supported"))
+    # several blocks: the JSON does not say whether a later block has the 'overwrite' option; it is read from the text of the .mod
+    # file (each `estimated_params` keyword, in order). Only the blocks run so far count (the results layer counts them); a
+    # later block with `(overwrite)` replaces the entries so far, any other one adds to them.
+    if length(blocks) > 1
+        upto = min(get(m.options, "estimated_params_executed", length(blocks)), length(blocks))
+        flags = _estimated_params_overwrite_flags(m, length(blocks))
+        flags === nothing && throw(EstimationError("several estimated_params blocks are not supported (the .mod file's `estimated_params(overwrite)` options could not be matched to the blocks)"))
+        entries0 = Any[]
+        for (k, b) in enumerate(blocks[1:upto])
+            flags[k] && empty!(entries0)
+            append!(entries0, collect(get_or(b, "params", [])))
+        end
+        blocks = Any[Dict{String,Any}("params" => entries0)]
+    end
     entries = collect(get_or(blocks[1], "params", []))
     isempty(entries) && throw(EstimationError("the estimated_params block is empty"))
     vx, vn, cx, cn, p = Any[], Any[], Any[], Any[], Any[]

@@ -626,7 +626,7 @@ function theoretical_moments(m::Model, dr=nothing; var_list=nothing, Sigma_e=not
     order > 3 && throw(ArgumentError("Theoretical moments are implemented up to third order (pruned)"))
     order == 3 && o["pruning"] != true &&
         throw(ArgumentError("Dynare has no theoretical moments at third order without pruning; use pruning (pruned state space) or simulated moments (periods > 0)"))
-    if order >= 2 && m.max_deriv_order < 2
+    if order >= 2 && (m.max_deriv_order < 2 || _hessian_eq_zero_dynare(m))
         @warn "using order = 1 because Hessian is equal to zero"
         order = o["order"] = 1
     end
