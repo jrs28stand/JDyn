@@ -12,7 +12,9 @@ mutable struct HostOptions <: HostStruct
     store::MStruct                 # model.matlab_options: what the .mod file assigned
     unknown::Set{String}           # fields a Dynare command has overwritten since
     defaults_valid::Bool
+    assigned::Set{String}          # fields the MATLAB lines assigned since the workspace last took them over (dynare())
 end
+HostOptions(store, unknown, valid) = HostOptions(store, unknown, valid, Set{String}())
 mutable struct HostOO <: HostStruct
     session::Any
     results::Any                   # dynare(): the workspace's oo_ (an MStruct), which MATLAB lines read and write
@@ -247,7 +249,7 @@ function peek_field(O::HostOptions, name; raw=false)
     name in O.unknown && throw(Unsupported("options_.$name was changed by a Dynare command; its value is not known to JDyn", "results"))
     get(O.store, name, nothing)
 end
-set_field!(O::HostOptions, name, value) = (O.store[name] = value; delete!(O.unknown, name))
+set_field!(O::HostOptions, name, value) = (O.store[name] = value; delete!(O.unknown, name); push!(O.assigned, name))
 
 # ---- oo_
 # While loading (JDyn.load) results do not exist; under dynare() commands run in place and oo_ is the

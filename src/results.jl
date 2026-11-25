@@ -940,9 +940,12 @@ end
 function _apply_matlab_options!(ws)
     mo = ws.model.matlab_options
     seen = ws.state[:matlab_options]
+    # an assignment of the value a field already had still counts when a Dynare command has changed the field since
+    # (options_.lik_init=1 after an estimation that left 3)
+    asg = ws.model.session === nothing ? Set{String}() : ws.model.session.host.options.assigned
     for k in keys(mo)
         v = mo[k]
-        isequal(get(seen, k, nothing), v) && continue
+        isequal(get(seen, k, nothing), v) && !(k in asg) && continue
         seen[k] = deepcopy(v)
         if v isa MStruct && get(ws.options_, k, nothing) isa MStruct
             _merge_struct!(ws.options_[k], v)
@@ -950,6 +953,7 @@ function _apply_matlab_options!(ws)
             ws.options_[k] = deepcopy(v)
         end
     end
+    empty!(asg)
 end
 function _merge_struct!(dst::MStruct, src::MStruct)
     for k in keys(src)
