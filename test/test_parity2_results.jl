@@ -4,6 +4,8 @@
 using Test; include("common.jl")
 using Random
 
+# JDYN_TEST_ONLY=pe_t12,sd_fc_pm runs only the named cases
+selected(case) = (o = get(ENV, "JDYN_TEST_ONLY", ""); isempty(o) || case in split(o, ","))
 const OOP2 = joinpath(@__DIR__, "ref_parity2", "oo")
 
 "Largest relative difference (floor 1) between a reference value and ours, with the path of the worst field; `nothing` where a field is absent."
@@ -31,13 +33,19 @@ function oo_diff(ref, ours, path, out::Vector{Tuple{String,Float64}})
             oo_diff(r, o, "$path{$i}", out)
         end
     else
-        a = ref isa Real ? [Float64(ref)] : vec(Float64.(ref)); b = try
-            ours isa Real ? [Float64(ours)] : vec(Float64.(ours))
+        cplx(x) = x isa Number ? ComplexF64[x] : vec(ComplexF64.(x))
+        a = cplx(ref); b = try
+            cplx(ours)
         catch
             push!(out, (path * " (not numeric)", Inf)); return
         end
         length(a) == length(b) || (push!(out, (path * " (size $(length(a)) vs $(length(b)))", Inf)); return)
         isempty(a) && return
+        if any(!iszero(imag(x)) for x in a) || any(!iszero(imag(x)) for x in b)       # eigenvalues: compare the moduli, as the comparator
+            a, b = sort(abs.(a)), sort(abs.(b))
+        else
+            a, b = real.(a), real.(b)
+        end
         both = .!(isnan.(a) .& isnan.(b))
         push!(out, (path, any(isnan.(a) .!= isnan.(b)) ? Inf : (any(both) ? maximum(abs.(a[both] .- b[both])) / max(1.0, maximum(abs.(a[both]))) : 0.0)))
     end
@@ -50,6 +58,9 @@ function run_case(case; random=:octave)
     for extra in ("fsdat_simul.m", "fsdat_simul.mat")
         isfile(joinpath(OOP2, extra)) && cp(joinpath(OOP2, extra), joinpath(d, extra))
     end
+    for f in readdir(OOP2)       # a mode file of the case
+        startswith(f, case * "_") && endswith(f, ".mat") && cp(joinpath(OOP2, f), joinpath(d, f))
+    end
     ws = with_logger(NullLogger()) do
         JDyn.dynare(joinpath(d, case * ".mod"); random=random)
     end
@@ -60,6 +71,7 @@ function check_case(case, paths, tol; skip=String[])
     ws, ref = run_case(case)
     out = Tuple{String,Float64}[]
     roo = ref["oo_"]
+    paths == ["*"] && (paths = [k for k in SD_PATHS if haskey(roo, k)])
     for p in paths
         parts = split(p, ".")
         r = roo; o = ws.oo_
@@ -84,7 +96,20 @@ end
 const PE_TOL = Dict("pe_t6" => 1e-6, "pe_t7" => 1e-6, "pe_t9" => 1e-9, "pe_t12" => 1e-9, "pe_t15" => 1e-4, "pe_t17" => 1e-7, "pe_t18" => 1e-8,
                     "pe_t19g" => 1e-9, "pe_t25" => 5e-7, "pe_v9" => 1e-6, "pe_t8a" => 5e-8)
 for case in sort(collect(keys(PE_TOL)))
+    selected(case) || continue
     @testset "pac.estimate: $case" begin
         ws = check_case(case, ["pac"], PE_TOL[case])
+    end
+end
+
+# shock_decomposition with forecast_type, from the calibration, the mode (maximum likelihood), the posterior mean / median / mode: the
+# whole oo_ is compared (forecast_shock_decomposition, shock_decomposition_info, the estimation and conditional forecast fields)
+const SD_PATHS = ["forecast_shock_decomposition", "shock_decomposition_info", "plot_shock_decomposition_info", "forecast", "conditional_forecast",
+    "mle_mode", "posterior_mode", "posterior_mean", "posterior_median", "posterior_std", "SmoothedShocks", "SmoothedVariables", "UpdatedVariables", "MeanForecast", "PointForecast", "steady_state"]
+const SD_TOL = Dict("sd_fc_cal" => 1e-10, "sd_fc_ml" => 1e-10, "sd_fc_pm" => 1e-9, "sd_fc_pmm" => 1e-9)
+for case in sort(collect(keys(SD_TOL)))
+    selected(case) || continue
+    @testset "shock_decomposition forecast_type: $case" begin
+        check_case(case, ["*"], SD_TOL[case])
     end
 end

@@ -779,6 +779,22 @@ function _set_matlab_var!(ws::DynareWorkspace, name::AbstractString, v)
     end
 end
 
+"A value of conditional_forecast_paths: the endogenous variables in it are `oo_.steady_state` at that point."
+function _cf_eval(ws::DynareWorkspace, text)
+    m = ws.model
+    s = string(text)
+    ss = haskey(ws.oo_, "steady_state") ? ws.oo_["steady_state"] : nothing
+    locals = Dict{String,Float64}()
+    for mt in eachmatch(r"[A-Za-z_]\w*", s)
+        name = mt.match
+        if haskey(m.ie, name)
+            ss === nothing && return _eval_with_vars(m, s)
+            locals[name] = Float64(ss[m.ie[name]])
+        end
+    end
+    _value(m, s; locals=locals)
+end
+
 "conditional_forecast_paths where it stands: the targets (values may be MATLAB expressions, scalars or vectors)."
 function _cf_paths_statement!(ws::DynareWorkspace, st)
     m = ws.model
@@ -793,7 +809,7 @@ function _cf_paths_statement!(ws::DynareWorkspace, st)
         push!(names, String(p["var"]))
         for v in p["values"]
             p1, p2 = Int(v["period1"]), Int(v["period2"])
-            val = _value(m, v["value"])
+            val = _cf_eval(ws, v["value"])      # endogenous names read oo_.steady_state (Dynare writes them so, outside the model)
             vals = val isa AbstractArray ? vec(Float64.(val)) : [Float64(val)]
             length(vals) == 1 ? (P[i, p1:p2] .= vals[1]) :
                 length(vals) == p2 - p1 + 1 ? (P[i, p1:p2] = vals) :

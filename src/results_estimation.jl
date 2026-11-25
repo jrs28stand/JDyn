@@ -473,8 +473,10 @@ function _estimation!(ws::DynareWorkspace, st, var_list, data, seed, options)
             oo.likelihood_at_initial_parameters = Float64(fv)
         end
         # Dynare sets M_ to the initial values first; the steady state it stores is the one at those values
+        # (with a mode_file, dynare_estimation_init.m has replaced xparam1 by the file's values before it: check_mode_file.m)
+        x_init = isempty(mfile) ? est.x0 : match_mode_file(est, read_mode_file(m, mfile); mode_compute=o["mode_compute"])[1]
         sol0 = try
-            first_order(m; params=model_params(est, est.x0), qz_criterium=o["qz_criterium"], loglinear=o["loglinear"])
+            first_order(m; params=model_params(est, x_init), qz_criterium=o["qz_criterium"], loglinear=o["loglinear"])
         catch e
             e isa Union{SteadyStateError,BlanchardKahnError,LoglinearError} || rethrow()
             nothing

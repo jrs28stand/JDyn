@@ -24,7 +24,8 @@ struct PosteriorForecast
 end
 Base.show(io::IO, r::PosteriorForecast) = print(io, "PosteriorForecast(", r.draws, " draws, ", r.horizon, " periods, ", length(r.var_list), " variables)")
 
-_fc_stats(d::Array{Float64,3}, idx, names, conf) = Dict{String,SeriesStats}(nm => series_stats(d[:, :, i], conf) for (nm, i) in zip(names, idx))
+_fc_stats(d::Array{Float64,3}, idx, names, conf; density::Bool=false) =
+    Dict{String,SeriesStats}(nm => series_stats(d[:, :, i], conf; density=density) for (nm, i) in zip(names, idx))
 
 """
     posterior_forecast(est, mc=nothing; params=nothing, horizon, var_list, sub_draws, mh_conf_sig, drop, rng, subsample_rng,
@@ -111,12 +112,13 @@ function posterior_forecast(est::Estimation, mc::Union{Nothing,MCMCResult}=nothi
         me_d[b, :, :] = point_d[b, :, mf] .+ me_shocks'
     end
     idx = [m.ie[v] for v in vl]
-    res_mean = _fc_stats(mean_d, idx, vl, conf)
-    res_point = _fc_stats(point_d, idx, vl, conf)
+    dens_on, _ = _density_options(est)       # options_.estimation.moments_posterior_density: pm3.m stores oo_.<name>.density.<variable> (grid x 2 x horizon)
+    res_mean = _fc_stats(mean_d, idx, vl, conf; density=dens_on)
+    res_point = _fc_stats(point_d, idx, vl, conf; density=dens_on)
     res_me = Dict{String,SeriesStats}()
     if any_me
         sel = [v for v in obs if v in vl]
-        res_me = _fc_stats(me_d, [findfirst(==(v), obs) for v in sel], sel, conf)
+        res_me = _fc_stats(me_d, [findfirst(==(v), obs) for v in sel], sel, conf; density=dens_on)
     end
     PosteriorForecast(vl, h, conf, B, res_mean, res_point, res_me, P, keep_draws ? mean_d : nothing, keep_draws ? point_d : nothing,
                       keep_draws && any_me ? me_d : nothing)
@@ -128,16 +130,19 @@ _opti_forecast(est::Estimation) = Int(get(est.options, "forecast", 0))
 function store_posterior_forecast!(oo::MStruct, r::PosteriorForecast)
     for (field, d) in (("MeanForecast", r.MeanForecast), ("PointForecast", r.PointForecast), ("PointForecastME", r.PointForecastME))
         isempty(d) && (haskey(oo, field) && delete!(oo, field); continue)
-        S = Dict(f => MStruct() for f in ("Mean", "Median", "Var", "deciles", "HPDinf", "HPDsup"))
+        S = Dict(f => MStruct() for f in ("Mean", "Median", "Var", "deciles", "HPDinf", "HPDsup", "density"))
+        any_density = false
         for nm in (v for v in vcat(r.var_list, collect(keys(d))) |> unique if haskey(d, v))
             s = d[nm]
             S["Mean"][nm] = _col(s.mean); S["Median"][nm] = _col(s.median); S["Var"][nm] = _col(s.var)
             S["HPDinf"][nm] = _col(s.hpd_inf); S["HPDsup"][nm] = _col(s.hpd_sup); S["deciles"][nm] = Matrix{Float64}(s.deciles)
+            s.density === nothing || (S["density"][nm] = s.density; any_density = true)
         end
         M = MStruct()
         for f in ("Mean", "Median", "Var", "deciles", "HPDinf", "HPDsup")   # Dynare's field order: Mean, Median, Var, deciles, HPDinf, HPDsup
             M[f] = S[f]
         end
+        any_density && (M["density"] = S["density"])
         oo[field] = M
     end
     oo
