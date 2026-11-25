@@ -802,7 +802,8 @@ function _setup_parameters!(est::Estimation)
     est.x0 = init
     if is_bayesian(est.prior)
         plb, pub = prior_bounds(est.prior, est.options["prior_trunc"])
-        est.lb, est.ub = max.(plb, lb), min.(pub, ub)
+        # blank bounds in estimated_params are NaN: max/min would propagate it (every proposal of the sampler was then rejected); use the prior bounds
+        est.lb, est.ub = ifelse.(isnan.(lb), plb, max.(plb, lb)), ifelse.(isnan.(ub), pub, min.(pub, ub))
     else
         est.lb, est.ub = lb, ub
     end

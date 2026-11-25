@@ -301,7 +301,7 @@ end
     for th in vs
         a, b = JDyn._dsge_likelihood(eo, th), JDyn._dsge_likelihood(en, th)
         @test (a[2] == 0) == (b[2] == 0)
-        a[2] == 0 && @test abs(a[1] - b[1]) < 0.13                                  # knife-edge periods of the approximate class: <= 0.125 seen
+        a[2] == 0 && @test abs(a[1] - b[1]) < 0.13                                  # knife-edge periods of the approximate class: <= 0.125 seen here; pydyn soak saw up to 1.54 (9 of 8,279 pairs > 0.4): not a bound
     end
 end
 
@@ -327,6 +327,7 @@ end
         (a[2] == 0) == (b[2] == 0) || (nmis += 1)
         a[2] == 0 && b[2] == 0 && @test abs(a[1] - b[1]) < 1e-9
     end
-    @test nmis <= 10
+    @test nmis == 0
+    println("  bf replay: disagreements in 'fails or not': ", nmis)
     println("  bf chains (2 x 150): OccBin ", round(to, digits=1), " s, news ", round(tn, digits=1), " s; acceptance ", mcn.acceptance_rate)
 end

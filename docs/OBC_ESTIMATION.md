@@ -95,3 +95,6 @@ and a 2 x 150 bf chain pair (about 30 s, 100 assertions).
 ## Why a news evaluation failed; `obc_horizon_max`
 `obc_failure(est)` gives the cause of the last failed news evaluation and `obc_horizon_max` retries trial points that fail for lack of horizon with the horizon doubled; Dynare's code stays 304 (313 per trial point).
 Details, numbers and the reproducer: docs/OBC_HO_PROGRESS.md, "Horizon too short in the news inversion filter".
+
+Note on the knife-edge size: "0.12" in the paragraphs above is what JDyn's own runs showed, not a bound. pydyn's soak test (8,279 finite OccBin/news pairs on NKM) found 195 differing by more than 1e-8 relative,
+60 by more than 0.12, 9 by more than 0.4, the largest 1.54; `bf` none. Tests that compare at visited vectors (`< 0.13`) pass at their vectors; they do not assert a general bound.

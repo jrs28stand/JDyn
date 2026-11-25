@@ -6,7 +6,7 @@ Branch `obc-ho` (pushed to `origin wip/obc-ho`), based on `wip/obc` at 5f0d3a0. 
 ## State / next step
 
 MAINTENANCE TASK (three jobs, started 2026-11-25). Job 1 (bound the OccBin rule memo): DONE, see "Rule memo budget" below. Job 2 (news-filter "horizon too short" status, opt-in
-`obc_horizon_max`): DONE, see "Horizon too short" below. Job 3 (merge `main` into `obc-ho`, tighten the `bf` replay): not started, do it after job 2 is pushed.
+`obc_horizon_max`): DONE, see "Horizon too short" below. Job 3 (merge `main` into `obc-ho`, tighten the `bf` replay): merged, see "Merge of main" below.
 Resume: `source /root/jl/jdyn_env.sh; julia --project=. test/<file>.jl` (one file at a time; first run after a `src` edit precompiles for ~4 minutes). Push only to `origin obc-ho:wip/obc-ho`.
 
 (Older state, cubature port:)
@@ -196,3 +196,13 @@ solver alike; with `obc_horizon_max = 80`: 28 failures left, 93 of 192 retries s
 Not proved: that `undecided` at the extreme vector is a horizon problem (it is the empirical finding that horizon 80 solves them); the status does not say so because the cheap checks cannot decide it.
 Differences from pydyn: the integer-programme outcomes `:horizon_too_short` / proved `:no_solution` are used when `obc_milp_time_limit > 0` (pydyn counts them `undecided`); `ObcFailure` has `horizon_max`; `retry_seconds`.
 Not aligned: pydyn builds `Occbin` with its default `qz_criterium` (1 + 1e-6) in the estimation, JDyn with the estimation's (1 - 1e-6 for lik_init 1, as Dynare).
+
+
+## Merge of main (maintenance job 3)
+Merge commit of `origin/main` 493b529 (76 commits since a487e5d). Conflicts: `src/JDyn.jl` (export list: kept both), `test/runtests.jl` (test list: kept both, plus the two new test files), `src/occbin_estimation.jl`
+(OccBin smoother's inversion filter: main's `rng=_ivf_rng(m)` together with this branch's news `solver=` hook and `horizon_max`). Everything else merged automatically (`occbin_filter(est, theta; rng=_ivf_rng(est.model))` merged cleanly with the failure bookkeeping).
+One fix of main's code, needed by a test (src/estimation.jl, 2 lines): blank bounds in `estimated_params` are NaN and main's `est.lb, est.ub = max.(plb, lb), min.(pub, ub)` propagated NaN, so `sample_posterior` (which now checks proposals against `est.lb/est.ub`)
+rejected every proposal (acceptance 0.0 in the small-NKM chain test; chain stuck at its start). Now NaN means "use the prior bound". Main's session should take or replace this.
+`occbin_solver` refusing `loglinear`: no OBC/OccBin test sets loglinear except `test_occbin_estimation.jl`, which already expects the refusal.
+`obc_method = occbin` is bit for bit main's own OccBin: log posterior (hex) and filter results (filtered shocks, states, residuals, regimes, code; fixed rng) at the 4 NKM, 3 small-NKM stored vectors and 6 bf vectors, 26 comparisons, identical between main 493b529 and the merge.
+bf replay in `test/test_obc_estimation.jl`: `nmis <= 10` tightened to `nmis == 0`; it holds (0 disagreements in 'fails or not' over the 100 replayed states) now that each evaluation's random search is seeded.
