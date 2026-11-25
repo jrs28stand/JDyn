@@ -433,6 +433,14 @@ function _stoch_simul(ws, m, oo, var_list, shocks, rng)
         n_exo_det(m) > 0 && _store_exo_det_dr!(oo.dr, m, dr)
     end
     oo.dr.eigval = _eigcol(eigv)
+    if _optb(ws, "aim_solver", false) && order == 1 && !kos && solved === nothing
+        # AIM_first_order_solver.m: dr.eigval = eig(kalman_transition_matrix(dr, nstatic+(1:nspred), 1:nspred)), the nspred
+        # eigenvalues of the state transition, not the generalised eigenvalues of the QZ problem
+        _, _, cnt = dr_ordering(m.lead_lag_incidence)
+        nspred = cnt.npred + cnt.nboth
+        G = Matrix{Float64}(dr["ghx"])[cnt.nstatic+1:cnt.nstatic+nspred, 1:nspred]
+        oo.dr.eigval = _eigcol(LinearAlgebra.eigvals(G))
+    end
     # stoch_simul.m leaves oo_.steady_state alone (the initval values, or the last `steady`): resol only fills oo_.dr.ys. Under
     # loglinear it logs oo_.steady_state (log_variable) once and flags options_.logged_steady_state, undone at the next solve.
     if _optb(ws, "loglinear", false) && get(ws.state, :logged_ss, false) !== true
@@ -865,7 +873,10 @@ function _run_in_place!(ws, st, nss, shocks, rng)
         return
     end
     if kind in ("initval", "endval")                   # these blocks also write oo_.steady_state
-        ws.oo_.steady_state = _col(Float64[get(m.oo, v, 0.0) for v in m.endo_names])
+        ss0 = Float64[get(m.oo, v, 0.0) for v in m.endo_names]
+        # the preprocessor's writeAuxVarInitval: initval/endval also set the auxiliary variables (leads, lags, log) from the originals
+        ssf = try fill_auxiliary(m, ss0, exo_steady(m), m.params) catch; ss0 end
+        ws.oo_.steady_state = _col(all(isfinite, ssf) ? ssf : ss0)
         ws.oo_.exo_steady_state = _col(exo_steady(m))
         n_exo_det(m) > 0 && (ws.oo_.exo_det_steady_state = _col(exo_det_steady(m)))
         return
