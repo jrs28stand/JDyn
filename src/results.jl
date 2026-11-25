@@ -151,6 +151,7 @@ function _apply_options!(O::MStruct, st)
     (opts isa AbstractDict && !(kind in _OPTION_ELSEWHERE)) || return O
     pre = get(_OPTION_PREFIX, kind, "")
     for (k, v) in opts
+        kind == "extended_path" && k == "periods" && continue          # the sample size of the call, not options_.periods
         _setpath!(O, pre * String(k), _mval(v))
     end
     O
@@ -908,6 +909,8 @@ function _run_in_place!(ws, st, nss, shocks, rng)
         evaluate_planner_objective!(ws)
     elseif kind == "osr"
         osr!(ws, String.(get_or(st, "symbol_list", String[])); rng=rng)
+    elseif kind == "extended_path"
+        _extended_path_statement!(ws, st)               # src/extended_path.jl
     elseif kind == "occbin_solver"
         occbin_solver!(ws)
     elseif kind == "occbin_write_regimes_xls"

@@ -70,6 +70,8 @@ include("pf_functions.jl")
 include("results_parity2.jl")
 include("pac_estimate.jl")
 include("results_shockdec.jl")
+include("backward.jl")
+include("extended_path.jl")
 include("results_estimation.jl")
 include("seeds.jl")
 include("varexo_det.jl")
@@ -113,6 +115,8 @@ export posterior_irf_dsgevar, dsge_var_posterior, endogenous_log_prior, sample_m
        dynare, @dynare, DynareWorkspace, build_M, build_options, MStruct, Cell,
        stoch_simul!, ramsey_policy!, discretionary_policy!, evaluate_planner_objective!, osr!, steady!, check!, perfect_foresight_setup!, perfect_foresight_solver!, occbin_solver!, set_param_value!,
        estimation!, calib_smoother!, set_dynare_seed!,
+       simul_backward_model, simul_static_model, backward_model_irf, backward_model_forecast, set_historical_values, model_inversion, BackwardError,
+       extended_path, EPError,
        ramsey_info, is_ramsey, is_discretionary, planner_discount, ramsey_steady_state, planner_objective, evaluate_planner_objective,
        PlannerObjectiveValue, discretionary_policy, DiscretionaryResult, osr, osr_objective, OSRResult, OptimalPolicyError, OSRError,
        DiscretionaryPolicyError, variance_of_endogenous_variables,

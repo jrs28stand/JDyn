@@ -39,12 +39,41 @@ Final case-set status: matlab_extra 318/58/0, pydyn_extra 258/16/0, pydyn_nd 484
 ## Item 6 partly done
 `data(file, first_obs, last_obs, nobs)` with dates (start date from INIT__/csv or `set_time`). Octave fs2000_data (nobs=40): alp 0.3570877 vs JDyn 0.3571060 (optimizer-level). `data(series=...)` is refused. trend_var and the log version: steady state, ghs2 and parameters equal the store; IRFs and means at order 2 are simulation-based in Dynare, so they cannot match exactly. Test: `test/test_gaps_data.jl`.
 
-## Items 3-4: not started
-3. Backward models (simul_backward_model, irf, forecast, set_historical_values, simul_static_model, model_inversion). Spec: pydyn `backward.py` and `results_bwd.py`.
-4. Extended path order 0 and stochastic EP.
+## Item 3 (backward models): implemented, validated on the Dynare test folders
+Files: `src/backward.jl` (new), small hooks elsewhere (see "Shared files touched"). Julia API: `simul_backward_model(ws, T; innovations, initialconditions)`,
+`simul_static_model`, `backward_model_irf`, `backward_model_forecast`, `set_historical_values`, `model_inversion` (all also MATLAB-callable from the .mod file,
+as `simul_backward_nonlinear_model` / `simul_backward_linear_model` with Dynare's argument lists).
+- Auxiliary variables (diff, lags above one, lagged exogenous variables) of the initial conditions are rebuilt as `dynamic_set_auxiliary_series` does (`_aux_series`).
+- `options_.solve_algo` (4, 9, 13, 14; others refused), `options_.dynatol.*`, `options_.bnlms.set_dynare_seed_to_default`, `bnlms.innovation_distribution` are read.
+- `isoctave` is true in a `random=:octave` workspace (the inversion tests have Octave tolerances), `oo_.bnlms.shocks`, `oo_.endo_simul`, `oo_.exo_simul` as Dynare.
+- Interpreter additions needed by these tests: date literals (`2000Q1`, `1Y`) lex as `dates('..')` (before, every statement with a literal was silently skipped), `cumsum`/`cumprod`.
+- Dynare 7.2 defects (corrected by default, reproduced under `replicate_dynare_bugs=true`):
+  1. `dynare_solve` repairs a non-evaluable initial guess by redrawing `find(x)` (the NON-zero entries, NaN included) although its comment says the default ones.
+     Default: only the non-finite entries are redrawn (when none is, the zero ones). Bug mode: Dynare's choice (with `random=:octave` the same draws).
+  2. `backward_model.initialize` reads the history of the auxiliary variable of a lagged exogenous variable at `M_.exo_histval(M_.orig_endo_nbr+i)`, an element of another
+     variable (`model-inversion/bk-7`: u1 instead of u3, so the initial u3 is 0 instead of -0.1). Default: the variable's own histval; bug mode: Dynare's element.
+- Refused: forward-looking `model_inversion` (nk-1, nk-2: deterministic inversion through `perfect_foresight_solver_core`; pydyn refuses it too), `backward_model_irf` with deterministic
+  shocks given as dseries, `simul_backward_model` for a maximum lag above one without auxiliary variables.
+
+## Item 4 (extended path): order 0 and the stochastic full tree
+File `src/extended_path.jl`; hook in `src/results.jl` (`extended_path` statement), `extended_path(ws, T; ...)` and the MATLAB-callable `extended_path(initial, T, exo, options_, M_, oo_)`.
+- Order 0 as Dynare: stacked trust region (`ep.stack_solve_algo = 7`, `ep.solve_algo = 9`, sparse port of trust_region.m, same iterates), JDyn's PF core for
+  `stack_solve_algo = 0`, linear models, purely backward models (`ep.periods = 1`) and lmmcp (`ep.solve_algo = 10`); homotopy method 2 on failure.
+- Order > 0: full tree (`ep.stochastic.algo = 0`), Tensor-Gaussian-Quadrature and Unscented (also with no positive-variance shock), models with maximum lag and lead 1.
+- `oo_.extended_path.status`, `oo_.endo_simul` (`n x (lag+T)`), `oo_.exo_simul`, `Simulated_time_series` (dseries) as Dynare.
+- Refused: sparse tree (`tree=sparse`), hybrid (`hybrid_order > 1`), Stroud cubatures, `use_first_order_solution_as_initial_guess`, calibrated innovations, `extended_path_mc` (builtin refuses), `ep.solve_algo = 11`.
+- Comparator on the related folders (random=:octave, own scratch prefix `accg_`): model-inversion and stochastic-backward-models run to completion (forward-looking nk-1/nk-2 inversion refused); ecb/backward-models/irf/solow_1 and solow_2 run (solow_1 needed the `set_historical_values ds 1991Q1;` command syntax and `M_.endo_names_tex`); solve_algo_12_14: `solve_algo=12` refused (only 4, 9, 13, 14), others agree; ecb/SUR, pooled_* refused (out of scope: sur/pooled estimation).
+- Tests: `test/test_gaps_backward.jl` (bk-3a, bk-diff-2, bk-7 default vs `replicate_dynare_bugs`), `test/test_gaps_ep.jl` (rbc2, ar_backward, order 2/3 unscented and tensor rules, Stroud refusal); references in `test/ref_gaps/{backward,ep}`.
+- Dev note: the clone needs `JDYN_KORDER_LIB` pointing at the main repo's `deps/korder/libjdyn_korder.so`.
+- Agreement with Octave 8.4 (`random=:octave`): rbc2 (order 0 then 1) 3e-16, rbc_bytecode 6e-16, rbcii 1.4e-11, rbcii_MCP 1.4e-14, linearmodel1 2e-15, ar_backward exact;
+  a custom run (order 2 unscented, order 2 and 3 tensor with 3 nodes on the rbc2 model) 1e-15.
+
+## Older list (items 3-4 are now done, see above)
 5. `ramsey_constraints` (still refused in `src/model.jl`).
 6. `data(first_obs=<date>)`, and `trend_var`/`deflator` against the store.
 
 ## Shared files touched
+(items 3-4) `src/JDyn.jl` (includes, exports), `src/results.jl` (extended_path branch, `periods` of extended_path not written to options_), `src/model.jl` (extended_path is a handled statement), `src/matlab/parser.jl` (date literals), `src/matlab/builtins.jl` (cumsum/cumprod).
+
 `src/results.jl`, `src/results_estimation.jl`, `src/JDyn.jl`, `src/matlab/session.jl`, `src/seeds.jl`, `src/octave_rng.jl`, `src/model.jl`, `src/estimation.jl`, `src/nonlinear_estimation.jl`, `src/forecast.jl`, `src/smoother.jl`.
 No existing test has been changed yet. The full suite has not been run yet.
