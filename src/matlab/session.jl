@@ -1010,7 +1010,7 @@ function shadow_results!(s::ModSession, kind)
 end
 
 "Value of an expression in a Dynare statement. Parameter names mean M_.params, as in Dynare's driver."
-function eval_value(s::ModSession, text::AbstractString, locals=nothing)
+function eval_value(s::ModSession, text::AbstractString, locals=nothing; vector::Bool=false)
     m, h = s.model, s.host
     try
         parsed = get(_EVAL_CACHE, text, nothing)
@@ -1037,7 +1037,8 @@ function eval_value(s::ModSession, text::AbstractString, locals=nothing)
         end
         push!(s.I.scope_stack, sc)
         try
-            return scalar(ev(s.I, body[1].e, sc), "value")
+            val = ev(s.I, body[1].e, sc)
+            return vector && val isa AbstractArray && length(val) > 1 ? Float64.(vec(val)) : scalar(val, "value")
         finally
             pop!(s.I.scope_stack)
         end

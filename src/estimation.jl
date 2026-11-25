@@ -477,7 +477,9 @@ round_half_up(x) = Int(floor(x + 0.5))
 # ====================================================================== the estimation object
 const _COSMETIC_EST = Set(["nograph", "nodisplay", "graph_format", "TeX", "tex", "nodiagnostic", "console_mode", "silent_optimizer",
     "plot_priors", "debug", "noprint", "no_graph.posterior", "graph_save_formats", "dirname", "verbosity", "mode_check.nolik",
-    "mode_check.neighbourhood_size", "mode_check.symmetric_plots", "xls_sheet", "xls_range"])
+    "mode_check.neighbourhood_size", "mode_check.symmetric_plots", "xls_sheet", "xls_range",
+    "fast_kalman_filter",       # Chandrasekhar recursions: the standard filter gives the same likelihood and smoother
+    "lyapunov_db", "lyapunov_fp", "lyapunov_srs"])      # the method that solves the Lyapunov equation: JDyn has one, the solution is the same
 # options the code acts on
 const _HONOURED_EST = Set(["datafile", "first_obs", "nobs", "loglinear", "logdata", "prefilter", "presample", "lik_init",
     "diffuse_filter", "kalman_algo", "kalman_tol", "diffuse_kalman_tol", "riccati_tol", "prior_trunc", "mode_compute", "mh_replic",

@@ -793,7 +793,7 @@ function _cf_paths_statement!(ws::DynareWorkspace, st)
         push!(names, String(p["var"]))
         for v in p["values"]
             p1, p2 = Int(v["period1"]), Int(v["period2"])
-            val = _value(m, v["value"])
+            val = _value(m, v["value"]; vector=true)
             vals = val isa AbstractArray ? vec(Float64.(val)) : [Float64(val)]
             length(vals) == 1 ? (P[i, p1:p2] .= vals[1]) :
                 length(vals) == p2 - p1 + 1 ? (P[i, p1:p2] = vals) :
