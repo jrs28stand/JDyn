@@ -151,6 +151,7 @@ function _apply_options!(O::MStruct, st)
     (opts isa AbstractDict && !(kind in _OPTION_ELSEWHERE)) || return O
     pre = get(_OPTION_PREFIX, kind, "")
     for (k, v) in opts
+        kind == "extended_path" && k == "periods" && continue          # the sample size of the call, not options_.periods
         _setpath!(O, pre * String(k), _mval(v))
     end
     O
