@@ -6,7 +6,7 @@ Branch `obc-ho` (pushed to `origin wip/obc-ho`), based on `wip/obc` at 5f0d3a0. 
 ## State / next step
 
 MAINTENANCE TASK (three jobs, started 2026-11-25). Job 1 (bound the OccBin rule memo): DONE, see "Rule memo budget" below. Job 2 (news-filter "horizon too short" status, opt-in
-`obc_horizon_max`): not started. Job 3 (merge `main` into `obc-ho`, tighten the `bf` replay): not started, do it after job 2 is pushed.
+`obc_horizon_max`): DONE, see "Horizon too short" below. Job 3 (merge `main` into `obc-ho`, tighten the `bf` replay): not started, do it after job 2 is pushed.
 Resume: `source /root/jl/jdyn_env.sh; julia --project=. test/<file>.jl` (one file at a time; first run after a `src` edit precompiles for ~4 minutes). Push only to `origin obc-ho:wip/obc-ho`.
 
 (Older state, cubature port:)
@@ -167,3 +167,32 @@ Numbers (machine shared with another agent, load average 2-3 on 2 cores, noted p
 - Bit for bit: `test/test_occbin_memo.jl` (12 + 3 + 3 assertions, ~2 min) runs the whole battery (57 results: log posterior and its failure code, every field of the inversion filter result with a fixed `rng`, PKF result, smoother, simulations)
   under the default budget, budget 0, 40 kB (about 7 nodes) and 400 kB, and compares with `same` (Float64 bit patterns, `isequal` structure): all identical, and the trie never exceeds the budget. The last testset is the reproducer
   (budget 16 MiB: code 304, trie <= 16 MiB, 12 s). It is not "fast" (the failing search itself takes 11-12 s); the whole file takes about 2 minutes.
+
+
+## Horizon too short in the news inversion filter (maintenance job 2)
+Semantics follow what pydyn's other agent implemented (pydyn-soak commit 68826e3: `pydyn/obc_filter.py`, `tests/test_obc_horizon_cause.py`), ported to JDyn.
+
+Failure causes of a trial point (`OBC_FAILURE_CAUSES`, src/obc_filter.jl): `:horizon_too_short` (LCP: the linear programme on all rows is infeasible while the one on the head rows is feasible; regime solver / integer programme:
+its own status), `:no_solution` (proved: the head rows cannot be met either; regime solver: no solution, integer programme attempted), `:undecided` (active set did not decide, no integer programme run, the default; or the
+integer programme found nothing without a proof), `:milp_timeout`, `:numerical` (code 311). The numeric code of the filter stays 313 per trial point and 304 for the period; defaults, values and codes unchanged (news log posteriors at
+all stored NKM / small NKM vectors compared bit for bit with commit f477d7d: identical, also the filter paths and the extreme vector's -Inf/304).
+- `_SolverStats` (`solver.stats`) gained `causes` (cumulative), `period_causes`, `retries`, `retried_ok`, `retry_seconds`, `period`, `last_cause`.
+- `InversionFilterResult.failure` (new last field, `nothing` unless code 304 with a news solver): `ObcFailure(period, primary, counts, horizon, horizon_max, advice)`. `primary` = `:horizon_too_short` if any trial point of the failing
+  period failed so, else the most frequent cause, or `:root_search` when no trial point failed in the solver. `advice` e.g. "news horizon 40 too short at period 66: try obc_horizon >= 80 (or set obc_horizon_max to retry with a doubled
+  horizon)" (pydyn's wording; JDyn adds "(obc_horizon_max = X was tried)" when a maximum was set).
+- Estimation: `obc_failure(est)` returns it (`nothing` after a success and for obc_method = occbin); `est.last_info` becomes "inversion filter failed in period 66 (info 304); news solver: undecided (...)" (only for the news solver);
+  `est.last_info_code` is still 304. `begin_period!(solver, t)` / `failure_info(solver)` are the hooks of `inversion_filter` (no-ops for OccBin's own solver).
+- `obc_horizon_max` (default off = 0): a trial point that fails with `:horizon_too_short` or `:undecided` is solved again with the horizon doubled (40 -> 80 -> ... up to the maximum, `check_ahead = max(h, check_ahead)`), by a larger
+  solver built once and kept in `solver.retry.big` (per parameter vector, since the solver is rebuilt with the Occbin object); a retried success is not counted as failure (errors[313] and causes decremented, as pydyn),
+  `retries`, `retried_ok` and `retry_seconds` (time in retries, building the larger solvers included) report the cost. A retry stops when the larger solver fails for another cause. Routes: keyword `obc_horizon_max=` of `Estimation`,
+  `occbin=Dict("obc_horizon_max" => 80)`, native `options_.occbin.obc_horizon_max = 80;`, `set_obc!(est; horizon_max=80)` (0 = off). Refusals (ArgumentError): not a positive integer or 0, below `obc_horizon` (also when the
+  horizon is raised later), a model without constraints (EstimationError). It is not an option of `simulate` (a simulation raises `:horizon_too_short`).
+- Test: `test/test_obc_horizon.jl` (13 + 10 + 28 + 279 assertions, ~35 s).
+
+Numbers (load average ~2). pydyn's A#75 vector (NKM): OccBin -210551.27794614976 (pydyn's: ...947312, difference 1.2e-6 = 5e-12 relative: the ports' arithmetic); news horizon 40: -Inf, code 304 at period 66 (pydyn: period 66), cause
+`undecided` for all 110 failed trial points (pydyn: horizon_too_short or undecided); `obc_horizon_max = 80`: -210551.27794476267, **|news - OccBin| = 1.4e-6 = 6.6e-12 relative**, 161 retries all solved, 0.04 s in retries (0.27 s for the
+evaluation). `obc_horizon_max = 160` at the four stored NKM vectors: bit for bit the default's values. borrcon (long binding spells), horizon 20, 400 random trial points: 121 failures, all `horizon_too_short`, in the LCP and in the regime
+solver alike; with `obc_horizon_max = 80`: 28 failures left, 93 of 192 retries solved.
+Not proved: that `undecided` at the extreme vector is a horizon problem (it is the empirical finding that horizon 80 solves them); the status does not say so because the cheap checks cannot decide it.
+Differences from pydyn: the integer-programme outcomes `:horizon_too_short` / proved `:no_solution` are used when `obc_milp_time_limit > 0` (pydyn counts them `undecided`); `ObcFailure` has `horizon_max`; `retry_seconds`.
+Not aligned: pydyn builds `Occbin` with its default `qz_criterium` (1 + 1e-6) in the estimation, JDyn with the estimation's (1 - 1e-6 for lik_init 1, as Dynare).

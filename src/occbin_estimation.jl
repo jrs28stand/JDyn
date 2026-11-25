@@ -110,7 +110,10 @@ function occbin_filter(est::Estimation, theta::AbstractVector; rng=dynare_rng(es
     ob = occbin_at(est, theta)
     if Bool(oc["likelihood.inversion_filter"])
         err = oc["likelihood.IVF_shock_observable_mapping"]
+        st = obc_settings(est)
+        st.last_failure = nothing
         ivf = inversion_filter(ob, est.data, est.obs_decl, err, oc; rng=rng, solver=_obc_solver(est, ob))
+        ivf.failure === nothing || (st.last_failure = ivf.failure)          # news solver: why the failing period failed (src/obc_filter.jl)
         if ivf.error_code == 0
             code, pen = inversion_filter_loglik!(ivf, est.data, est.obs_decl, Q, err; presample=est.options["presample"])
             if code != 0
@@ -145,7 +148,8 @@ function _occbin_likelihood(est::Estimation, theta::AbstractVector, with_lik::Bo
         rethrow()
     end
     if ivf
-        res.error_code != 0 && return reject(res.error_code, res.penalty, "inversion filter failed in period $(res.error_period) (info $(res.error_code))")
+        res.error_code != 0 && return reject(res.error_code, res.penalty, "inversion filter failed in period $(res.error_period) (info $(res.error_code))" *
+                                              (res.failure === nothing ? "" : "; news solver: $(res.failure.primary) ($(res.failure.advice))"))
     else
         res.error_code != 0 && return reject(320, 0.1, "piecewise Kalman filter failed in period $(res.error_period) (OccBin error $(res.error_code); info 320)")
         isfinite(res.LIK) || return reject(320, 0.1, "the likelihood is NaN or Inf (info 320)")
@@ -216,7 +220,7 @@ function _occbin_smooth(m::Model, data=nothing; occbin=nothing, estimation=nothi
             _obc_solver(est, ob)
         else                                           # no estimation object: the native options_.occbin.obc_* lines
             s = _obc_est_settings(m, live_obc)
-            s.method == :occbin ? nothing : news_filter_solver(ob; horizon=s.horizon, selection=s.selection)
+            s.method == :occbin ? nothing : news_filter_solver(ob; horizon=s.horizon, selection=s.selection, horizon_max=s.horizon_max)
         end
         ivf = inversion_filter(ob, lin.data .+ ob.ys[obs]', obs, err, oc; rng=dynare_rng(m), solver=sol)
         sm = inversion_filter_smoother(ivf, ob.ys, err, ob.n_exo; endo_names=m.endo_names, exo_names=m.exo_names)
@@ -287,7 +291,7 @@ function _occbin_overrides(ws)
         out[k] = v
     end
     for (k, v) in _flat_options(oc)                               # obc_method, obc_horizon, obc_selection (src/obc_filter.jl)
-        k in ("obc_method", "obc_horizon", "obc_selection") || continue
+        k in ("obc_method", "obc_horizon", "obc_selection", "obc_horizon_max") || continue
         v isa AbstractArray && length(v) == 1 && (v = first(v))
         out[k] = v
     end

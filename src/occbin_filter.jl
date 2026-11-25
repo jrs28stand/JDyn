@@ -334,7 +334,13 @@ mutable struct InversionFilterResult
     LIK::Float64
     lik::Vector{Float64}
     occbin::Union{Nothing,Occbin}
+    failure::Any                  # news solver: `ObcFailure` (why period `error_period` failed with code 304), else `nothing`
 end
+InversionFilterResult(f, r, E, s, rh, code, t, pen, LIK, lik, ob) = InversionFilterResult(f, r, E, s, rh, code, t, pen, LIK, lik, ob, nothing)
+
+"Hooks of the news solvers (src/obc_filter.jl); none for OccBin's own solver."
+begin_period!(::Any, t) = nothing
+failure_info(::Any) = nothing
 
 """
     inversion_filter(ob, data, obs_idx, err_index, options; rng) -> InversionFilterResult
@@ -356,8 +362,10 @@ function inversion_filter(ob::Occbin, data::AbstractMatrix, obs_idx::AbstractVec
     errs = zeros(T, nobs)
     regimes = OccRegime[]
     init = zeros(n)
-    out(code, t, pen) = InversionFilterResult(errs, resids, Emat, stateval, regimes, code, t, pen, Inf, Float64[], ob)
+    out(code, t, pen) = InversionFilterResult(errs, resids, Emat, stateval, regimes, code, t, pen, Inf, Float64[], ob,
+                                              code == 304 ? failure_info(solver) : nothing)
     for t in 1:T
+        begin_period!(solver, t)
         inan = .!isnan.(view(data, t, :))
         cur = data[t, inan]
         oi, ep = obs_idx[inan], err_index[inan]

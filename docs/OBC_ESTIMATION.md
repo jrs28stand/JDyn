@@ -90,3 +90,8 @@ chains make the same sequence of calls.
 
 Tests (test/test_obc_estimation.jl): the small-NKM mode search and a 2 x 150 chain pair under both solvers (about 55 s, 206 assertions: modes within 1e-3 posterior sd, f equal to 1e-6, draws identical),
 and a 2 x 150 bf chain pair (about 30 s, 100 assertions).
+
+
+## Why a news evaluation failed; `obc_horizon_max`
+`obc_failure(est)` gives the cause of the last failed news evaluation and `obc_horizon_max` retries trial points that fail for lack of horizon with the horizon doubled; Dynare's code stays 304 (313 per trial point).
+Details, numbers and the reproducer: docs/OBC_HO_PROGRESS.md, "Horizon too short in the news inversion filter".

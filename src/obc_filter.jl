@@ -106,6 +106,30 @@ end
 
 abstract type NewsFilterSolver end
 
+"State of `obc_horizon_max` of a solver: the larger solvers (horizon doubled up to `horizon_max`) are built once and kept with it, i.e. per parameter vector."
+mutable struct _HorizonRetry
+    horizon::Int
+    check_ahead::Int
+    horizon_max::Int                 # 0: off
+    big::Dict{Int,NewsFilterSolver}
+end
+function _horizon_retry(horizon::Integer, check_ahead::Integer, horizon_max::Integer)
+    horizon_max == 0 || horizon_max >= horizon ||
+        throw(ArgumentError("obc_horizon_max = $horizon_max is below the horizon $horizon"))
+    _HorizonRetry(Int(horizon), Int(check_ahead), Int(horizon_max), Dict{Int,NewsFilterSolver}())
+end
+
+# Why a trial point of the news inversion filter failed. Dynare's numeric code stays 313 (311 for linear algebra); the cause is extra information:
+#   :horizon_too_short  the wedges that meet the complementarity rows inside the news horizon cannot meet the check-ahead rows (a linear programme on the
+#                       head rows is feasible, the one on all rows is not), or the regime solver / integer programme says so
+#   :no_solution        proved: not even the complementarity rows can be met (or the regime solver: no solution)
+#   :undecided          the cheap checks did not decide and no integer programme was run (the default); counted as a failure. Not proved to be a horizon
+#                       problem, but it is the usual form it takes (pydyn soak/repro/finite_vs_inf_news_304.py: horizon 40 fails with 168 undecided trial
+#                       points, horizon 80 reproduces OccBin to 1e-11); `obc_horizon_max` retries these too
+#   :milp_timeout       the integer programme reached `obc_milp_time_limit`
+#   :numerical          a linear-algebra failure (code 311)
+const OBC_FAILURE_CAUSES = (:horizon_too_short, :no_solution, :undecided, :milp_timeout, :numerical)
+
 mutable struct _SolverStats
     calls::Int
     fallbacks::Int
@@ -114,9 +138,40 @@ mutable struct _SolverStats
     skipped::Int
     rescued::Int
     errors::Dict{Int,Int}
+    causes::Dict{Symbol,Int}          # cause -> failed trial points (cumulative; a point solved by a retry is not counted)
+    period_causes::Dict{Symbol,Int}   # the same since `begin_period!`
+    retries::Int                      # trial points solved again with a larger horizon (`obc_horizon_max`)
+    retried_ok::Int                   # ... and solved
+    retry_seconds::Float64            # time spent in retries, including building the larger solvers
+    period::Int
+    last_cause::Symbol                # cause of the last failed trial point (`:none` after a success)
 end
-_SolverStats() = _SolverStats(0, 0, 0, 0, 0, 0, Dict{Int,Int}())
-_fail!(st::_SolverStats, code::Int) = (st.errors[code] = get(st.errors, code, 0) + 1; (code, nothing))
+_SolverStats() = _SolverStats(0, 0, 0, 0, 0, 0, Dict{Int,Int}(), Dict{Symbol,Int}(), Dict{Symbol,Int}(), 0, 0, 0.0, 0, :none)
+function _fail!(st::_SolverStats, code::Int, cause::Symbol=:undecided)
+    st.errors[code] = get(st.errors, code, 0) + 1
+    st.causes[cause] = get(st.causes, cause, 0) + 1
+    st.period_causes[cause] = get(st.period_causes, cause, 0) + 1
+    st.last_cause = cause
+    (code, nothing)
+end
+
+"""
+    ObcFailure
+
+Why an evaluation of the news inversion filter failed (code 304): `period` (1-based), `primary` (`:horizon_too_short` if any trial point of the period failed
+for that reason, the actionable one, else the most frequent cause, or `:root_search` when no trial point failed in the news solver and the root search did
+not converge), `counts` (cause => trial points of the period), `horizon`, `horizon_max` (0: off) and `advice` (the message added to `est.last_info`).
+Retrieve it with `obc_failure(est)` or `ivf.failure`.
+"""
+struct ObcFailure
+    period::Int
+    primary::Symbol
+    counts::Dict{Symbol,Int}
+    horizon::Int
+    horizon_max::Int
+    advice::String
+end
+Base.show(io::IO, f::ObcFailure) = print(io, "ObcFailure(period ", f.period, ", ", f.primary, ": ", f.advice, ")")
 
 function _filter_input(ob::Occbin, shocks, init, exo_pos)
     u = zeros(ob.n_exo)
@@ -132,11 +187,12 @@ function _finish(ob::Occbin, S0::Matrix{Float64}, S::Matrix{Float64}, s0::Vector
 end
 
 """
-    LCPFilterSolver(ob; horizon=40, check_ahead=40, selection=:occbin, milp_time_limit=0)
+    LCPFilterSolver(ob; horizon=40, check_ahead=40, selection=:occbin, milp_time_limit=0, horizon_max=0)
 
 One complementary pair per constraint (`obc_system` / Holden's LCP). `milp_time_limit` is the time the integer programme may take at a trial point
 on which the cheap checks (active-set iteration, proof of non-existence by a linear programme) do not decide; 0 (the default): none, the trial point
-has failed (error 313, as OccBin's own failures there).
+has failed (error 313, as OccBin's own failures there). `horizon_max > 0` (`obc_horizon_max`): a trial point that fails with `:horizon_too_short` or `:undecided` is solved again
+with the horizon doubled, up to `horizon_max` (the larger solvers are built once and kept with this one); see `OBC_FAILURE_CAUSES`.
 """
 mutable struct LCPFilterSolver <: NewsFilterSolver
     ob::Occbin
@@ -157,9 +213,10 @@ mutable struct LCPFilterSolver <: NewsFilterSolver
     maps::Dict{BitVector,Tuple{Matrix{Float64},Vector{Float64},OccRegime}}
     stats::_SolverStats
     base::OccRegime
+    retry::_HorizonRetry
 end
 
-function LCPFilterSolver(ob::Occbin; horizon::Integer=40, check_ahead::Integer=40, selection::Symbol=:occbin, milp_time_limit::Real=0.0)
+function LCPFilterSolver(ob::Occbin; horizon::Integer=40, check_ahead::Integer=40, selection::Symbol=:occbin, milp_time_limit::Real=0.0, horizon_max::Integer=0)
     selection != :occbin && length(obc_constraints(ob)) != 1 &&
         throw(ArgumentError("obc_selection = $selection is implemented for models with one constraint only"))
     T, N = Int(horizon), Int(horizon) + Int(check_ahead)
@@ -169,7 +226,7 @@ function LCPFilterSolver(ob::Occbin; horizon::Integer=40, check_ahead::Integer=4
     nc = length(sys.cons)
     LCPFilterSolver(ob, sys, T, nc * T, size(Mf, 1), Mf, Matrix(sys.M), Matrix(ext.Mb), vcat(sys.q0, ext.q0b), vcat(sys.Qx, ext.Qxb), hcat(ob.P, ob.Q), Matrix(sys.Wn),
                     selection, Float64(milp_time_limit), 1e-8, Dict{BitVector,Tuple{Matrix{Float64},Vector{Float64},OccRegime}}(), _SolverStats(),
-                    [_map_regime(falses(T)) for _ in 1:nc])
+                    [_map_regime(falses(T)) for _ in 1:nc], _horizon_retry(T, check_ahead, horizon_max))
 end
 
 function _lcp_map(sv::LCPFilterSolver, on::BitVector)
@@ -184,8 +241,52 @@ function _lcp_map(sv::LCPFilterSolver, on::BitVector)
     end
 end
 
-"`(error_flag, result)` for one period: the news solution from state `init` (deviations) with `shocks` (on the exogenous variables `exo_pos`)."
-function filter_solve(sv::LCPFilterSolver, shocks, init, exo_pos)
+"""
+    filter_solve(solver, shocks, init, exo_pos) -> (error_flag, result)
+
+One period of the news inversion filter: the news solution from state `init` (deviations) with `shocks` (on the exogenous variables `exo_pos`). A failure keeps
+Dynare's code (313, 311) and records its cause (`OBC_FAILURE_CAUSES`) in `solver.stats`; with `obc_horizon_max` a point that failed for lack of horizon is solved again.
+"""
+function filter_solve(sv::NewsFilterSolver, shocks, init, exo_pos)
+    flag, res = _solve_once(sv, shocks, init, exo_pos)
+    flag == 0 && return flag, res
+    st, hr = sv.stats, sv.retry
+    (hr.horizon_max > hr.horizon && st.last_cause in (:horizon_too_short, :undecided)) || return flag, res
+    cause = st.last_cause
+    got = _retry_larger(sv, shocks, init, exo_pos)
+    got === nothing && return flag, res
+    st.errors[flag] -= 1                           # solved with the larger horizon: not a failure
+    st.causes[cause] -= 1
+    st.period_causes[cause] -= 1
+    st.last_cause = :none
+    got
+end
+
+"`obc_horizon_max`: solve a failed trial point again with the horizon doubled up to the maximum. `nothing` if no larger horizon solves it."
+function _retry_larger(sv::NewsFilterSolver, shocks, init, exo_pos)
+    hr, st = sv.retry, sv.stats
+    t0 = time_ns()
+    h = hr.horizon
+    out = nothing
+    while h < hr.horizon_max
+        h = min(2h, hr.horizon_max)
+        big = get!(hr.big, h) do
+            _like_solver(sv; horizon=h, check_ahead=max(h, hr.check_ahead))
+        end
+        st.retries += 1
+        flag, res = _solve_once(big, shocks, init, exo_pos)
+        if flag == 0
+            st.retried_ok += 1
+            out = (flag, res)
+            break
+        end
+        big.stats.last_cause in (:horizon_too_short, :undecided) || break
+    end
+    st.retry_seconds += (time_ns() - t0) * 1e-9
+    out
+end
+
+function _solve_once(sv::LCPFilterSolver, shocks, init, exo_pos)
     ob, T, nT, N, tol, st = sv.ob, sv.T, sv.nT, sv.Nr, sv.tol, sv.stats
     st.calls += 1
     u, x = _filter_input(ob, shocks, init, exo_pos)
@@ -203,17 +304,28 @@ function filter_solve(sv::LCPFilterSolver, shocks, init, exo_pos)
             stl, _ = highs_lp(zeros(nT), -sv.Mf, fill(-Inf, N), q, zeros(nT), fill(Inf, nT))
             if stl == :infeasible
                 st.proved_infeasible += 1
-                return _fail!(st, 313)
+                # (b) the head rows alone can be met: the check-ahead rows are what fail, i.e. the horizon is too short; (a) not even they can
+                sth, _ = highs_lp(zeros(nT), -view(sv.Mf, 1:nT, :), fill(-Inf, nT), qT, zeros(nT), fill(Inf, nT))
+                return _fail!(st, 313, sth == :infeasible ? :no_solution : :horizon_too_short)
             end
             y = nothing
+            cause = :undecided
             if sv.milp_time_limit > 0
-                y2, st2, _ = solve_news(sv.MT, Vector(qT); tol=tol, Mb=sv.Mb, qb=Vector(view(q, nT+1:N)), horizons=[T], n_c=length(sv.sys.cons),
-                                        time_limit=sv.milp_time_limit)
-                st2 == :ok ? (y = y2) : (st2 == :not_converged && (st.timeouts += 1))
+                y2, st2, i2 = solve_news(sv.MT, Vector(qT); tol=tol, Mb=sv.Mb, qb=Vector(view(q, nT+1:N)), horizons=[T], n_c=length(sv.sys.cons),
+                                         time_limit=sv.milp_time_limit)
+                if st2 == :ok
+                    y = y2
+                elseif st2 == :not_converged
+                    st.timeouts += 1; cause = :milp_timeout
+                elseif st2 == :horizon_too_short
+                    cause = :horizon_too_short
+                elseif st2 == :no_solution && get(i2, :proof, false) === true
+                    cause = :no_solution
+                end
             else
                 st.skipped += 1
             end
-            y === nothing && return _fail!(st, 313)
+            y === nothing && return _fail!(st, 313, cause)
         end
         st.fallbacks > f0 && (st.rescued += 1)
         if sv.selection != :occbin && any(!iszero, y)
@@ -228,12 +340,16 @@ function filter_solve(sv::LCPFilterSolver, shocks, init, exo_pos)
     _finish(ob, sv.S0, S, s0, regime, x)
 end
 
+_like_solver(sv::LCPFilterSolver; horizon, check_ahead) =
+    LCPFilterSolver(sv.ob; horizon=horizon, check_ahead=check_ahead, selection=sv.selection, milp_time_limit=sv.milp_time_limit)
+
 """
-    RegimeFilterSolver(ob; horizon=40, check_ahead=40, milp_time_limit=0)
+    RegimeFilterSolver(ob; horizon=40, check_ahead=40, selection=:occbin, milp_time_limit=0, horizon_max=0)
 
 The general formulation (`RegimeOBC`) for every model OccBin accepts: constraints that switch several equations, conditions that are not the mirror
 image of the switched equation. For a regime sequence the wedges on the binding positions `S` are `w = -R[S,S]^-1 (a0 + Am [state; shock])[S]`, so the next
 state is `[P Q] x + V0[:, S] w` and the first period's rule is read off and cached per `S`. `obc_selection` (one constraint only) picks among the single-spell solutions.
+`horizon_max` as for `LCPFilterSolver`.
 """
 mutable struct RegimeFilterSolver <: NewsFilterSolver
     ob::Occbin
@@ -243,16 +359,20 @@ mutable struct RegimeFilterSolver <: NewsFilterSolver
     selection::Symbol
     maps::Dict{Vector{Int},Tuple{Matrix{Float64},Vector{Float64}}}
     stats::_SolverStats
+    retry::_HorizonRetry
 end
 
-function RegimeFilterSolver(ob::Occbin; horizon::Integer=40, check_ahead::Integer=40, selection::Symbol=:occbin, milp_time_limit::Real=0.0)
+function RegimeFilterSolver(ob::Occbin; horizon::Integer=40, check_ahead::Integer=40, selection::Symbol=:occbin, milp_time_limit::Real=0.0, horizon_max::Integer=0)
     ob.k == 1 || selection == :occbin || throw(ArgumentError("obc_selection = $selection is implemented for models with one constraint only (this model has $(ob.k)); use obc_selection = occbin"))
     T = Int(horizon)
     RegimeFilterSolver(ob, regime_obc(ob, T, T + Int(check_ahead)), hcat(ob.P, ob.Q), Float64(milp_time_limit), selection,
-                       Dict{Vector{Int},Tuple{Matrix{Float64},Vector{Float64}}}(), _SolverStats())
+                       Dict{Vector{Int},Tuple{Matrix{Float64},Vector{Float64}}}(), _SolverStats(), _horizon_retry(T, check_ahead, horizon_max))
 end
 
-function filter_solve(sv::RegimeFilterSolver, shocks, init, exo_pos)
+_like_solver(sv::RegimeFilterSolver; horizon, check_ahead) =
+    RegimeFilterSolver(sv.ob; horizon=horizon, check_ahead=check_ahead, selection=sv.selection, milp_time_limit=sv.milp_time_limit)
+
+function _solve_once(sv::RegimeFilterSolver, shocks, init, exo_pos)
     ob, rg, st = sv.ob, sv.rg, sv.stats
     st.calls += 1
     u, x = _filter_input(ob, shocks, init, exo_pos)
@@ -266,15 +386,18 @@ function filter_solve(sv::RegimeFilterSolver, shocks, init, exo_pos)
         end
     catch e
         e isa Union{LinearAlgebra.SingularException,LinearAlgebra.LAPACKException,DomainError} || rethrow()
-        return _fail!(st, 311)
+        return _fail!(st, 311, :numerical)
     end
     status, z, w, info = res
     if status != :ok
         st.fallbacks += 1
         status == :not_converged && (st.timeouts += 1)
         status == :no_solution && occursin("linear programme infeasible", info.message) && (st.proved_infeasible += 1)
-        occursin("not attempted", info.message) && (st.skipped += 1)
-        return _fail!(st, 313)
+        attempted = !occursin("not attempted", info.message)
+        attempted || (st.skipped += 1)
+        cause = status == :horizon_too_short ? :horizon_too_short : status == :not_converged ? :milp_timeout :
+                (status == :no_solution && attempted) ? :no_solution : :undecided
+        return _fail!(st, 313, cause)
     end
     if !(info.used in (:none, :guess_verify))
         st.fallbacks += 1
@@ -304,6 +427,39 @@ function news_filter_solver(ob::Occbin; kw...)
     all(c -> c.class == :complementarity, cons) ? LCPFilterSolver(ob; kw...) : RegimeFilterSolver(ob; kw...)
 end
 
+"Start of period `t` of the inversion filter (the per-period failure causes restart)."
+begin_period!(sv::NewsFilterSolver, t::Integer) = (sv.stats.period = Int(t); empty!(sv.stats.period_causes); nothing)
+
+"""
+    failure_info(solver) -> ObcFailure
+
+The cause of the inversion filter's failure in the current period (see `ObcFailure`). The horizon of the message is the solver's own (the base horizon, also
+when `obc_horizon_max` tried larger ones).
+"""
+function failure_info(sv::NewsFilterSolver)
+    st, hr = sv.stats, sv.retry
+    c = Dict(k => v for (k, v) in st.period_causes if v > 0)
+    t, h = st.period, hr.horizon
+    if isempty(c)
+        return ObcFailure(t, :root_search, c, h, hr.horizon_max,
+                          "the root search of the period did not converge although no trial point failed in the news solver")
+    end
+    primary = haskey(c, :horizon_too_short) ? :horizon_too_short : first(sort(collect(c); by=p -> (-p[2], string(p[1])))).first
+    tried = hr.horizon_max > h ? " (obc_horizon_max = $(hr.horizon_max) was tried)" : " (or set obc_horizon_max to retry with a doubled horizon)"
+    advice = if primary == :horizon_too_short
+        "news horizon $h too short at period $t: try obc_horizon >= $(2h)$tried"
+    elseif primary == :no_solution
+        "the trial shocks have no equilibrium at this state (proved by a linear programme)"
+    elseif primary == :undecided
+        "active-set iteration did not decide and no integer programme was run (obc_milp_time_limit = 0); a truncated horizon ($h) can cause this: try obc_horizon >= $(2h)$tried"
+    elseif primary == :milp_timeout
+        "the integer programme reached obc_milp_time_limit"
+    else
+        "linear-algebra failure"
+    end
+    ObcFailure(t, primary, c, h, hr.horizon_max, advice)
+end
+
 # ====================================================================================================== settings of an estimation
 """
     ObcEstSettings
@@ -317,8 +473,27 @@ mutable struct ObcEstSettings
     selection::Symbol
     milp_time_limit::Float64
     last_solver::Any
+    horizon_max::Int            # 0: off
+    last_failure::Any           # `ObcFailure` of the last failed news filter run, else `nothing`
 end
-Base.show(io::IO, s::ObcEstSettings) = print(io, "ObcEstSettings(", s.method, ", horizon = ", s.horizon, ", selection = ", s.selection, ", milp_time_limit = ", s.milp_time_limit, ")")
+Base.show(io::IO, s::ObcEstSettings) = print(io, "ObcEstSettings(", s.method, ", horizon = ", s.horizon, ", selection = ", s.selection, ", milp_time_limit = ", s.milp_time_limit,
+                                              ", horizon_max = ", s.horizon_max, ")")
+
+"""
+`obc_horizon_max` as an Int: a positive integer, or 0 (also `nothing`, `false`) for off. `max < horizon` is checked where the horizon is known.
+"""
+function _obc_horizon_max(x)
+    v = x isa AbstractArray ? (length(x) == 1 ? x[1] : isempty(x) ? nothing : throw(ArgumentError("obc_horizon_max must be a scalar"))) : x
+    (v === nothing || v === false) && return 0
+    v isa AbstractString && (v = tryparse(Float64, v); v === nothing && throw(ArgumentError("obc_horizon_max must be a positive integer (got $x)")))
+    (v isa Real && isfinite(v) && v >= 0 && v == round(v)) || throw(ArgumentError("obc_horizon_max must be a positive integer, or 0 for off (got $x)"))
+    Int(v)
+end
+
+function _check_horizon_max(hmax::Int, horizon::Int)
+    hmax == 0 || hmax >= horizon || throw(ArgumentError("obc_horizon_max = $hmax is below obc_horizon = $horizon"))
+    hmax
+end
 
 const _PKF_NEWS_MSG = "obc_method = news is implemented for the inversion filter only (occbin_setup(likelihood_inversion_filter)); " *
                       "the piecewise Kalman filter needs OccBin's regime matrices. Use obc_method = occbin or the inversion filter."
@@ -335,11 +510,11 @@ function _split_obc_overrides(overrides)
 end
 
 "Settings from keywords, the live overrides and the native `options_.occbin.obc_*` lines of the .mod file (in that order of precedence)."
-function _obc_est_settings(m::Model, live::Dict{String,Any}; method=nothing, horizon=nothing, selection=nothing, milp_time_limit=nothing)
+function _obc_est_settings(m::Model, live::Dict{String,Any}; method=nothing, horizon=nothing, selection=nothing, milp_time_limit=nothing, horizon_max=nothing)
     native = Dict{String,Any}()
     o = get(m.matlab_options, "occbin", nothing)
     if o isa MStruct
-        for k in ("obc_method", "obc_horizon", "obc_selection")
+        for k in ("obc_method", "obc_horizon", "obc_selection", "obc_horizon_max")
             haskey(o, k) && (native[k] = o[k])
         end
     end
@@ -351,28 +526,32 @@ function _obc_est_settings(m::Model, live::Dict{String,Any}; method=nothing, hor
     sel = sel === nothing ? :occbin : _obc_selection(sel)
     meth in (:occbin, :news, :minnorm) || throw(ArgumentError("unknown obc_method $meth"))
     meth, sel = _obc_canonical(meth, sel)
-    ObcEstSettings(meth, hor === nothing ? 40 : _obc_horizon(hor), sel,
-                   milp_time_limit === nothing ? 0.0 : Float64(milp_time_limit), nothing)
+    hor = hor === nothing ? 40 : _obc_horizon(hor)
+    hmax = _check_horizon_max(_obc_horizon_max(pick("obc_horizon_max", horizon_max)), hor)
+    ObcEstSettings(meth, hor, sel, milp_time_limit === nothing ? 0.0 : Float64(milp_time_limit), nothing, hmax, nothing)
 end
 
 "The settings of an OccBin estimation (`nothing` for a model without constraints)."
 obc_settings(est::Estimation) = get(est.options, "obc", nothing)
 
 """
-    set_obc!(est; method=nothing, horizon=nothing, selection=nothing, milp_time_limit=nothing) -> est
+    set_obc!(est; method=nothing, horizon=nothing, selection=nothing, milp_time_limit=nothing, horizon_max=nothing) -> est
 
 Change the `obc_*` options of an OccBin estimation (pydyn: `est.obc_method = 'news'`). Unknown values are errors; `news` with the piecewise Kalman
-filter is refused; `minnorm` is `news` with `obc_selection = min_wedge` (a conflicting `selection` is an error).
+filter is refused; `minnorm` is `news` with `obc_selection = min_wedge` (a conflicting `selection` is an error). `horizon_max` (`obc_horizon_max`, 0 = off):
+a trial point of the news filter that fails for lack of horizon is solved again with the horizon doubled up to this maximum (must be at least the horizon).
 """
-function set_obc!(est::Estimation; method=nothing, horizon=nothing, selection=nothing, milp_time_limit=nothing)
+function set_obc!(est::Estimation; method=nothing, horizon=nothing, selection=nothing, milp_time_limit=nothing, horizon_max=nothing)
     s = obc_settings(est)
     s === nothing && throw(EstimationError("the model has no occbin_constraints block"))
     meth = method === nothing ? s.method : _obc_method(method)
     sel = selection === nothing ? s.selection : _obc_selection(selection)
     meth, sel = meth == :minnorm ? _obc_canonical(meth, selection === nothing ? :occbin : sel) : (meth, sel)
     hor = horizon === nothing ? s.horizon : _obc_horizon(horizon)
+    hmax = horizon_max === nothing ? s.horizon_max : _obc_horizon_max(horizon_max)
+    _check_horizon_max(hmax, hor)
     meth == :news && !Bool(occbin_options(est)["likelihood.inversion_filter"]) && throw(EstimationError(_PKF_NEWS_MSG))
-    s.method, s.selection, s.horizon = meth, sel, hor
+    s.method, s.selection, s.horizon, s.horizon_max = meth, sel, hor, hmax
     milp_time_limit === nothing || (s.milp_time_limit = Float64(milp_time_limit))
     est
 end
@@ -384,5 +563,15 @@ function _obc_solver(est::Estimation, ob::Occbin)
         s.selection != :occbin && throw(EstimationError("obc_selection other than occbin needs obc_method = news"))
         return nothing
     end
-    s.last_solver = news_filter_solver(ob; horizon=s.horizon, selection=s.selection, milp_time_limit=s.milp_time_limit)
+    s.last_solver = news_filter_solver(ob; horizon=s.horizon, selection=s.selection, milp_time_limit=s.milp_time_limit, horizon_max=s.horizon_max)
 end
+
+"""
+    obc_failure(est) -> ObcFailure or nothing
+
+Why the last likelihood evaluation (or `occbin_filter`) of an estimation with `obc_method = news` failed: the cause of the trial-point failures of the failing period
+(`horizon_too_short`, `no_solution`, `undecided`, `milp_timeout`, `numerical`, or `root_search`) and the advice. Dynare's code stays 304; `est.last_info` carries the
+same text. `nothing` after a successful evaluation and for `obc_method = occbin`. Counters of the whole evaluation: `obc_settings(est).last_solver.stats`
+(`causes`, `retries`, `retried_ok`, `retry_seconds`).
+"""
+obc_failure(est::Estimation) = (s = obc_settings(est); s === nothing ? nothing : s.last_failure)
