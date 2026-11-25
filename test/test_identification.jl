@@ -45,8 +45,10 @@ function id_cmp(a, b, path, bad, tol, skip)
     na, nb = isnan.(a), isnan.(b)
     na == nb || (push!(bad, "$path: NaN pattern"); return)
     a = ifelse.(na, 0.0, a); b = ifelse.(nb, 0.0, b)
-    sc = max(1.0, isempty(a) ? 1.0 : maximum(abs, a))
-    isempty(a) || maximum(abs, a .- b) <= tol * sc || push!(bad, "$path: maxdiff $(maximum(abs, a .- b)) (scale $sc)")
+    fin = filter(isfinite, a)
+    sc = max(1.0, isempty(fin) ? 1.0 : maximum(abs, fin))
+    d = ifelse.(a .== b, 0.0, abs.(a .- b))
+    isempty(a) || maximum(d) <= tol * sc || push!(bad, "$path: maxdiff $(maximum(d)) (scale $sc)")
 end
 last_component(p) = split(p, '.')[end]
 

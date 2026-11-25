@@ -1024,7 +1024,7 @@ function _id_get_jacobians(m::Model, ghx, ghu, ys, pp, Sigma, derivs, indvobs, n
         K_obs_exo = _id_commutation(obs_nbr, size(Sig, 1))
         function deriv_abcd(X1, dX1, X2, dX2, X3, dX3)
             I1 = Matrix{Float64}(I, size(X1, 1), size(X1, 1))
-            kron(X3' * X2', I1) * dX1 + kron(X3', X1) * dX2 + kron(Matrix{Float64}(I, size(X3, 2), size(X3, 2)), X1 * X2) * dX3
+            kron(transpose(X3) * transpose(X2), I1) * dX1 + kron(transpose(X3), X1) * dX2 + kron(Matrix{Float64}(I, size(X3, 2), size(X3, 2)), X1 * X2) * dX3
         end
         S = zeros(ComplexF64, totparam, totparam)
         for (ig, w) in enumerate(freqs)
@@ -2309,10 +2309,22 @@ function _id_write_mat(dir::AbstractString, fname::AbstractString, variables::Ab
     MAT.matwrite(joinpath(dir, fname), Dict{String,Any}(k => _id_mat(v, k) for (k, v) in variables))
 end
 
+"""
+The .mod file may empty the global `estim_params_` (kim2), which makes Dynare test the current parameters instead of the priors;
+any other value assigned to it is refused.
+"""
+function _id_no_priors(m::Model)
+    m.session === nothing && return false
+    v = get(m.session.sc.vars, "estim_params_", nothing)
+    v === nothing && return false
+    (v isa AbstractArray && isempty(v)) && return true
+    throw(IdentificationError("identification: estim_params_ was assigned in the .mod file; only [] is supported"))
+end
+
 "The `identification` statement: runs the analysis and writes `<fname>/identification/*_identif.mat` (nothing is changed in `oo_`)."
 function _identification_run!(m::Model, st; rng=nothing, warn=nothing)
     raw = Dict{String,Any}(string(k) => v for (k, v) in get_or(st, "options", Dict{String,Any}()))
-    c = _id_context(m, raw; rng=rng)
+    c = _id_context(m, raw; rng=rng, no_priors=_id_no_priors(m))
     out = _id_run(c)
     out === nothing && return nothing
     for msg in out[:messages]
