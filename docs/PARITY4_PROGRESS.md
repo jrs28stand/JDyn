@@ -34,3 +34,13 @@ dr=cycle_reduction/logarithmic_reduction (harmless at default tolerance).
   (opaque estim_params_, bayestopt_ index fields, dynare_estimation_init, initial_estimation_checks).
 - Pending: runner on pac/var-*, trend-component-14, kalman/lik_init, var-expectations (output /home/claude/accept_parity4);
   probes of steady/check/forecast/pf (tools/options_probe_other.jl); full suite.
+
+## Final state
+- Suite (/tmp/parity4_suite.log): everything passes except test_plots.jl / test_plots_auto.jl (Plots.jl not installed in this environment).
+- Runner (JDYN_ACCEPT_RNG=octave, output /home/claude/accept_parity4): kalman/lik_init 5 match + 3 refused (fs2000_ns_*: JDyn's steady
+  state of the nonstationary model is not found; was refused before as well); var-expectations 18 match; pac/var-* example1 and
+  trend-component-14 run (backward-model simulations compare against Octave's rand stream: endo_simul NaN/finite mismatches are in
+  the baseline too, not caused by this work). The `substitution` entries fail in the scratch folder when only a subset is run (macro include).
+- Existing tests changed: test/test_gaps_interp.jl (three new case sets, `directory=` for the file-query set), test/runtests.jl (option policy).
+- Open: options of statements JDyn does not run (UNIMPLEMENTED_STATEMENTS) are not classified one by one; `analytic_derivation` stays
+  "honoured with numerical derivatives" (warns); solver options dr=... still warn (QZ always used) when at default tolerance.
