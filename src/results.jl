@@ -137,6 +137,7 @@ function build_options(m::Model)
     end
     O.impulse_responses = MStruct(["plot_threshold" => 1e-10])
     O.qz_criterium = zeros(0, 0)                      # Dynare: empty until a command selects it
+    O.logged_steady_state = 0.0                       # set by stoch_simul(loglinear), see `_undo_logged_ss!`
     for k in keys(m.matlab_options)
         O[k] = m.matlab_options[k]
     end
@@ -222,7 +223,7 @@ function _flat_options(s::MStruct, pre="", out=Dict{String,Any}())
     for k in keys(s)
         v = s[k]
         key = pre * k
-        key in ("dynare_version", "occbin", "dataset") && continue
+        key in ("dynare_version", "occbin", "dataset", "logged_steady_state") && continue
         if v isa MStruct
             _flat_options(v, key * ".", out)
             continue
@@ -324,6 +325,12 @@ function _store_dr!(oo::MStruct, dr::AbstractDict, n::Int; sol=nothing, kos::Boo
             D.pruning = P
         end
     end
+    # resol works on the dr it is given: what dynare_estimation_init left in it (restrict_var_list, restrict_columns) stays
+    if old isa MStruct
+        for k in ("restrict_var_list", "restrict_columns")
+            haskey(old, k) && (D[k] = old[k])
+        end
+    end
     oo.dr = D
 end
 
@@ -396,6 +403,48 @@ function stoch_simul!(ws::DynareWorkspace, var_list=String[]; shocks=nothing, rn
     ws
 end
 
+"""
+The logged steady state of Dynare's loglinear runs. `stoch_simul` (loglinear) replaces `oo_.steady_state` (and `oo_.dr.ys`, which the
+solver already holds in logs) by the logs of the variables that are log-linearised (`log_variable`) and sets
+`options_.logged_steady_state = 1`; `stoch_simul`, `dynare_estimation` (so `estimation`) and `model_diagnostics` undo it first
+(`exp`, flag 0). One mechanism: `ws.state[:logged_ss]` mirrors the flag, which is also written to `options_.logged_steady_state`.
+A command that writes `oo_.steady_state` in levels (`steady`, `calib_smoother`, the perfect-foresight solvers) ends the logged state
+but leaves the option as Dynare does (Dynare then reads the levels as logs at the next `stoch_simul`; JDyn does not).
+"""
+function _undo_logged_ss!(ws)
+    get(ws.state, :logged_ss, false) === true || return ws
+    m, oo = ws.model, ws.oo_
+    mask = log_mask(m)
+    unlog(v) = (x = vec(Float64.(v)); length(x) == m.n_endo ? _col([mask[i] ? exp(x[i]) : x[i] for i in 1:m.n_endo]) : v)
+    haskey(oo, "steady_state") && (oo.steady_state = unlog(oo.steady_state))
+    D = get(oo, "dr", nothing)
+    D isa MStruct && haskey(D, "ys") && (D.ys = unlog(D.ys))
+    ws.state[:logged_ss] = false
+    _set_logged_flag!(ws, 0.0)
+    ws
+end
+
+"`options_.logged_steady_state` in options_ and where the file's MATLAB lines read it."
+function _set_logged_flag!(ws, v::Float64)
+    ws.options_.logged_steady_state = v
+    ws.model.matlab_options["logged_steady_state"] = v
+    haskey(ws.state, :matlab_options) && (ws.state[:matlab_options]["logged_steady_state"] = v)
+    sess = ws.model.session
+    sess === nothing || delete!(sess.host.options.unknown, "logged_steady_state")
+    ws
+end
+
+function _log_ss!(ws)
+    get(ws.state, :logged_ss, false) === true && return ws
+    m, oo = ws.model, ws.oo_
+    ss = vec(Float64.(get(oo, "steady_state", zeros(m.n_endo))))
+    mask = log_mask(m)
+    length(ss) == m.n_endo && (oo.steady_state = _col([mask[i] ? log(ss[i]) : ss[i] for i in 1:m.n_endo]))
+    ws.state[:logged_ss] = true
+    _set_logged_flag!(ws, 1.0)
+    ws
+end
+
 function _stoch_simul(ws, m, oo, var_list, shocks, rng)
     order = _opti(ws, "order", 2)
     pruning = _optb(ws, "pruning", false)
@@ -406,11 +455,7 @@ function _stoch_simul(ws, m, oo, var_list, shocks, rng)
         nper = max(_opti(ws, "periods", 0), 1) + Int(m.raw["model_info"]["maximum_lag"]) + Int(m.raw["model_info"]["maximum_lead"])
         oo.exo_simul = repeat(permutedims(Float64.(exo_steady(m))), nper, 1)
     end
-    if get(ws.state, :logged_ss, false) === true && haskey(oo, "steady_state")       # "if options_.logged_steady_state: undo this"
-        ss = vec(Float64.(oo.steady_state)); mask = log_mask(m)
-        length(ss) == m.n_endo && (oo.steady_state = _col([mask[i] ? exp(ss[i]) : ss[i] for i in 1:m.n_endo]))
-        ws.state[:logged_ss] = false
-    end
+    _undo_logged_ss!(ws)                       # "if options_.logged_steady_state: undo this"
     kos = _optb(ws, "k_order_solver", false) || order >= 3       # Dynare solves with the k-order library (g_0 ... g_k, no gx or Gy)
     sol = nothing
     if solved !== nothing
@@ -430,12 +475,7 @@ function _stoch_simul(ws, m, oo, var_list, shocks, rng)
     oo.dr.eigval = _eigcol(eigv)
     # stoch_simul.m leaves oo_.steady_state alone (the initval values, or the last `steady`): resol only fills oo_.dr.ys. Under
     # loglinear it logs oo_.steady_state (log_variable) once and flags options_.logged_steady_state, undone at the next solve.
-    if _optb(ws, "loglinear", false) && get(ws.state, :logged_ss, false) !== true
-        ss = vec(Float64.(get(oo, "steady_state", zeros(m.n_endo))))
-        mask = log_mask(m)
-        length(ss) == m.n_endo && (oo.steady_state = _col([mask[i] ? log(ss[i]) : ss[i] for i in 1:m.n_endo]))
-        ws.state[:logged_ss] = true
-    end
+    _optb(ws, "loglinear", false) && _log_ss!(ws)
     var_list = isempty(var_list) ? orig_endo_names(m) : String.(collect(var_list))
     oo.var_list = _cellcol(var_list)
     ivar = [m.ie[v] for v in var_list]
@@ -522,6 +562,7 @@ function steady!(ws::DynareWorkspace; options...)
         m.oo[v] = y
     end
     ws.oo_.steady_state = _col(ys)
+    ws.state[:logged_ss] = false                       # levels again (steady.m leaves options_.logged_steady_state as it was)
     ws.oo_.exo_steady_state = _col(exo_steady(m))      # a homotopy moves the exogenous variables too
     ws
 end

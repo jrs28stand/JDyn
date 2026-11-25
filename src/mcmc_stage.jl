@@ -106,6 +106,13 @@ function _mcmc_block!(ws, m::Model, est::Estimation, mode, vl, seed)
             mc.info[:proposal_chol] = Matrix(cholesky(Symmetric(Matrix{Float64}(mode.inv_hessian))).U)
         else
             mc = sample_mcmc(est; mode=mode, previous=previous, seed=sd, rng=kind)
+            # Dynare's chains draw from the global stream (re-seeded for each block): what follows the sampler (the sub-sample of draws,
+            # the forecast shocks of the posterior stage) continues from the state the last chain ended in
+            g = dynare_rng(ws)
+            if kind == :octave && g isa OctaveRNG && !isempty(get(mc.info, :last_seeds, ChainSeeds[]))
+                ls = mc.info[:last_seeds][end]
+                octave_set_state!(g.u, ls.unifor); octave_set_state!(g.n, ls.normal)
+            end
         end
         if o["mh_replic"] > 0
             try

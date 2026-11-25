@@ -212,7 +212,7 @@ end
 const OPTION_DEFAULTS = Dict{String,Any}("order" => 2.0, "irf" => 40.0, "periods" => 0.0, "drop" => 100.0, "replic" => 50.0,
     "ar" => 5.0, "solve_algo" => 4.0, "solve_tolf" => eps(Float64)^(1 / 3), "solve_tolx" => eps(Float64)^(2 / 3),
     "hp_filter" => 0.0, "pruning" => false, "loglinear" => false, "linear" => false, "nocorr" => false,
-    "nomoments" => false, "k_order_solver" => false)
+    "nomoments" => false, "k_order_solver" => false, "logged_steady_state" => 0.0)
 field_names(O::HostOptions) = copy(O.store._keys)
 function snapshot(O::HostOptions)
     s = MStruct()

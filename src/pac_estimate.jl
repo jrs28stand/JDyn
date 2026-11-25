@@ -103,7 +103,7 @@ function _pe_set_auxiliary_series(ds::MDseries, aux_eqs, param_names, params)
     names = copy(ds.name)
     pidx = Dict(nm => i for (i, nm) in enumerate(param_names))
     shiftable = Set(keys(cols)) ∪ Set(a for (a, _) in aux_eqs)
-    defined = Set(ds.name) \ Set(a for (a, _) in aux_eqs)
+    defined = setdiff(Set(ds.name), Set(a for (a, _) in aux_eqs))
     pending = collect(aux_eqs)
     while !isempty(pending)
         progress = false
