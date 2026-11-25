@@ -91,7 +91,8 @@ function _apply_dataset!(ws, kw)
         length(found) == 1 && (p = found[1])
     end
     start = _data_start_date(p)
-    if start === nothing && haskey(ws.state, :set_time)
+    # makedataset.m: a dataset that starts at the default dates(1,1) takes the initial period of set_time
+    if (start === nothing || start == string2date("1Y")) && haskey(ws.state, :set_time)
         start = _date_of(String(ws.state[:set_time]))        # set_time: the first date of the sample
     end
     function index(v, what)
