@@ -341,9 +341,11 @@ function _store_smoother_results!(oo::MStruct, m::Model, res::SmootherResult; on
         S.Init_State_uncertainty = res.Init_State_uncertainty
     end
     oo.Smoother = S
-    nk && res.FilteredVariablesKStepAhead !== nothing && (oo.FilteredVariablesKStepAhead = res.FilteredVariablesKStepAhead)
-    nk && res.FilteredVariablesKStepAheadVariances !== nothing && (oo.FilteredVariablesKStepAheadVariances = res.FilteredVariablesKStepAheadVariances)
-    nk && res.FilteredVariablesShockDecomposition !== nothing && (oo.FilteredVariablesShockDecomposition = res.FilteredVariablesShockDecomposition)
+    # under selected_variables_only the k-step arrays keep the saved variables only, in declaration order (store_smoother_results.m)
+    scol = only === nothing ? Colon() : [i for i in eachindex(nm) if nm[i] in only]
+    nk && res.FilteredVariablesKStepAhead !== nothing && (oo.FilteredVariablesKStepAhead = res.FilteredVariablesKStepAhead[:, scol, :])
+    nk && res.FilteredVariablesKStepAheadVariances !== nothing && (oo.FilteredVariablesKStepAheadVariances = res.FilteredVariablesKStepAheadVariances[:, scol, scol, :])
+    nk && res.FilteredVariablesShockDecomposition !== nothing && (oo.FilteredVariablesShockDecomposition = res.FilteredVariablesShockDecomposition[:, scol, :, :])
     oo.SmoothedVariables = SV
     nk && (oo.FilteredVariables = FV)
     oo.UpdatedVariables = UV
@@ -758,8 +760,6 @@ function _calib_smoother!(ws::DynareWorkspace, st, var_list, options)
     (haskey(stopts, "parameter_set") || haskey(options, :parameter_set)) || (O.parameter_set = "calibration")
     O.smoother = true
     O.order = 1.0
-    _optb(ws, "selected_variables_only", false) &&
-        throw(SmootherError("selected_variables_only is not supported by the oo_ writer (oo_.SmoothedVariables would not have Dynare's layout)"))
     for v in String.(collect(var_list))
         haskey(m.ie, v) || throw(SmootherError("calib_smoother: $v is not an endogenous variable"))
     end

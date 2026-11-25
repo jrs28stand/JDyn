@@ -526,12 +526,18 @@ bi!("norm") do I, a, nout
     merr("norm: unsupported matrix norm")
 end
 bi!("chol") do I, a, nout
-    (nout > 1 || length(a) != 1) && _unsup("chol with options or several outputs")
+    lower = false
+    if length(a) == 2 && a[2] isa AbstractString && lowercase(a[2]) in ("lower", "upper")
+        lower = lowercase(a[2]) == "lower"
+    elseif length(a) != 1
+        _unsup("chol with options other than 'lower' or 'upper'")
+    end
+    nout > 1 && _unsup("chol with several outputs")
     x = _square(farr(a[1]), "chol")
     xs = isapprox(x, permutedims(x); rtol=1e-5, atol=1e-8) ? (x + permutedims(x)) / 2 : x
     C = LinearAlgebra.cholesky(LinearAlgebra.Symmetric(xs); check=false)
     LinearAlgebra.issuccess(C) || merr("chol: matrix must be positive definite")
-    ret(Matrix(C.U))
+    ret(lower ? Matrix(C.L) : Matrix(C.U))
 end
 bi!("dot") do I, a, nout
     x, y = farr(a[1]), farr(a[2])
@@ -983,7 +989,7 @@ lazy!(_plot, PLOT_FUNCS...)
 const FILE_FUNCS = split("fopen fread fwrite fgetl fgets fscanf textscan importdata xlsread xlswrite csvread csvwrite " *
     "dlmread dlmwrite readtable writetable readmatrix writematrix delete copyfile movefile rmdir " *
     "rmpath cd dir ls system unix dos exist_file " *
-    "datatomfile matfile which websave urlread unzip zip tempdir tempname setenv " *
+    "matfile which websave urlread unzip zip tempdir tempname setenv " *
     "open winopen edit type input keyboard dbstack mfilename genpath path userpath")
 _file(I, argnodes, sc, nout) = throw(Unsupported("file-system, shell or interactive functions are not available", "file"))
 lazy!(_file, FILE_FUNCS...)
