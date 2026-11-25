@@ -241,8 +241,15 @@ function _var(I, a, nout)
 end
 BUILTINS["var"] = _var
 BUILTINS["std"] = (I, a, nout) -> ret(sqrt.(farr(_var(I, a, nout))))
-bi!("cumsum", "cumprod") do I, a, nout
-    _unsup("cumsum/cumprod")
+for (nm, fn) in (("cumsum", cumsum), ("cumprod", cumprod))
+    BUILTINS[nm] = function (I, a, nout)
+        _nargs(a, 1, 2, nm)
+        x = farr(a[1])
+        isempty(x) && return ret(x)
+        ax = _dim_arg(x, a, 2)
+        ax === nothing && return ret(x)
+        ret(fn(x; dims=ax))
+    end
 end
 
 # diff(x), diff(x, n), diff(x, n, dim): differences along the first non-singleton dimension (data files of estimation)

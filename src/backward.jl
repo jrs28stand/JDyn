@@ -29,12 +29,84 @@ function backward_innovations(ws, T::Int)
     catch
         throw(BackwardError("chol: the covariance matrix of the structural innovations is not positive definite"))
     end
-    set_dynare_seed!(ws, "default")                     # options_.bnlms.set_dynare_seed_to_default = true
+    _apply_matlab_options!(ws)
+    dist = string(_optf(ws, "bnlms.innovation_distribution", "gaussian"))
+    dist == "gaussian" || throw(BackwardError("simul_backward_nonlinear_model:: $dist distribution for the structural innovations is not (yet) implemented!"))
+    _optb(ws, "bnlms.set_dynare_seed_to_default", true) && set_dynare_seed!(ws, "default")
     R = dynare_rng(ws)
     Z = Matrix{Float64}(undef, T, length(pos))
     randn!(R, Z)
     X[:, pos] = Z * U
     X
+end
+
+"""
+    _aux_series(m, Y, X, params, ss) -> Y
+
+The auxiliary variables of `Y` (`n_endo x n0`, NaN where unknown) computed from the original variables period by period from
+their defining equations (what the preprocessor's `dynamic_set_auxiliary_series` does): in period `t` the equations of the
+auxiliary variables, at `(y_{t-1}, y_t)`, are affine in the unknown `y_t[aux]`; the lagged auxiliary values come from the previous
+columns; a value that needs an observation before the sample stays NaN. Lagrange multipliers (type 6) are not touched.
+"""
+function _aux_series(m, Y::AbstractMatrix, X::AbstractMatrix, params, ss)
+    n = m.n_endo
+    idx = Int[Int(a["endo_index"]) for a in get_or(m.raw, "aux_vars", []) if get(a, "type", 0) != 6]
+    isempty(idx) && return Matrix{Float64}(Y)
+    rows = _aux_rows(m, idx)
+    Y = Matrix{Float64}(Y)
+    nanv = fill(NaN, n)
+    for t in 1:size(Y, 2)
+        lag = t > 1 ? Y[:, t-1] : nanv
+        cur = Y[:, t]
+        cur[idx] .= NaN
+        for _ in 1:2
+            for (i, row) in zip(idx, rows)
+                cur[i] = isfinite(cur[i]) ? cur[i] : 0.0
+                yy = vcat(lag, cur, nanv)
+                r = try dynamic_resid(m, yy, X[t, :], params, ss)[row] catch; NaN end
+                d = try dynamic_jac(m, yy, X[t, :], params, ss)[row, n+i] catch; NaN end
+                cur[i] = isfinite(r) && isfinite(d) && d != 0.0 ? cur[i] - r / d : NaN
+            end
+        end
+        Y[:, t] = cur
+    end
+    Y
+end
+
+_bwd_linear(ws) = _pf_model_is_linear(ws.model) || _optb(ws, "linear", false)
+
+
+# dynare_solve's repair of an initial guess that cannot be evaluated (options_.solve_randomize_initial_guess, true by default):
+# random numbers, first positive (rand*10), then normal (randn*10), then negative, are drawn for the entries of the guess until
+# the residuals and the Jacobian are finite. Dynare redraws `find(x)`, the NON-ZERO entries (NaN included), although its comment
+# says the default ones: that overwrites valid starting values too. Corrected by default: only the non-finite entries are
+# redrawn; `replicate_dynare_bugs=true` redraws as Dynare does (with `random=:octave` the very draws of Octave).
+function _bwd_repair_guess(ws, fun, jac, x0::Vector{Float64})
+    x = copy(x0)
+    ok(x) = (f = fun(x); all(isfinite, f) && all(isfinite, jac(x)))
+    try ok(x) && return x catch e; e isa Union{LinearAlgebra.SingularException,DomainError} || rethrow() end
+    bugs = _optb(ws, "replicate_dynare_bugs", false)
+    idx = bugs ? (any(!iszero, x) ? findall(!iszero, x) : collect(1:length(x))) :
+                 (any(!isfinite, x) ? findall(!isfinite, x) : (any(!iszero, x) ? findall(iszero, x) : collect(1:length(x))))
+    in0 = length(idx); R = dynare_rng(ws)
+    for gen in (() -> rand(R, in0) .* 10, () -> randn(R, in0) .* 10, () -> -rand(R, in0) .* 10)
+        for _ in 0:in0*10
+            x[idx] .= gen()
+            good = try ok(x) catch e; e isa Union{LinearAlgebra.SingularException,DomainError} || rethrow(); false end
+            good && return x
+        end
+    end
+    x0
+end
+
+
+# dynare_solve's options as the backward routines read them (options_ with the .mod file's MATLAB lines applied)
+function _bwd_options(ws)
+    _apply_matlab_options!(ws)
+    o = _pfo_options(ws.model, ws.options_, false)
+    algo = _opti(ws, "solve_algo", 4)
+    algo in (4, 9, 13, 14) || throw(Unsupported("solve_algo=$algo in the backward model routines (implemented: 4, 9, 13, 14)", "feature"))
+    o, algo
 end
 
 function _backward_initial(ws, initialconditions)
@@ -43,7 +115,12 @@ function _backward_initial(ws, initialconditions)
     if initialconditions === nothing || (initialconditions isa AbstractArray && isempty(initialconditions))
         h = ws.M_.endo_histval
         (h isa AbstractArray && length(h) == n) || throw(BackwardError("no initial conditions: use histval or pass a dseries"))
-        return reshape(Float64.(vec(h)), n, 1), zeros(1, m.n_exo)
+        eh = get(ws.M_, "exo_histval", nothing)
+        if !(eh isa AbstractMatrix && size(eh) == (m.n_exo, 1))
+            eh = try _pf_replay(m, nothing, nothing, (), ()).exo_histval catch; nothing end
+        end
+        X0 = eh === nothing ? zeros(1, m.n_exo) : reshape(Float64.(vec(eh)), 1, m.n_exo)
+        return reshape(Float64.(vec(h)), n, 1), X0
     end
     d = initialconditions
     d isa MDseries || throw(BackwardError("First input argument must be a dseries object or an empty array!"))
@@ -59,7 +136,25 @@ function _backward_initial(ws, initialconditions)
         j = findfirst(==(nm), d.name)
         j === nothing || (X[:, i] = d.data[:, j])
     end
-    any(isnan, Y[:, end]) && throw(BackwardError("Please fix the dseries object used for setting the initial conditions!"))
+    # checkdatabase: the auxiliary variables of the database (dynamic_set_auxiliary_series)
+    if any(a -> get(a, "type", 0) != 6, get_or(m.raw, "aux_vars", []))
+        ss = let s = get(ws.oo_, "steady_state", nothing); s isa AbstractArray && length(s) == n ? Float64.(vec(s)) : zeros(n) end
+        Ya = _aux_series(m, Y, replace(X, NaN => 0.0), m.params, ss)
+        for a in get_or(m.raw, "aux_vars", [])
+            get(a, "type", 0) == 6 && continue
+            i = Int(a["endo_index"])
+            all(isnan, Y[i, :]) && (Y[i, :] = Ya[i, :])
+        end
+    end
+    no = orig_endo_nbr(m)
+    lagcount = Dict{Int,Int}(i => 1 for i in 1:no if m.lead_lag_incidence[i, 1] > 0)
+    for a in get_or(m.raw, "aux_vars", [])
+        get(a, "type", 0) == 1 && (lagcount[Int(a["orig_index"])] = abs(Int(a["orig_lead_lag"])))
+    end
+    for (i, L) in lagcount
+        nobs >= L || throw(BackwardError("The dseries object provided as first input argument should at least have $L periods!"))
+        any(isnan, Y[i, end-L+1:end]) && throw(BackwardError("Please fix the dseries object used for setting the initial conditions!"))
+    end
     Y, X
 end
 
@@ -94,14 +189,15 @@ function _bwd_core(ws, Y0, X0, X, linear::Bool)
         y = zeros(3n); x = zeros(nx)
         c = dynamic_resid(m, y, x, p, ss)
         J = dynamic_jac(m, y, x, p, ss)
-        A0 = J[:, n+1:2n]; A1 = J[:, 1:n]; B = J[:, 3n+1:3n+nx]
+        # Dynare's Jacobian is sparse: structural zeros are not multiplied, so a NaN (an auxiliary variable whose lag lies before the sample) does not spread
+        A0 = Matrix(J[:, n+1:2n]); A1 = sparse(J[:, 1:n]); B = sparse(J[:, 3n+1:3n+nx])
         F = try lu(A0) catch; return Y, Xall, true, "the Jacobian of the current variables is singular" end
         for it in n0+1:n0+T
             Y[:, it] = -(F \ (c + A1 * Y[:, it-1] + B * Xall[it, :]))
         end
         return Y, Xall, false, ""
     end
-    o = _pfo_options(m, ws.options_, false)
+    o, algo = _bwd_options(ws)
     tolf, tolx, maxit = o["dynatol.f"], o["dynatol.x"], o["simul.maxit"]
     z0 = zeros(n)
     for it in n0+1:n0+T
@@ -109,7 +205,7 @@ function _bwd_core(ws, Y0, X0, X, linear::Bool)
         fun = z -> dynamic_resid(m, vcat(ylag, z, z0), x, p, ss)
         jac = z -> dynamic_jac(m, vcat(ylag, z, z0), x, p, ss)[:, n+1:2n]
         z, ok = try
-            r = _dynare_solve(fun, jac, copy(ylag); tolf=tolf, tolx=tolx, maxit=maxit, rng=dynare_rng(ws))
+            r = _dynare_solve(fun, jac, _bwd_repair_guess(ws, fun, jac, copy(ylag)); tolf=tolf, tolx=tolx, maxit=maxit, rng=dynare_rng(ws), algo=algo)
             r[1], r[2]
         catch e
             e isa Union{LinearAlgebra.SingularException,DomainError} || rethrow()
@@ -123,13 +219,13 @@ function _bwd_core(ws, Y0, X0, X, linear::Bool)
     Y, Xall, false, ""
 end
 
-function _backward_dseries(ws, Y, X)
+function _backward_dseries(ws, Y, X, init=nothing)
     m = ws.model
     no = orig_endo_nbr(m)
     names = vcat(m.endo_names[1:no], m.exo_names)
     N = size(Y, 2)
     data = hcat(Matrix(Y[1:no, :]'), X[1:N, :])
-    MDseries(data, names, copy(names), MDates(1, collect(1.0:N)), fill("", length(names)), Pair{String,Vector{Any}}[])
+    MDseries(data, names, copy(names), _bwd_dates(init isa MDseries ? init : nothing, N), fill("", length(names)), Pair{String,Vector{Any}}[])
 end
 
 """
@@ -140,16 +236,17 @@ Simulate a backward model `periods` periods; the dseries holds the initial perio
 """
 function simul_backward_model(ws::DynareWorkspace, periods::Integer; innovations=nothing, initialconditions=nothing)
     m = ws.model
-    linear = _optb(ws, "linear", false)
+    linear = _bwd_linear(ws)
     Y, X, err, msg = backward_simulate(ws, Int(periods); innovations=innovations, initialconditions=initialconditions, linear=linear)
     err && @warn "simul_backward_model: $msg"
+    get(ENV,"BWDBG","")=="1" && println("SIM ", Y[:, 1:3], " last ", Y[:, end], " X ", X[1:3,:])
     oo = ws.oo_
     oo.endo_simul = Y
     oo.exo_simul = X
     if innovations === nothing
-        b = MStruct(); b.shocks = X[end-Int(periods)+1:end, :]; oo.bnlms = b
+        b = MStruct(); b.shocks = X[end-Int(periods)+1:end, findall(>(0), diag(m.Sigma_e))]; oo.bnlms = b
     end
-    _backward_dseries(ws, Y, X), err
+    _backward_dseries(ws, Y, X, initialconditions), err
 end
 
 """
@@ -158,25 +255,29 @@ end
 `backward_model.simul_static_model`: in each period the static model is solved from zeros (Newton, algorithm 4);
 a failed period is NaN. Fills `oo_.endo_simul`, `oo_.exo_simul`.
 """
-function simul_static_model(ws::DynareWorkspace, periods::Integer; innovations=nothing)
+function simul_static_model(ws::DynareWorkspace, periods::Integer; innovations=nothing, start=nothing)
     m = ws.model
     get(m.info, "maximum_lag", 0) == 0 || throw(BackwardError("$(m.fname).mod has lagged variables, but it should be a static model."))
     get(m.info, "maximum_lead", 0) == 0 || throw(BackwardError("$(m.fname).mod has leaded variables, but it should be a static model."))
     T = Int(periods); n = m.n_endo
     X = innovations === nothing ? backward_innovations(ws, T) : Matrix{Float64}(innovations)
-    o = _pfo_options(m, ws.options_, false)
+    if innovations === nothing
+        b = MStruct(); b.shocks = X[:, findall(>(0), diag(m.Sigma_e))]; ws.oo_.bnlms = b
+    end
+    o, algo = _bwd_options(ws)
     Y = fill(NaN, n, T)
     for t in 1:T
         x = X[t, :]
         fun = z -> static_resid(m, z, x, m.params)
         jac = z -> static_jac(m, z, x, m.params)
-        r = try _dynare_solve(fun, jac, zeros(n); tolf=o["dynatol.f"], tolx=o["dynatol.x"], maxit=o["simul.maxit"], rng=dynare_rng(ws)) catch e
+        r = try _dynare_solve(fun, jac, _bwd_repair_guess(ws, fun, jac, zeros(n)); tolf=o["dynatol.f"], tolx=o["dynatol.x"], maxit=o["simul.maxit"], rng=dynare_rng(ws), algo=algo) catch e
             e isa Union{LinearAlgebra.SingularException,DomainError} || rethrow(); (nothing, false) end
         r[2] ? (Y[:, t] = r[1]) : @warn "simul_static_model: nonlinear solver failed in period $t"
     end
     ws.oo_.endo_simul = Y; ws.oo_.exo_simul = X
     no = orig_endo_nbr(m); names = vcat(m.endo_names[1:no], m.exo_names)
-    MDseries(hcat(Matrix(Y[1:no, :]'), X), names, copy(names), MDates(1, collect(1.0:T)), fill("", length(names)), Pair{String,Vector{Any}}[])
+    dts = start isa MDates && !isempty(start.time) ? MDates(start.freq, start.time[1] .+ collect(0.0:T-1)) : MDates(1, collect(1.0:T))
+    MDseries(hcat(Matrix(Y[1:no, :]'), X), names, copy(names), dts, fill("", length(names)), Pair{String,Vector{Any}}[])
 end
 
 """
@@ -191,7 +292,7 @@ function backward_model_irf(ws::DynareWorkspace, shocks::AbstractVector{<:Abstra
                             initialconditions=nothing, innovationbaseline=nothing, variables=nothing)
     m = ws.model
     get(m.info, "maximum_lead", 0) == 0 || throw(BackwardError("backward_model_irf:: The specified model is not backward looking!"))
-    linear = _optb(ws, "linear", false)
+    linear = _bwd_linear(ws)
     T = Int(periods)
     Y0, X0 = _backward_initial(ws, initialconditions)
     X0 = replace(X0, NaN => 0.0)
@@ -238,7 +339,7 @@ function backward_model_forecast(ws::DynareWorkspace, variables; periods::Intege
                                  withuncertainty::Bool=false, B::Integer=1000)
     m = ws.model
     get(m.info, "maximum_lead", 0) == 0 || throw(BackwardError("backward_model_forecast:: The specified model is not backward looking!"))
-    linear = _optb(ws, "linear", false)
+    linear = _bwd_linear(ws)
     vars = String.(variables); T = Int(periods)
     idy = [something(findfirst(==(v), m.endo_names), 0) for v in vars]
     any(==(0), idy) && throw(BackwardError("backward_model_forecast:: Variable $(vars[findfirst(==(0), idy)]) is unknown!"))
@@ -303,16 +404,17 @@ bi!("simul_static_model") do I, a, nout
     ws = _pfo_ws(I)
     isempty(a) && merr("simul_static_model: samplesize is missing")
     T = Int(round(scalar(a[1], "simul_static_model")))
-    innov = nothing
+    innov = nothing; start = nothing
     if length(a) >= 2
         d = a[2]; d isa MDseries || merr("Third argument must be a dseries object!")
+        start = d.dates
         innov = zeros(T, ws.model.n_exo)
         for (i, nm) in enumerate(ws.model.exo_names)
             j = findfirst(==(nm), d.name); j === nothing || (innov[:, i] = d.data[1:T, j])
         end
     end
     try
-        simul_static_model(ws, T; innovations=innov)
+        simul_static_model(ws, T; innovations=innov, start=start)
     catch e
         e isa BackwardError && merr(e.msg)
         rethrow()
@@ -363,6 +465,34 @@ function set_historical_values(ws::DynareWorkspace, ds::MDseries, initialperiod)
     nothing
 end
 
+# checkdatabase: the dseries with the auxiliary variables of the model added (dynamic_set_auxiliary_series)
+function _ds_with_aux(ws, d::MDseries)
+    m = ws.model; n = m.n_endo
+    auxs = [a for a in get_or(m.raw, "aux_vars", []) if get(a, "type", 0) != 6]
+    isempty(auxs) && return d
+    nobs = size(d.data, 1)
+    Y = fill(NaN, n, nobs); X = zeros(nobs, m.n_exo)
+    for (i, nm) in enumerate(m.endo_names)
+        j = findfirst(==(nm), d.name); j === nothing || (Y[i, :] = d.data[:, j])
+    end
+    for (i, nm) in enumerate(m.exo_names)
+        j = findfirst(==(nm), d.name); j === nothing || (X[:, i] = replace(d.data[:, j], NaN => 0.0))
+    end
+    ss = let s = get(ws.oo_, "steady_state", nothing); s isa AbstractArray && length(s) == n ? Float64.(vec(s)) : zeros(n) end
+    Ya = _aux_series(m, Y, X, m.params, ss)
+    names = copy(d.name); data = Matrix{Float64}(d.data)
+    for a in auxs
+        i = Int(a["endo_index"]); nm = m.endo_names[i]
+        j = findfirst(==(nm), names)
+        if j === nothing
+            push!(names, nm); data = hcat(data, Ya[i, :])
+        else
+            data[:, j] = Ya[i, :]
+        end
+    end
+    MDseries(data, names, copy(names), d.dates, fill("", length(names)), Pair{String,Vector{Any}}[])
+end
+
 """
     model_inversion(ws, constraints, exogenousvariables, initialconditions) -> (endogenous dseries, exogenous dseries)
 
@@ -373,6 +503,8 @@ inversion) are refused.
 """
 function model_inversion(ws::DynareWorkspace, constraints::MDseries, exogenousvariables::MDseries, initialconditions)
     m = ws.model
+    initialconditions isa MDseries && (initialconditions = _ds_with_aux(ws, initialconditions))
+    get(ENV,"BWDBG","")=="1" && (println("CONSTR ", constraints.name, size(constraints.data), constraints.data[1:3,:], constraints.dates.time[1:3]); println("INIT ", initialconditions.name, initialconditions.data[1:4,:], initialconditions.dates.time[1:4]))
     n, nx = m.n_endo, m.n_exo
     get(m.info, "maximum_lead", 0) == 0 || throw(BackwardError("model_inversion: forward-looking models are not supported (deterministic inversion with perfect_foresight_solver_core)"))
     static = Int(get(m.info, "maximum_lag", 0)) == 0
@@ -396,7 +528,8 @@ function model_inversion(ws::DynareWorkspace, constraints::MDseries, exogenousva
     end
     nyfree, nxfree = length(yfree), length(xfree)
     Jid = vcat(n .+ yfree, 3n .+ xfree)
-    o = _pfo_options(m, ws.options_, false)
+    o, algo = _bwd_options(ws)
+    static && (algo = 4)
     ss = let s = get(ws.oo_, "steady_state", nothing); s isa AbstractArray && length(s) == n ? Float64.(vec(s)) : zeros(n) end
     off = static ? 0 : 1
     Y = fill(NaN, n, T + off)
@@ -412,7 +545,6 @@ function model_inversion(ws::DynareWorkspace, constraints::MDseries, exogenousva
     for (i, c) in enumerate(yctrl)
         Y[c, off+1:end] = constraints.data[:, i]
     end
-    algo_note = static ? 4 : _optf(ws, "solve_algo", 4)
     for t in 1:T
         ity = t + off
         ycur = Y[yctrl, ity]
@@ -429,12 +561,12 @@ function model_inversion(ws::DynareWorkspace, constraints::MDseries, exogenousva
         fun = z -> (let (y, x) = build(z); dynamic_resid(m, y, x, m.params, ss) end)
         jac = z -> (let (y, x) = build(z); dynamic_jac(m, y, x, m.params, ss)[:, Jid] end)
         r = try
-            _dynare_solve(fun, jac, z0; tolf=o["dynatol.f"], tolx=o["dynatol.x"], maxit=o["simul.maxit"], rng=dynare_rng(ws))
+            _dynare_solve(fun, jac, _bwd_repair_guess(ws, fun, jac, z0); tolf=o["dynatol.f"], tolx=o["dynatol.x"], maxit=o["simul.maxit"], rng=dynare_rng(ws), algo=algo)
         catch e
             e isa Union{LinearAlgebra.SingularException,DomainError} || rethrow()
             (nothing, false)
         end
-        r[2] || throw(BackwardError(static ? "Enable to solve the system of equations" : "Nonlinear solver failed"))
+        r[2] || (get(ENV,"BWDBG","")=="1" && (zr=_bwd_repair_guess(ws, fun, jac, z0); println("F1=",fun(ones(length(z0))), " J1nan=", any(isnan, jac(ones(length(z0)))), " y=",build(ones(length(z0)))); println("FAIL t=$t zr=$zr fr=$(fun(zr)) r=$(r[1]) z0=$z0 f0=$(fun(z0)) ylag=$ylag xrow=$xrow yctrl=$yctrl yfree=$yfree xfree=$xfree"))); r[2] || throw(BackwardError(static ? "Enable to solve the system of equations" : "Nonlinear solver failed"))
         z = r[1]
         X[rows[t], xfree] = z[nyfree+1:end]
         nyfree > 0 && (Y[yfree, ity] = z[1:nyfree])
@@ -527,3 +659,7 @@ bi!("backward_model_forecast") do I, a, nout
     end
     S
 end
+
+# `isoctave` is true in a workspace made with `dynare(...; random=:octave)` (the one that reproduces Octave's numbers), so that the
+# branches of a .mod file for Octave (looser tolerances of the inversion tests, ...) are the ones Dynare's Octave run took.
+BUILTINS["isoctave"] = (I, a, nout) -> ISOCTAVE[] || (try rng_kind(_pfo_ws(I).model) === :octave catch; false end)
