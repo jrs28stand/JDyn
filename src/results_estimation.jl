@@ -286,7 +286,7 @@ oo_.Smoother, oo_.SmoothedVariables, oo_.UpdatedVariables, oo_.FilteredVariables
 oo_.SmoothedShocks and oo_.SmoothedMeasurementErrors from a `SmootherResult` (store_smoother_results.m): every variable
 a (nobs x 1) column, fields created in decision-rule order as Dynare does, the smoother's own results removed first.
 """
-function _store_smoother_results!(oo::MStruct, m::Model, res::SmootherResult)
+function _store_smoother_results!(oo::MStruct, m::Model, res::SmootherResult; only=nothing)
     if res.occbin !== nothing                   # OccBin: oo_.occbin.smoother; nothing else is written if the smoother failed
         _store_occbin_smoother!(oo, m, res)
         res.occbin.smoother.error_flag == 0 || return oo
@@ -314,9 +314,13 @@ function _store_smoother_results!(oo::MStruct, m::Model, res::SmootherResult)
     res.Variance === nothing || (S.Variance = res.Variance)
     C, I = MStruct(), MStruct()
     SV, FV, UV = MStruct(), MStruct(), MStruct()
+    # selected_variables_only: bayestopt_.smoother_saved_var_list holds the variables of the list after the command (k3) only;
+    # the observed variables keep their Constant (set for all of them in store_smoother_results.m)
+    keep(v) = only === nothing || v in only
     for i in ord
         v = nm[i]
-        C[v] = _col(res.Constant[v])
+        (keep(v) || v in varobs) && (C[v] = _col(res.Constant[v]))
+        keep(v) || continue
         I[v] = res.Init_State[v]
         SV[v] = _col(res.SmoothedVariables[v])
         nk && (FV[v] = _col(res.FilteredVariables[v]))
@@ -348,6 +352,14 @@ function _store_smoother_results!(oo::MStruct, m::Model, res::SmootherResult)
         oo.SmoothedMeasurementErrors = me
     end
     oo
+end
+
+"The variables the smoother results are kept for under `selected_variables_only` (the list after the command, else all original endogenous ones), or `nothing`."
+function _selected_only(ws, m::Model, vl)
+    _optb(ws, "selected_variables_only", false) || return nothing
+    # dynare_estimation_init.m: classical forecasts need every variable, the option is then ignored
+    _optb(ws, "forecast", false) && return nothing
+    Set(isempty(vl) ? orig_endo_names(m) : vl)
 end
 
 "M_ as set_all_parameters.m leaves it: params, Sigma_e, Correlation_matrix, H (the model follows)."
@@ -425,8 +437,6 @@ function _estimation!(ws::DynareWorkspace, st, var_list, data, seed, options)
     stopts = st === nothing ? Dict{String,Any}() : (o = get_or(st, "options", nothing); o isa AbstractDict ? o : Dict{String,Any}())
     # EstimationStatement::writeOutput: options_.order = 1 unless the statement gives an order
     (haskey(stopts, "order") || haskey(options, :order)) || (O.order = 1.0)
-    _optb(ws, "selected_variables_only", false) &&
-        throw(EstimationError("selected_variables_only is not supported by the oo_ writer (oo_.SmoothedVariables would not have Dynare's layout)"))
     vl = String.(collect(var_list))
     for v in vl
         haskey(m.ie, v) || throw(EstimationError("estimation: $v is not an endogenous variable"))
@@ -559,7 +569,7 @@ function _estimation!(ws::DynareWorkspace, st, var_list, data, seed, options)
     est, theta, res, nobs, lik_init = result
     _apply_theta!(ws, est, theta)
     if res !== nothing
-        _store_smoother_results!(oo, m, res)
+        _store_smoother_results!(oo, m, res; only=_selected_only(ws, m, vl))
         _store_dr_estimation!(oo, m, res.solution)
     end
     _estimation_forecast!(ws, m, est, theta, res, vl)
@@ -726,7 +736,7 @@ function _calib_smoother!(ws::DynareWorkspace, st, var_list, options)
     end
     oo.steady_state = _col(ys0)
     O.noconstant = 0.0
-    _store_smoother_results!(oo, m, res)
+    _store_smoother_results!(oo, m, res; only=_selected_only(ws, m, String.(collect(var_list))))
     _store_dr_estimation!(oo, m, res.solution)
     nobs = size(res.smoothed, 1)
     # evaluate_smoother.m does not reset first_obs to NaN as dynare_estimation_1.m does

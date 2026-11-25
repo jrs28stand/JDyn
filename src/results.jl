@@ -405,6 +405,11 @@ function _stoch_simul(ws, m, oo, var_list, shocks, rng)
         nper = max(_opti(ws, "periods", 0), 1) + Int(m.raw["model_info"]["maximum_lag"]) + Int(m.raw["model_info"]["maximum_lead"])
         oo.exo_simul = repeat(permutedims(Float64.(exo_steady(m))), nper, 1)
     end
+    if get(ws.state, :logged_ss, false) === true && haskey(oo, "steady_state")       # "if options_.logged_steady_state: undo this"
+        ss = vec(Float64.(oo.steady_state)); mask = log_mask(m)
+        length(ss) == m.n_endo && (oo.steady_state = _col([mask[i] ? exp(ss[i]) : ss[i] for i in 1:m.n_endo]))
+        ws.state[:logged_ss] = false
+    end
     kos = _optb(ws, "k_order_solver", false) || order >= 3       # Dynare solves with the k-order library (g_0 ... g_k, no gx or Gy)
     sol = nothing
     if solved !== nothing
@@ -422,8 +427,14 @@ function _stoch_simul(ws, m, oo, var_list, shocks, rng)
         n_exo_det(m) > 0 && _store_exo_det_dr!(oo.dr, m, dr)
     end
     oo.dr.eigval = _eigcol(eigv)
-    oo.steady_state = _col(dr["ys"])
-    oo.exo_steady_state = _col(exo_steady(m))
+    # stoch_simul.m leaves oo_.steady_state alone (the initval values, or the last `steady`): resol only fills oo_.dr.ys. Under
+    # loglinear it logs oo_.steady_state (log_variable) once and flags options_.logged_steady_state, undone at the next solve.
+    if _optb(ws, "loglinear", false) && get(ws.state, :logged_ss, false) !== true
+        ss = vec(Float64.(get(oo, "steady_state", zeros(m.n_endo))))
+        mask = log_mask(m)
+        length(ss) == m.n_endo && (oo.steady_state = _col([mask[i] ? log(ss[i]) : ss[i] for i in 1:m.n_endo]))
+        ws.state[:logged_ss] = true
+    end
     var_list = isempty(var_list) ? orig_endo_names(m) : String.(collect(var_list))
     oo.var_list = _cellcol(var_list)
     ivar = [m.ie[v] for v in var_list]
@@ -456,7 +467,8 @@ function _stoch_simul(ws, m, oo, var_list, shocks, rng)
             r = rng === nothing ? dynare_rng(ws) : rng
             iv = findall(!=(0), diag(m.Sigma_e))
             e = zeros(periods, m.n_exo)
-            e[:, iv] .= randn(r, periods, length(iv)) * Matrix(cholesky(Symmetric(m.Sigma_e[iv, iv])).U)
+            # simult.m: transpose(randn(nxs, periods)) * chol(Sigma_e(iv, iv)): the draws fill period by period
+            e[:, iv] .= permutedims(randn(r, length(iv), periods)) * Matrix(cholesky(Symmetric(m.Sigma_e[iv, iv])).U)
             e
         end
         # stoch_simul.m: the simulation starts from M_.endo_histval (histval), else from the steady state
@@ -685,8 +697,21 @@ function occbin_solver!(ws::DynareWorkspace; options...)
     sim.shocks_sequence = Matrix{Float64}(r.shocks)
     sim.exo_pos = _col(r.exo_pos)
     sim.regime_history = _regime_history_cell(r.regime_history)
+    sim.ys = _col(r.ys)
+    sim.error_flag = 0.0
     occ = get(ws.oo_, "occbin", MStruct())
     occ.simul = sim
+    # occbin.unpack_simulations.m: the simulations by variable name (and the shocks used)
+    lin, pw, sss = MStruct(), MStruct(), MStruct()
+    for (i, v) in enumerate(ws.model.endo_names)
+        lin[v] = _col(r.linear[:, i]); pw[v] = _col(r.piecewise[:, i]); sss[v] = Float64(r.ys[i])
+    end
+    occ.endo_linear = lin; occ.endo_piecewise = pw; occ.endo_ss = sss
+    ex = MStruct()
+    for (j, p) in enumerate(r.exo_pos)
+        j <= size(r.shocks, 2) && (ex[ws.model.exo_names[j]] = _col(r.shocks[:, j]))
+    end
+    occ.exo = ex
     ws.oo_.occbin = occ
     ws
 end
@@ -742,6 +767,8 @@ function dynare(modfile::AbstractString; output=nothing, shocks=Dict{Int,Any}(),
         ws = DynareWorkspace(m, build_M(m), build_options(m), MStruct(), Dict{String,Any}())
         ws.oo_.exo_det_steady_state = n_exo_det(m) > 0 ? _col(exo_det_steady(m)) : zeros(0, 0)
         ws.oo_.dynare_version = "7.2"
+        ws.oo_.steady_state = zeros(m.n_endo, 1)           # the driver's `oo_.steady_state = zeros(endo_nbr, 1)`; initval and steady fill it
+        ws.oo_.exo_steady_state = zeros(m.n_exo, 1)
         ws.state[:matlab_options] = Dict{String,Any}()
         m.session.host.M.results = ws.M_
         m.session.host.oo.results = ws.oo_          # MATLAB lines of the file see (and write) this oo_

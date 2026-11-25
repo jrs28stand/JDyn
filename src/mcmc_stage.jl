@@ -18,6 +18,7 @@ sampling_method(est::Estimation) = String(_estopt(est, "posterior_sampling_metho
 
 "Does Dynare skip the mode search for this sampler? SMC samplers and the slice sampler that does not start from the mode."
 function samples_without_mode(est::Estimation)
+    _est_flag(get(est.options, "mh_posterior_mode_estimation", false)) && return true     # dynare_estimation_1.m: no smoother-only step, no mode search
     meth = sampling_method(est)
     meth in SMC_METHODS && return true
     meth == SLICE || return false

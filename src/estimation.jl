@@ -489,7 +489,8 @@ const _HONOURED_EST = Set(["datafile", "first_obs", "nobs", "loglinear", "logdat
     "bayesian_irf", "irf", "irf_shocks", "relative_irf", "consider_all_endogenous", "consider_all_endogenous_and_auxiliary",
     "consider_only_observed", "posterior_max_subsample_draws", "heteroskedastic_filter",
     "mode_file", "load_mh_file", "mh_recover", "posterior_sampling_method", "posterior_sampler_options", "mcmc_jumping_covariance",
-    "mh_tune_jscale", "mh_tune_guess", "load_results_after_load_mh", "dsge_var", "dsge_varlag", "endogenous_prior"])
+    "mh_tune_jscale", "mh_tune_guess", "load_results_after_load_mh", "dsge_var", "dsge_varlag", "endogenous_prior",
+    "mh_posterior_mode_estimation"])
 # preprocessor option names -> the names used here
 const _EST_ALIASES = Dict("posterior_sampler_options.posterior_sampling_method" => "posterior_sampling_method",
     "posterior_sampler_options.sampling_opt" => "posterior_sampler_options", "MCMC_jumping_covariance" => "mcmc_jumping_covariance",
@@ -580,6 +581,19 @@ function Estimation(m::Model; data=nothing, allow_unsupported::Bool=false, state
         end
         if (k == "nobs" || k == "first_obs") && v isa AbstractVector
             throw(EstimationError("recursive estimation ($k given as a vector) is not supported"))
+        end
+        if k == "endo_vars_for_moment_computations_in_estimation"       # what the preprocessor writes for consider_all_endogenous & co
+            sel = Dict("all_endogenous_variables" => "consider_all_endogenous",
+                       "all_endogenous_and_auxiliary_variables" => "consider_all_endogenous_and_auxiliary",
+                       "only_observed_variables" => "consider_only_observed")
+            haskey(sel, string(v)) || throw(EstimationError("Unknown option: endo_vars_for_moment_computations_in_estimation = $(repr(v))"))
+            opts[sel[string(v)]] = true
+            continue
+        end
+        if k == "analytic_derivation" || k == "analytic_Hessian"
+            # Dynare's results do not depend on analytic derivatives beyond rounding of the optimiser's path: the numerical ones are used
+            _est_flag(v) && warn_once(m, "estimation: $k is honoured with numerical derivatives (the analytic derivatives of the likelihood are not implemented; the optimiser may stop at a slightly different point)")
+            continue
         end
         if k in _HONOURED_EST
             opts[k] = v
@@ -1317,7 +1331,8 @@ function posterior_mode(est::Estimation; x0=est.x0, compute_hessian=nothing, mod
     allowed = get(_OPTIM_KEYS, mode_compute, nothing)
     allowed === nothing && throw(EstimationError("mode_compute=$mode_compute is not implemented (0, 4 csminwel, 5 newrat, 7 fminsearch, 8 simplex, 9 cmaes are)"))
     for k in keys(opt)
-        k in allowed || throw(EstimationError("optim option $k is not supported with mode_compute=$mode_compute (supported: $(join(allowed, ", ")))"))
+        # dynare_minimize_objective.m: an option the optimiser does not read (e.g. NumgradAlgorithm with newrat) only draws a warning
+        k in allowed || @warn "optim option $k is not used by mode_compute=$mode_compute (Dynare warns 'Unknown option' and goes on; used: $(join(allowed, ", ")))"
     end
     nfev = 0; iters = 0; msg = "mode_compute=0: no optimisation"; success = true
     if mode_compute == 4
