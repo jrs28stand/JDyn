@@ -34,8 +34,9 @@ function _flat!(out, o, path)
     out
 end
 
-function probe_run(stmt; pre=PROBE_MOD, tail="")
-    d = mktempdir()
+function probe_run(stmt; pre=PROBE_MOD, tail="", files=Dict{String,String}())
+    d = joinpath(tempdir(), "jdyn_probe"); rm(d; recursive=true, force=true); mkpath(d)       # a fixed folder: paths inside oo_ must not differ
+    for (f, t) in files; write(joinpath(d, f), t); end
     write(joinpath(d, "m.mod"), pre * stmt * "\n" * tail * "\n")
     try
         ws = redirect_stdout(devnull) do
@@ -50,16 +51,16 @@ function probe_run(stmt; pre=PROBE_MOD, tail="")
 end
 function same(a, b)
     keys(a) == keys(b) || return false
-    all(k -> isequal(a[k], b[k]), keys(a))
+    all(k -> occursin("runtime", k) || isequal(a[k], b[k]), keys(a))      # run times differ between identical runs
 end
-function probe(cases; pre=PROBE_MOD)
+function probe(cases; pre=PROBE_MOD, files=Dict{String,String}())
     for (base, variants) in cases
-        b = probe_run(base; pre=pre)
-        b2 = b isa Tuple ? b : probe_run(base; pre=pre)
+        b = probe_run(base; pre=pre, files=files)
+        b2 = b isa Tuple ? b : probe_run(base; pre=pre, files=files)
         if b isa Tuple; println("BASE ERR  ", base, "  ", b[2]); continue; end
         same(b, b2) || println("NOTE: base run is not reproducible: ", base)
         for v in variants
-            r = probe_run(v; pre=pre)
+            r = probe_run(v; pre=pre, files=files)
             println(r isa Tuple ? "ERR       " : same(b, r) ? "SAME      " : "differs   ", v, r isa Tuple ? "   " * r[2] : "")
         end
     end

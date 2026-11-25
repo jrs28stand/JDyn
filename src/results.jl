@@ -494,22 +494,41 @@ function _stoch_simul(ws, m, oo, var_list, shocks, rng)
     ivar = [m.ie[v] for v in var_list]
     periods = _opti(ws, "periods", 0)
     if periods > 0
-        ex = if shocks !== nothing
-            size(shocks) == (periods, m.n_exo) || throw(ArgumentError("shocks must be periods x exo_nbr = ($periods, $(m.n_exo))"))
-            Matrix{Float64}(shocks)
-        else
-            r = rng === nothing ? dynare_rng(ws) : rng
-            iv = findall(!=(0), diag(m.Sigma_e))
-            e = zeros(periods, m.n_exo)
-            # simult.m: transpose(randn(nxs, periods)) * chol(Sigma_e(iv, iv)): the draws fill period by period
-            e[:, iv] .= permutedims(randn(r, length(iv), periods)) * Matrix(cholesky(Symmetric(m.Sigma_e[iv, iv])).U)
-            e
-        end
+        # simult.m: options_.simul_replic replications drawn one after the other from one stream; oo_.endo_simul is the first
+        # replication, oo_.exo_simul the last, and with more than one the raw data (float64, endo_nbr x periods each) go to
+        # <fname>/Output/<fname>_simul
+        nrep = max(_opti(ws, "simul_replic", 1), 1)
+        shocks !== nothing && nrep > 1 && throw(ArgumentError("shocks cannot be given together with simul_replic > 1"))
+        r = rng === nothing ? dynare_rng(ws) : rng
+        iv = findall(!=(0), diag(m.Sigma_e))
+        U = isempty(iv) ? zeros(0, 0) : Matrix(cholesky(Symmetric(m.Sigma_e[iv, iv])).U)
         # stoch_simul.m: the simulation starts from M_.endo_histval (histval), else from the steady state
         h = ws.M_.endo_histval
         y0 = isempty(h) ? nothing : (_optb(ws, "loglinear", false) ? log.(vec(h[:, end])) : vec(h[:, end]))
-        y = simulate(dr, ex; order=order, pruning=pruning, y0=y0)
-        oo.endo_simul = Matrix{Float64}(permutedims(y))        # n_endo x periods, as Dynare's simult
+        io = nothing
+        if nrep > 1 && haskey(ws.state, :modfile)
+            fn = splitext(basename(ws.state[:modfile]))[1]
+            od = joinpath(dirname(ws.state[:modfile]), fn, "Output"); mkpath(od)
+            io = open(joinpath(od, fn * "_simul"), "w")
+        end
+        yfirst = nothing; ex = nothing
+        for rep in 1:nrep
+            ex = if shocks !== nothing
+                size(shocks) == (periods, m.n_exo) || throw(ArgumentError("shocks must be periods x exo_nbr = ($periods, $(m.n_exo))"))
+                Matrix{Float64}(shocks)
+            else
+                e = zeros(periods, m.n_exo)
+                # simult.m: transpose(randn(nxs, periods)) * chol(Sigma_e(iv, iv)): the draws fill period by period
+                e[:, iv] .= permutedims(randn(r, length(iv), periods)) * U
+                e
+            end
+            y = simulate(dr, ex; order=order, pruning=pruning, y0=y0)
+            ym = Matrix{Float64}(permutedims(y))         # n_endo x periods, as Dynare's simult
+            rep == 1 && (yfirst = ym)
+            io === nothing || write(io, ym)
+        end
+        io === nothing || close(io)
+        oo.endo_simul = yfirst
         oo.exo_simul = ex
     end
     if !_optb(ws, "nomoments", false) && (order <= 2 || (order == 3 && pruning && periods == 0))
@@ -524,6 +543,16 @@ function _stoch_simul(ws, m, oo, var_list, shocks, rng)
         if mom !== nothing
             oo.mean = _col(mom.mean)
             oo.var = Matrix{Float64}(mom.var)
+            if _optb(ws, "contemporaneous_correlation", false) && !_optb(ws, "nocorr", false)
+                # disp_th_moments.m / disp_moments.m: NaN where the variance is (numerically) zero
+                V = Matrix{Float64}(mom.var); sd = sqrt.(max.(diag(V), 0.0))
+                ok = periods == 0 ? diag(V) .> 1e-12 : sd .>= 1e-10
+                C = fill(NaN, size(V))
+                for i in eachindex(sd), j in eachindex(sd)
+                    ok[i] && ok[j] && (C[i, j] = V[i, j] / (sd[i] * sd[j]))
+                end
+                oo.contemporaneous_correlation = C
+            end
             isempty(mom.autocorr) || (oo.autocorr = _cellrow(mom.autocorr))
             mom.variance_decomposition === nothing || (oo.variance_decomposition = Matrix{Float64}(mom.variance_decomposition))
             mom.conditional_variance_decomposition === nothing ||
@@ -557,6 +586,58 @@ function _stoch_simul(ws, m, oo, var_list, shocks, rng)
         end
         oo.irfs = irfs
     end
+    _optb(ws, "SpectralDensity.trigger", false) && _spectral_density!(ws, m, oo, ivar, order)
+    oo
+end
+
+"""
+UnivariateSpectralDensity.m: oo_.SpectralDensity.freqs (ngrid x 1) and .density (nvar x ngrid) for the variables of the list (HP or
+band-pass filtered when hp_filter / bandpass_filter is set), on the grid 0:pi/(ngrid-1):pi, ngrid = filtered_theoretical_moments_grid.
+At order >= 2 Dynare prints a message and returns (nothing is stored). A model with unit roots (Dynare keeps the variables whose
+loadings on the unstable subspace of lyapunov_symm vanish) is refused.
+"""
+function _spectral_density!(ws, m, oo, ivar, order)
+    order > 1 && return oo
+    _optf(ws, "one_sided_hp_filter", 0) != 0 && throw(ModelError("stoch_simul: UnivariateSpectralDensity:: spectral density estimate not available with one-sided HP filter"))
+    D = oo.dr
+    ghx, ghu = Matrix{Float64}(D.ghx), Matrix{Float64}(D.ghu)
+    ov = Int.(vec(D.order_var)); iv = invperm(ov)
+    _, _, cnt = dr_ordering(m.lead_lag_incidence)
+    nsp = cnt.npred + cnt.nboth
+    ikx = cnt.nstatic .+ (1:nsp)
+    A, ghu1 = ghx[ikx, :], ghu[ikx, :]
+    nsp > 0 && maximum(abs, LinearAlgebra.eigvals(A)) >= 1 - 1e-12 &&
+        throw(ModelError("stoch_simul: SpectralDensity.trigger for a model with unit roots is not supported"))
+    iky = iv[ivar]
+    aa, bb = ghx[iky, :], ghu[iky, :]
+    ng = _opti(ws, "filtered_theoretical_moments_grid", 512)
+    freqs = ng > 1 ? collect(range(0, pi; length=ng)) : zeros(1)
+    gain = if _optb(ws, "bandpass.indicator", false)
+        pb = Float64.(vec(_optf(ws, "bandpass.passband", [6.0 32.0])))
+        lo, hi = pb[2], max(2.0, pb[1])
+        Float64.((freqs .>= 2pi / lo) .& (freqs .<= 2pi / hi))
+    elseif _optf(ws, "hp_filter", 0) != 0
+        lam = Float64(_optf(ws, "hp_filter", 0))
+        4lam .* (1 .- cos.(freqs)) .^ 2 ./ (1 .+ 4lam .* (1 .- cos.(freqs)) .^ 2)
+    else
+        ones(ng)
+    end
+    Sig = Matrix{Float64}(m.Sigma_e)
+    IA = Matrix{Float64}(LinearAlgebra.I, nsp, nsp); IE = Matrix{Float64}(LinearAlgebra.I, m.n_exo, m.n_exo)
+    nv = length(iky)
+    f = zeros(nv, ng)
+    for (ig, w) in enumerate(freqs)
+        tp, tn = cis(w), cis(-w)
+        left = nsp > 0 ? vcat((IA - A * tn) \ ghu1, IE) : IE
+        right = nsp > 0 ? hcat(ghu1' / (IA - A' * tp), IE) : IE
+        fo = (1 / (2pi)) * (left * Sig * right)
+        L = nsp > 0 ? hcat(aa * tn, bb) : bb
+        Rr = nsp > 0 ? vcat(aa' * tp, bb') : bb'
+        g = L * fo * Rr
+        f[:, ig] = real.(diag(g)) .* gain[ig]^2
+    end
+    S = MStruct(); S.freqs = _col(freqs); S.density = f
+    oo.SpectralDensity = S
     oo
 end
 
@@ -826,6 +907,7 @@ function dynare(modfile::AbstractString; output=nothing, shocks=Dict{Int,Any}(),
         ws.oo_.steady_state = zeros(m.n_endo, 1)           # the driver's `oo_.steady_state = zeros(endo_nbr, 1)`; initval and steady fill it
         ws.oo_.exo_steady_state = zeros(m.n_exo, 1)
         ws.state[:matlab_options] = Dict{String,Any}()
+        ws.state[:modfile] = abspath(modfile)
         m.session.host.M.results = ws.M_
         m.session.host.oo.results = ws.oo_          # MATLAB lines of the file see (and write) this oo_
         _pf_register_host!(ws)                      # perfect_foresight_solver(M_, options_, oo_) & co. (src/pf_functions.jl)
@@ -899,6 +981,8 @@ end
 function _run_in_place!(ws, st, nss, shocks, rng)
     m = ws.model
     kind = st["statementName"]
+    msg = option_policy_message(kind, get_or(st, "options", nothing))          # src/option_policy.jl: honoured or refused, never ignored
+    msg === nothing || throw(ModelError("$kind: $msg"))
     _apply_matlab_options!(ws)
     if kind == "set_time"
         ws.state[:set_time] = string(get(st, "period", ""))

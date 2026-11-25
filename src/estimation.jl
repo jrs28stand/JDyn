@@ -599,7 +599,7 @@ function Estimation(m::Model; data=nothing, allow_unsupported::Bool=false, state
         end
         if k in _HONOURED_EST
             opts[k] = v
-        elseif k in _COSMETIC_EST
+        elseif k in _COSMETIC_EST || classify_option("estimation", k) === :harmless
         elseif !_est_flag(v)
         else
             push!(unsupported, k)
