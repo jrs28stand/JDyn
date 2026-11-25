@@ -332,14 +332,14 @@ end
         Dict("statementName" => "shock_decomposition", "options" => Dict{String,Any}("shock_decomp.with_epilogue" => true, "parameter_set" => "calibration")),
         Dict("statementName" => "realtime_shock_decomposition", "options" => Dict{String,Any}("shock_decomp.forecast_params" => [1], "shock_decomp.forecast" => 2)),
         Dict("statementName" => "initial_condition_decomposition", "options" => Dict{String,Any}("initial_condition_decomp.write_xls" => true)),
-        Dict("statementName" => "calib_smoother", "options" => Dict{String,Any}("filter_decomposition" => true, "datafile" => "est_nk_data", "first_obs" => 5, "nobs" => 60)),
+        Dict("statementName" => "calib_smoother", "options" => Dict{String,Any}("no_init_estimation_check_first_obs" => true, "datafile" => "est_nk_data", "first_obs" => 5, "nobs" => 60)),
     ]
     m.statements = vcat(m.statements, extra)
     buf = IOBuffer()
     res = with_logger(Logging.SimpleLogger(buf)) do
         JDyn.smooth(m)
     end
-    @test occursin("filter_decomposition", String(take!(buf)))
+    @test occursin("no_init_estimation_check_first_obs", String(take!(buf)))
     with_logger(Logging.SimpleLogger(buf)) do
         shock_decomposition(m, res)
     end

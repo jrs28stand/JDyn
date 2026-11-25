@@ -2,6 +2,7 @@
 # random numbers (when the file is run by `dynare()`), cell/struct conversions, set operations.
 
 import Random
+import Printf
 
 # ---------------------------------------------------------------------- timing
 "Start of the last `tic` (seconds); `t = tic` returns it."
@@ -130,6 +131,66 @@ bi!("cell2mat") do I, a, nout
     r, k = c.shape
     rows = Any[mhcat(Any[c.items[i + (j - 1) * r] for j in 1:k]) for i in 1:r]
     mvcat(rows)
+end
+# cellfun / arrayfun: the function is a handle or a name; 'UniformOutput' (default true: every result a scalar, joined in the
+# shape of the input) and 'ErrorHandler' (not supported).  The legacy names ('isempty', 'length', 'numel', 'ndims', 'prodofsize',
+# 'isreal', 'isclass') are ordinary functions of the same names here.
+function _mapfun(I, who, a, nout, items_of, shape_of)
+    length(a) >= 2 || merr("Invalid call to $who")
+    f = a[1]
+    f isa Handle || (f isa AbstractString && occursin(r"^[A-Za-z_]\w*$", f)) || merr("$who: argument NAME must be a string or function handle")
+    rest = Any[a[2:end]...]
+    uniform = true
+    while length(rest) >= 2 && rest[end-1] isa AbstractString && lowercase(rest[end-1]) in ("uniformoutput", "errorhandler")
+        key = lowercase(rest[end-1])
+        key == "errorhandler" && _unsup("$who with an ErrorHandler")
+        uniform = truth(rest[end]); rest = rest[1:end-2]
+    end
+    isempty(rest) && merr("Invalid call to $who")
+    shape = shape_of(rest[1])
+    for r in rest[2:end]
+        shape_of(r) == shape || merr("$who: all the input arguments must have the same size and shape (arg 1 and arg 2)")
+    end
+    its = [items_of(r) for r in rest]
+    n = length(its[1])
+    nres = max(nout, 1)
+    res = [Vector{Any}(undef, n) for _ in 1:nres]
+    for i in 1:n
+        args = Any[it[i] for it in its]
+        out = f isa Handle ? call_handle(I, f, args, nout) : mcall(I, f, args, nout, I.scope_stack[end])
+        if nout == 0 && isempty(out)
+            continue
+        end
+        length(out) >= nres || merr("$who: function returned fewer than nargout values")
+        for k in 1:nres
+            res[k][i] = out[k]
+        end
+    end
+    nout == 0 && n > 0 && !isassigned(res[1], 1) && return Any[]
+    outs = Any[]
+    for k in 1:nres
+        if uniform
+            vals = res[k]
+            all(v -> (v isa Real) || (v isa AbstractMatrix{<:Real} && length(v) == 1), vals) ||
+                merr("$who: all values must be scalars when UniformOutput = true; use the 'UniformOutput', false option")
+            sc = Any[v isa Real ? v : v[1] for v in vals]
+            allb = !isempty(sc) && all(v -> v isa Bool, sc)
+            M = allb ? Matrix{Bool}(reshape(Bool[v for v in sc], shape)) : Matrix{Float64}(reshape(Float64[v for v in sc], shape))
+            push!(outs, M)
+        else
+            push!(outs, Cell(Any[res[k]...], shape))
+        end
+    end
+    outs
+end
+bi!("cellfun") do I, a, nout
+    _mapfun(I, "cellfun", a, nout, c -> (c isa Cell || merr("cellfun: C must be a cell array"); c.items), c -> c.shape)
+end
+bi!("arrayfun") do I, a, nout
+    _mapfun(I, "arrayfun", a, nout,
+            x -> x isa Cell ? [Cell(Any[i], (1, 1)) for i in x.items] : is_num(x) ? Any[ret(fill(m, 1, 1)) for m in arr(x)] :
+                 _unsup("arrayfun over a $(mclass(x))"),
+            x -> x isa Cell ? x.shape : is_num(x) ? size(arr(x)) : (1, 1))
 end
 bi!("struct2cell") do I, a, nout
     _nargs(a, 1, 1, "struct2cell")
@@ -402,6 +463,50 @@ bi!("save") do I, a, nout
     Any[]
 end
 
+# datatomfile(s, var_list, names): write rows of oo_.endo_simul to <s>.m as `name = [ ... ];` (datatomfile.m), %15.8g per value
+function _g15(x::Real)
+    isnan(x) && return lpad("NaN", 15)
+    isinf(x) && return lpad(x > 0 ? "Inf" : "-Inf", 15)
+    Printf.format(Printf.Format("%15.8g"), x)
+end
+bi!("datatomfile") do I, a, nout
+    _need_exec("datatomfile")
+    isempty(a) && merr("Invalid call to datatomfile")
+    a[1] isa AbstractString || merr("datatomfile: the file name must be a string")
+    oo, M = I.globals["oo_"], I.globals["M_"]
+    es = try
+        get_field(oo, "endo_simul")
+    catch
+        zeros(0, 0)
+    end
+    (es isa AbstractMatrix && !isempty(es)) || merr("datatomfile: oo_.endo_simul is empty. Check why the simulation failed.")
+    f = String(a[1]); ext = splitext(f)[2]
+    isempty(ext) ? (f *= ".m") : ext == ".m" || merr("You did not provide a .m file as name of the datafile.")
+    endo = String[string(x) for x in get_field(M, "endo_names").items]
+    _names(x) = x isa Cell ? String[string(y) for y in x.items] : x isa AbstractString ? [String(x)] : merr("datatomfile: invalid variable list")
+    vl = length(a) >= 2 && !(a[2] isa AbstractMatrix && isempty(a[2])) ? _names(a[2]) : endo[1:Int(get_field(M, "orig_endo_nbr"))]
+    nm = length(a) >= 3 ? _names(a[3]) : vl
+    length(nm) == length(vl) || merr("datatomfile:: Second and third arguments must have the same number of rows (variables)!")
+    idx = Int[]
+    for v in vl
+        i = findfirst(==(v), endo)
+        i === nothing && merr("One of the specified variables does not exist")
+        push!(idx, i)
+    end
+    path = isabspath(f) ? f : joinpath(I.dir === nothing ? pwd() : I.dir, f)
+    open(path, "w") do io
+        println(io, "% Dataset generated by ", get_field(M, "fname"), ".mod")
+        for (k, i) in enumerate(idx)
+            println(io, nm[k], " = [")
+            for x in es[i, :]
+                println(io, _g15(x))
+            end
+            println(io, "];\n")
+        end
+    end
+    Any[]
+end
+
 "Dynare writes <fname>/Output/<fname>_results.mat (M_, oo_, options_) at the end of a run; other tests load it."
 function save_results_mat(dir::AbstractString, fname::AbstractString, M_, oo_, options_)
     out = joinpath(dir, fname, "Output"); mkpath(out)
@@ -414,4 +519,75 @@ function save_results_mat(dir::AbstractString, fname::AbstractString, M_, oo_, o
         end
     end
     MAT.matwrite(joinpath(out, fname * "_results.mat"), d)
+end
+
+# ---------------------------------------------------------------------- regexp / regexpi / regexprep
+# PCRE through Julia's Regex.  Output order as Octave: start, end, token extents, match, tokens, names, split; selectors
+# 'match', 'tokens', 'names', 'start', 'end', 'split', 'once' reorder the outputs; a cell array of strings maps over its elements.
+function _re_one(str::AbstractString, pat::AbstractString, opts::Vector{String}, nout::Int, icase::Bool)
+    occursin(r"\(\?<[A-Za-z]", pat) && _unsup("regexp with named tokens")
+    once = "once" in opts
+    sel = [o for o in opts if o in ("match", "tokens", "names", "start", "end", "split", "tokenExtents")]
+    rx = Regex(pat, icase || "ignorecase" in opts ? "i" : "")
+    ms = collect(eachmatch(rx, str))
+    once && length(ms) > 1 && (ms = ms[1:1])
+    starts = Float64[m.offset for m in ms]
+    ends = Float64[m.offset + ncodeunits(m.match) - 1 for m in ms]
+    mt = Any[m.match for m in ms]
+    ntok(m) = isempty(m.captures) ? Any[m.match] : Any[c === nothing ? "" : String(c) for c in m.captures]
+    tk = Any[(c = ntok(m); Cell(c, (1, length(c)))) for m in ms]
+    # split
+    pieces = Any[]
+    pos = 1
+    for m in ms
+        push!(pieces, String(str[pos:prevind(str, m.offset)]))
+        pos = m.offset + ncodeunits(m.match)
+    end
+    push!(pieces, pos <= ncodeunits(str) ? String(str[pos:end]) : "")
+    function pack(v, kind)
+        if once
+            if kind in (:start, :end)
+                return isempty(v) ? zeros(0, 0) : v[1]
+            elseif kind == :match
+                return isempty(v) ? "" : v[1]
+            elseif kind == :tokens
+                return isempty(v) ? Cell(Any[], (0, 0)) : v[1]
+            end
+        end
+        kind in (:start, :end) && return isempty(v) ? zeros(1, 0) : ret(reshape(Float64.(v), 1, :))
+        Cell(Any[v...], (1, length(v)))
+    end
+    nmstruct = MStruct()
+    vals = Dict(:start => pack(starts, :start), :end => pack(ends, :end), :match => pack(mt, :match), :tokens => pack(tk, :tokens),
+                :names => nmstruct, :split => Cell(pieces, (1, length(pieces))), :tokenExtents => Cell(Any[], (1, 0)))
+    default = [:start, :end, :tokenExtents, :match, :tokens, :names, :split]
+    order = isempty(sel) ? default : vcat([Symbol(o) for o in sel], [d for d in default if !(String(d) in sel)])
+    Any[vals[o] for o in order[1:max(nout, 1)]]
+end
+function _regexp(I, a, nout, icase, who)
+    length(a) >= 2 || merr("Invalid call to $who")
+    pat = _str(a[2], who)
+    opts = String[_str(o, who) for o in a[3:end]]
+    s = a[1]
+    if s isa Cell
+        n = max(nout, 1)
+        outs = [Vector{Any}(undef, length(s.items)) for _ in 1:n]
+        for (i, x) in enumerate(s.items)
+            x isa AbstractString || merr("$who: all cells must be strings")
+            r = _re_one(x, pat, opts, n, icase)
+            for k in 1:n; outs[k][i] = r[k]; end
+        end
+        return Any[Cell(outs[k], s.shape) for k in 1:n]
+    end
+    s isa AbstractString || merr("$who: the input must be a string or a cell array of strings")
+    _re_one(s, pat, opts, nout, icase)
+end
+bi!("regexp") do I, a, nout; _regexp(I, a, nout, false, "regexp"); end
+bi!("regexpi") do I, a, nout; _regexp(I, a, nout, true, "regexpi"); end
+bi!("regexprep") do I, a, nout
+    length(a) >= 3 || merr("Invalid call to regexprep")
+    rep = replace(_str(a[3], "regexprep"), r"\$(\d)" => s"\\\1")
+    once = any(o -> o isa AbstractString && o == "once", a[4:end])
+    f(x) = replace(x, Regex(_str(a[2], "regexprep")) => SubstitutionString(rep); count=once ? 1 : typemax(Int))
+    a[1] isa Cell ? Cell(Any[f(x) for x in a[1].items], a[1].shape) : f(_str(a[1], "regexprep"))
 end

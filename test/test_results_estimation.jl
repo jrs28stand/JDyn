@@ -162,7 +162,7 @@ end
     end
     cd(d) do
         @test_throws Exception with_logger(NullLogger()) do
-            JDyn.estimation!(ws; datafile="est_nk_data", mode_compute=0, selected_variables_only=true)
+            JDyn.estimation!(ws; datafile="est_nk_data", mode_compute=0, no_init_estimation_check_first_obs=true)
         end
     end
     d2 = _re_copy()

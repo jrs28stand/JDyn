@@ -618,8 +618,19 @@ function _run_statements!(m::Model; on_command=nothing)
     m
 end
 
+"""
+(first period, last period, value) entries of a `values` expression over `p1:p2`: a scalar gives the range as one entry, a
+vector as long as the range gives one entry per period (MATLAB's `x(p1:p2) = a`).
+"""
+function _period_values(m::Model, expr, p1::Int, p2::Int, what)
+    v = _value(m, expr; vector=true)
+    v isa Real && return [(p1, p2, Float64(v))]
+    length(v) == p2 - p1 + 1 || throw(ModelError("$what: $(length(v)) values for the periods $p1:$p2"))
+    [(p1 + i - 1, p1 + i - 1, Float64(v[i])) for i in eachindex(v)]
+end
+
 "Value of an expression in a Dynare statement (Dynare passes these to MATLAB)."
-_value(m::Model, s; locals=nothing) = eval_value(m.session, string(s), locals)
+_value(m::Model, s; locals=nothing, vector::Bool=false) = eval_value(m.session, string(s), locals; vector=vector)
 
 "Value of an initval/endval right-hand side: references to variables read oo_.steady_state."
 function _eval_with_vars(m::Model, s)
@@ -846,7 +857,10 @@ function _shocks!(m::Model, st)
         for v in d["values"]
             # dated periods are resolved against first_simulation_period when the perfect foresight statements are replayed
             (v["period1"] isa AbstractString && startswith(v["period1"], "dates(")) && continue
-            push!(m.det_shocks, (ix[d["var"]], Int(_numval(v["period1"])), Int(_numval(v["period2"])), _value(m, v["value"])))
+            p1, p2 = Int(_numval(v["period1"])), Int(_numval(v["period2"]))
+            for (q1, q2, val) in _period_values(m, v["value"], p1, p2, "shocks: $(d["var"])")       # `values (a)` with a vector a: one value per period
+                push!(m.det_shocks, (ix[d["var"]], q1, q2, val))
+            end
         end
     end
     for key in ("skewness", "coskewness")

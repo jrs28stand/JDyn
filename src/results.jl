@@ -447,6 +447,11 @@ end
 
 function _stoch_simul(ws, m, oo, var_list, shocks, rng)
     order = _opti(ws, "order", 2)
+    if order != 1 && _hessian_eq_zero_dynare(m)           # stoch_simul.m: M_.hessian_eq_zero (a linear model) forces order 1
+        warn_once(m, "stoch_simul: using order = 1 because Hessian is equal to zero")
+        order = 1
+        ws.options_.order = 1.0
+    end
     pruning = _optb(ws, "pruning", false)
     order > 1 && m.max_deriv_order < order && throw(ModelError("stoch_simul(order=$order) needs derivatives of order $order: run dynare(...; output=\"$(order == 2 ? "second" : "third")\")"))
     solved = pop!(ws.state, :solved_dr, nothing)        # discretionary_policy: the rules are not the perturbation solution
@@ -473,6 +478,14 @@ function _stoch_simul(ws, m, oo, var_list, shocks, rng)
         n_exo_det(m) > 0 && _store_exo_det_dr!(oo.dr, m, dr)
     end
     oo.dr.eigval = _eigcol(eigv)
+    if _optb(ws, "aim_solver", false) && order == 1 && !kos && solved === nothing
+        # AIM_first_order_solver.m: dr.eigval = eig(kalman_transition_matrix(dr, nstatic+(1:nspred), 1:nspred)), the nspred
+        # eigenvalues of the state transition, not the generalised eigenvalues of the QZ problem
+        _, _, cnt = dr_ordering(m.lead_lag_incidence)
+        nspred = cnt.npred + cnt.nboth
+        G = Matrix{Float64}(dr["ghx"])[cnt.nstatic+1:cnt.nstatic+nspred, 1:nspred]
+        oo.dr.eigval = _eigcol(LinearAlgebra.eigvals(G))
+    end
     # stoch_simul.m leaves oo_.steady_state alone (the initval values, or the last `steady`): resol only fills oo_.dr.ys. Under
     # loglinear it logs oo_.steady_state (log_variable) once and flags options_.logged_steady_state, undone at the next solve.
     _optb(ws, "loglinear", false) && _log_ss!(ws)
@@ -901,7 +914,10 @@ function _run_in_place!(ws, st, nss, shocks, rng)
         return
     end
     if kind in ("initval", "endval")                   # these blocks also write oo_.steady_state
-        ws.oo_.steady_state = _col(Float64[get(m.oo, v, 0.0) for v in m.endo_names])
+        ss0 = Float64[get(m.oo, v, 0.0) for v in m.endo_names]
+        # the preprocessor's writeAuxVarInitval: initval/endval also set the auxiliary variables (leads, lags, log) from the originals
+        ssf = try fill_auxiliary(m, ss0, exo_steady(m), m.params) catch; ss0 end
+        ws.oo_.steady_state = _col(all(isfinite, ssf) ? ssf : ss0)
         ws.oo_.exo_steady_state = _col(exo_steady(m))
         n_exo_det(m) > 0 && (ws.oo_.exo_det_steady_state = _col(exo_det_steady(m)))
         return
@@ -909,6 +925,7 @@ function _run_in_place!(ws, st, nss, shocks, rng)
         _histval!(ws)
         return
     end
+    kind == "estimated_params" && (m.options["estimated_params_executed"] = get(m.options, "estimated_params_executed", 0) + 1)
     kind == "conditional_forecast_paths" && return _cf_paths_statement!(ws, st)
     if kind == "ramsey_model"
         _ramsey_model_statement!(ws, st)           # src/results_policy.jl
@@ -975,9 +992,12 @@ end
 function _apply_matlab_options!(ws)
     mo = ws.model.matlab_options
     seen = ws.state[:matlab_options]
+    # an assignment of the value a field already had still counts when a Dynare command has changed the field since
+    # (options_.lik_init=1 after an estimation that left 3)
+    asg = ws.model.session === nothing ? Set{String}() : ws.model.session.host.options.assigned
     for k in keys(mo)
         v = mo[k]
-        isequal(get(seen, k, nothing), v) && continue
+        isequal(get(seen, k, nothing), v) && !(k in asg) && continue
         seen[k] = deepcopy(v)
         if v isa MStruct && get(ws.options_, k, nothing) isa MStruct
             _merge_struct!(ws.options_[k], v)
@@ -985,6 +1005,7 @@ function _apply_matlab_options!(ws)
             ws.options_[k] = deepcopy(v)
         end
     end
+    empty!(asg)
 end
 function _merge_struct!(dst::MStruct, src::MStruct)
     for k in keys(src)

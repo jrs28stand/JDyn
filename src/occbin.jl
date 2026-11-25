@@ -634,7 +634,10 @@ function surprise_shocks(ob::Occbin)
     last = maximum(Int(_numval(v["period2"])) for st in blocks for s in st["surprise_shocks"] for v in s["values"])
     out = zeros(last, m.n_exo)
     for st in blocks, s in st["surprise_shocks"], v in s["values"]
-        out[Int(_numval(v["period1"])):Int(_numval(v["period2"])), m.ix[s["var"]]] .= _value(m, v["value"])
+        p1, p2 = Int(_numval(v["period1"])), Int(_numval(v["period2"]))
+        for (q1, q2, val) in _period_values(m, v["value"], p1, p2, "shocks(surprise): $(s["var"])")
+            out[q1:q2, m.ix[s["var"]]] .= val
+        end
     end
     cols = [j for j in 1:m.n_exo if any(!iszero, out[:, j])]
     out[:, cols], cols
