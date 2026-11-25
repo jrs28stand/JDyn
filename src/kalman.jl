@@ -183,17 +183,20 @@ function _forecast_error_inverse(F::AbstractMatrix, kalman_tol, rescale)
     if !rescale
         if n == 1
             f = F[1, 1]
-            (f != 0 && isfinite(f)) && return log(f), reshape([1.0 / f], 1, 1)
+            (f > 0 && isfinite(f)) && return log(f), reshape([1.0 / f], 1, 1)   # f < 0: Dynare's log is complex, LIK is then Inf (info 46)
         elseif n == 2
             a, b, c, d = F[1, 1], F[1, 2], F[2, 1], F[2, 2]
             det2 = a * d - b * c
-            if det2 != 0 && isfinite(det2)
+            if det2 > 0 && isfinite(det2)
                 n1 = max(abs(a) + abs(c), abs(b) + abs(d))
                 det2 * det2 / (n1 * n1) >= kalman_tol * abs(det2) && return log(det2), [d -b; -c a] ./ det2   # rcond = |det| / ||F||_1^2
             end
         else
             iF, rc = _inv_rcond(F)
-            rc >= kalman_tol && return log(det(F)), iF
+            if rc >= kalman_tol
+                dF = det(F)
+                dF > 0 && return log(dF), iF
+            end
         end
     end
     d = diag(F)
@@ -202,7 +205,9 @@ function _forecast_error_inverse(F::AbstractMatrix, kalman_tol, rescale)
     ss = sig * sig'
     iFs, rc = _inv_rcond(F ./ ss)
     rc < kalman_tol && return nothing
-    log(det(F ./ ss)) + 2 * sum(log, sig), iFs ./ ss
+    dFs = det(F ./ ss)
+    dFs > 0 || return nothing
+    log(dFs) + 2 * sum(log, sig), iFs ./ ss
 end
 
 """

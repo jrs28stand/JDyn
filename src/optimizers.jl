@@ -147,7 +147,7 @@ function _mr_hessian(fcn, x, penalty, hflag, htol0, hi::_HessInfo, lb, ub)
         hh_mat = gga' * gga
         hh_mat0 = ggh' * ggh
         A = Matrix(Diagonal(2 .* hi.h1))
-        ihh = A' * (hh_mat \ A)
+        ihh = A' * _octave_solve(hh_mat, A)
         hessian_mat = vec(hh_mat0)
         if any(isnan, hessian_mat)
             hh_mat0 = Matrix{Float64}(I, n, n)
@@ -160,6 +160,18 @@ function _mr_hessian(fcn, x, penalty, hflag, htol0, hi::_HessInfo, lb, ub)
     end
     isnan(hi.htol_rel) && (htol1 = hhtol)
     hessian_mat, gg, htol1, ihh, hh_mat0, hh1, fcount
+end
+"""
+`A \\ B` as Octave (the reference of the sweeps) computes it for a singular square `A`: a warning and the minimum-norm
+least-squares solution, instead of Julia's `SingularException`.
+"""
+function _octave_solve(A::AbstractMatrix, B::AbstractVecOrMat)
+    try
+        return A \ B
+    catch e
+        e isa LinearAlgebra.SingularException || rethrow()
+        return LinearAlgebra.pinv(A) * B
+    end
 end
 _setgrow!(v, i, x) = (i > length(v) ? (append!(v, fill(zero(eltype(v)), i - length(v) - 1)); push!(v, x)) : (v[i] = x); v)
 

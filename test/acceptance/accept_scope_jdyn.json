@@ -1,0 +1,38 @@
+{
+ "_comment": "JDyn's scope: Dynare features JDyn has decided not to implement (for now). Format and rules: pydyn-rl docs/ACCEPTANCE.md rule 6. A listed test that JDyn refuses is `excluded`; one it runs is compared normally and flagged.",
+ "entries": [
+  {
+   "feature": "semi-structural model tools: equation-by-equation estimation (dyn_ols, sur, pooled_ols, pooled_fgls, olsgibbs, surgibbs), cherrypick and the equation.* package (matlab/ols, matlab/+equation)",
+   "reason": "parked by decision: not part of the DSGE workflow JDyn targets",
+   "ids": [
+    "ecb/*/*",
+    "ecb/SUR/*",
+    "ecb/SURGibbs/*",
+    "ecb/cherrypick/*",
+    "ecb/pooled_fgls/*",
+    "ecb/pooled_ols/*",
+    "estimation/univariate/*",
+    "estimation/univariate/bayesian*",
+    "estimation/univariate/ols/*",
+    "pac/trend-component-27/*",
+    "pac/trend-component-28/*",
+    "pac/trend-component-29/*",
+    "pac/var-12/example5"
+   ],
+   "expect": "cherrypick|dyn_ols|\\bsur\\b|pooled_ols|pooled_fgls|surgibbs|olsgibbs|equation\\.|set_prior|cannot be interpreted"
+  },
+  {
+   "feature": "identification beyond the first-order moments' parameter Jacobians (get_perturbation_params_derivs at order > 1, osr analytic_derivation)",
+   "reason": "parked by decision",
+   "ids": [
+    "identification/as2007/as2007_order_1_2_3",
+    "identification/as2007/as2007_order3_no_stoch_simul",
+    "analytic_derivatives/BrockMirman_PertParamsDerivs",
+    "analytic_derivatives/burnside_3_order_PertParamsDerivs",
+    "optimal_policy/OSR/osr_example",
+    "optimal_policy/OSR/osr_objective_correctness_anal_deriv"
+   ],
+   "expect": "analytic|identification|orders|set_prior|cannot be interpreted"
+  }
+ ]
+}

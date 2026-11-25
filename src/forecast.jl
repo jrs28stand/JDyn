@@ -666,9 +666,25 @@ function forecast!(ws::DynareWorkspace, var_list=String[]; draws=nothing, me_dra
     H = Matrix{Float64}(ws.M_.H)
     np = length(m.varobs)
     (size(H) != (np, np) || all(iszero, H)) && (H = me_H(m, m.varobs))
-    res = _forecast_simul(dr, y0, vl, m; periods=_opti(ws, "periods", 0), conf_sig=_optf(ws, "forecasts.conf_sig", 0.9), order=order,
-                          pruning=_optb(ws, "pruning", false), Sigma_e=Matrix{Float64}(ws.M_.Sigma_e), H=H,
-                          varobs=m.varobs, replic=_opti(ws, "forecast_replic", 1000), draws=draws, me_draws=me_draws, rng=rng, max_lag=max(ml, 1))
+    periods = _opti(ws, "periods", 0)
+    pruning = _optb(ws, "pruning", false)
+    xd = nothing
+    if n_exo_det(m) > 0
+        # varexo_det: the paths of the `shocks` blocks and the deterministic-exogenous decision rules (as `forecast(m)`)
+        order > 2 && throw(ModelError("forecasts.run: forecasting with varexo_det does not support order>2."))
+        order == 2 && pruning && throw(ModelError("forecasts.run: forecasting with varexo_det does not support pruning."))
+        X, _ = exo_det_paths(m, periods, periods == 0 ? 5 : periods)
+        xdr = exo_det_decision_rules(m, dr)
+        xd = (X=X, rules=xdr, sim=ex -> permutedims(simult_varexo_det(m, xdr, ex, X; y0=y0, order=order)), iter=size(X, 1) - 1)
+    end
+    res = _forecast_simul(dr, y0, vl, m; periods=periods, conf_sig=_optf(ws, "forecasts.conf_sig", 0.9), order=order,
+                          pruning=pruning, Sigma_e=Matrix{Float64}(ws.M_.Sigma_e), H=H,
+                          varobs=m.varobs, replic=_opti(ws, "forecast_replic", 1000), draws=draws, me_draws=me_draws, rng=rng, max_lag=max(ml, 1), xd=xd)
+    if xd !== nothing
+        hz = periods == 0 ? 5 : periods
+        exo = Dict{String,Vector{Float64}}(v => Float64.(xd.X[2:1+hz, i]) for (i, v) in enumerate(exo_det_names(m)))
+        res = ForecastResult(res.var_list, res.Mean, res.HPDinf, res.HPDsup, res.HPDinf_ME, res.HPDsup_ME, res.periods, res.conf_sig, res.order, exo)
+    end
     oo.forecast = forecast_struct(res)
     ws.state[:forecast] = res
     plots === true && _statement_figures!(ws, "forecast", Dict{String,Any}())       # src/plots_hooks.jl
@@ -788,11 +804,11 @@ function _cf_eval(ws::DynareWorkspace, text)
     for mt in eachmatch(r"[A-Za-z_]\w*", s)
         name = mt.match
         if haskey(m.ie, name)
-            ss === nothing && return _eval_with_vars(m, s)
+            ss === nothing && return _value(m, s; vector=true)
             locals[name] = Float64(ss[m.ie[name]])
         end
     end
-    _value(m, s; locals=locals)
+    _value(m, s; locals=locals, vector=true)
 end
 
 "conditional_forecast_paths where it stands: the targets (values may be MATLAB expressions, scalars or vectors)."

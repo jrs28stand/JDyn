@@ -5,7 +5,7 @@
             [--jobs 2] [--timeout 900] [--only substr ...] [--ids id ...] [--force] [--all] [--limit N]
 
 Entries, test ids, file order and scratch-folder layout are pydyn's (tools/accept_manifest.py, tools/accept_octave.py: `relid`,
-`prepare_scratch`, `cost`), and Dynare's own run artifacts are copied into the scratch folder before each file, as
+`prepare_scratch`, `cost`), and a test never starts with the files Dynare wrote when running that same file (see --ref-artifacts), as
 tools/accept_pydyn.py does.  The files of an entry run one after the other in one scratch folder, through
 `JDyn.dynare()` in a long-lived Julia worker (test/acceptance/accept_worker.jl).  Per test id it writes
 `<out>/<id>.mat` and `<out>/<id>.json` (format: tools/accept_compare.py).  Resumable (ids with a .json are skipped unless --force);
@@ -158,13 +158,15 @@ class Worker:
         return info, how
 
 
-def copy_ref_artifacts(ref, mod, scratch):
+def copy_ref_artifacts(ref, mod, scratch, overwrite=True):
     art = Path(ref) / "_files" / relid(mod)
     if art.is_dir():
         dest = scratch / "tests" / Path(mod).parent
         for f in art.rglob("*"):
             if f.is_file():
                 t = dest / f.relative_to(art)
+                if t.exists() and not overwrite:
+                    continue
                 t.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy(f, t)
 
@@ -190,12 +192,14 @@ def setup_mods(entry, mods):
     return todo
 
 
-def run_setup(w, m, scratch, timeout):
+def run_setup(w, m, scratch, timeout, ref):
     path = os.path.normpath(scratch / "tests" / m)
     try:
-        w.run({"setup": True, "path": path, "dynare_args": []}, timeout)
+        info, how = w.run({"setup": True, "path": path, "dynare_args": []}, timeout)
     except KeyboardInterrupt:
         return
+    if how != "ok" or info.get("status") != "ok":          # the earlier file did not complete: Dynare's outputs of THAT file
+        copy_ref_artifacts(ref, m, scratch, overwrite=False)
     log(f"setup    {relid(m)} (re-run unrecorded: a later file of the entry reads its outputs)")
 
 
@@ -205,7 +209,7 @@ def run_entry(w, entry, mods, out, ref, timeout, ref_artifacts):
     try:
         prepare_scratch(entry, SRC, scratch)
         last = max(i for i, m in enumerate(entry["test"]) if m in mods)
-        if ref_artifacts:                  # files written by Dynare's run of the earlier files that are not run now (resume, --ids)
+        if ref_artifacts:                  # legacy diagnosis mode (--ref-artifacts): Dynare's outputs of every earlier file
             for m in entry["test"][:last]:
                 if m.endswith(".mod") and m not in mods:
                     copy_ref_artifacts(ref, m, scratch)
@@ -213,7 +217,7 @@ def run_entry(w, entry, mods, out, ref, timeout, ref_artifacts):
             if _stop.is_set():
                 return
             if m in setups:
-                run_setup(w, m, scratch, timeout)
+                run_setup(w, m, scratch, timeout, ref)
                 continue
             if m not in mods:
                 continue
@@ -222,7 +226,7 @@ def run_entry(w, entry, mods, out, ref, timeout, ref_artifacts):
             mat.parent.mkdir(parents=True, exist_ok=True)
             if mat.exists():
                 mat.unlink()
-            if ref_artifacts:
+            if ref_artifacts:                  # legacy: the file's OWN Dynare outputs (diagnosis only)
                 copy_ref_artifacts(ref, m, scratch)
             path = os.path.normpath(scratch / "tests" / m)
             t = time.time()
@@ -237,6 +241,8 @@ def run_entry(w, entry, mods, out, ref, timeout, ref_artifacts):
                 mat.unlink()
             if info.get("status") == "ok" and not mat.exists():
                 info.update(status="error", message="no .mat written")
+            if info.get("status") != "ok" and not ref_artifacts:     # a later file of the entry gets what Dynare's run of this one wrote
+                copy_ref_artifacts(ref, m, scratch, overwrite=False)
             tmp = js.with_suffix(".json.tmp")
             tmp.write_text(json.dumps(info, indent=1))
             os.replace(tmp, js)
@@ -282,7 +288,8 @@ def main(argv=None):
     ap.add_argument("--force", action="store_true")
     ap.add_argument("--all", action="store_true", help="also run tests whose Dynare reference run failed")
     ap.add_argument("--limit", type=int, help="at most N entries")
-    ap.add_argument("--no-ref-artifacts", action="store_true")
+    ap.add_argument("--ref-artifacts", action="store_true",
+                    help="legacy: pre-copy each file's own Dynare outputs (diagnosis only; made 46 files refuse for the wrong reason)")
     ap.add_argument("--julia-arg", action="append", default=[], help="extra argument for julia (e.g. --sysimage=...)")
     a = ap.parse_args(argv)
     out, ref = Path(a.out), Path(a.ref)
@@ -312,7 +319,7 @@ def main(argv=None):
                 except queue.Empty:
                     return
                 try:
-                    run_entry(w, e, mods, out, ref, a.timeout, not a.no_ref_artifacts)
+                    run_entry(w, e, mods, out, ref, a.timeout, a.ref_artifacts)
                 except Exception as ex:  # noqa: BLE001
                     log("entry failed:", mods, repr(ex))
                     time.sleep(5)

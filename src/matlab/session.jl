@@ -12,7 +12,9 @@ mutable struct HostOptions <: HostStruct
     store::MStruct                 # model.matlab_options: what the .mod file assigned
     unknown::Set{String}           # fields a Dynare command has overwritten since
     defaults_valid::Bool
+    assigned::Set{String}          # fields the MATLAB lines assigned since the workspace last took them over (dynare())
 end
+HostOptions(store, unknown, valid) = HostOptions(store, unknown, valid, Set{String}())
 mutable struct HostOO <: HostStruct
     session::Any
     results::Any                   # dynare(): the workspace's oo_ (an MStruct), which MATLAB lines read and write
@@ -247,7 +249,7 @@ function peek_field(O::HostOptions, name; raw=false)
     name in O.unknown && throw(Unsupported("options_.$name was changed by a Dynare command; its value is not known to JDyn", "results"))
     get(O.store, name, nothing)
 end
-set_field!(O::HostOptions, name, value) = (O.store[name] = value; delete!(O.unknown, name))
+set_field!(O::HostOptions, name, value) = (O.store[name] = value; delete!(O.unknown, name); push!(O.assigned, name))
 
 # ---- oo_
 # While loading (JDyn.load) results do not exist; under dynare() commands run in place and oo_ is the
@@ -881,12 +883,14 @@ function exec_dyn!(s::ModSession, st)
         h.options.defaults_valid = false
         forget!(h.options, get_or(stj, "options", Dict()))
     end
+    # Dynare's steady and stoch_simul write oo_ and M_ only; the workspace variables named after the model's variables
+    # (and <endo>_<shock> irfs) appear when the .mod file calls send_endogenous_variables_to_workspace or
+    # send_irfs_to_workspace, which the interpreter runs itself. Their results were tainted before (shadow_results!), which
+    # made `n0 = n0_fss` in an endval block after 'steady' refuse when the model has an endogenous variable n0.
     if kind == "steady"
         on_solve!(s, true)
-        shadow_results!(s, kind)
     elseif kind == "stoch_simul"
         on_solve!(s, false)
-        shadow_results!(s, kind)
     elseif kind in ("check", "resid")
     elseif !(kind in DECL_KINDS)
         after_compute!(s, kind, "it may have been changed by '$kind'")
@@ -1008,7 +1012,7 @@ function shadow_results!(s::ModSession, kind)
 end
 
 "Value of an expression in a Dynare statement. Parameter names mean M_.params, as in Dynare's driver."
-function eval_value(s::ModSession, text::AbstractString, locals=nothing)
+function eval_value(s::ModSession, text::AbstractString, locals=nothing; vector::Bool=false)
     m, h = s.model, s.host
     try
         parsed = get(_EVAL_CACHE, text, nothing)
@@ -1035,7 +1039,8 @@ function eval_value(s::ModSession, text::AbstractString, locals=nothing)
         end
         push!(s.I.scope_stack, sc)
         try
-            return scalar(ev(s.I, body[1].e, sc), "value")
+            val = ev(s.I, body[1].e, sc)
+            return vector && val isa AbstractArray && length(val) > 1 ? Float64.(vec(val)) : scalar(val, "value")
         finally
             pop!(s.I.scope_stack)
         end

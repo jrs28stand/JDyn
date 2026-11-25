@@ -477,20 +477,22 @@ round_half_up(x) = Int(floor(x + 0.5))
 # ====================================================================== the estimation object
 const _COSMETIC_EST = Set(["nograph", "nodisplay", "graph_format", "TeX", "tex", "nodiagnostic", "console_mode", "silent_optimizer",
     "plot_priors", "debug", "noprint", "no_graph.posterior", "graph_save_formats", "dirname", "verbosity", "mode_check.nolik",
-    "mode_check.neighbourhood_size", "mode_check.symmetric_plots", "xls_sheet", "xls_range"])
+    "mode_check.neighbourhood_size", "mode_check.symmetric_plots", "xls_sheet", "xls_range",
+    "fast_kalman_filter",       # Chandrasekhar recursions: the standard filter gives the same likelihood and smoother
+    "lyapunov_db", "lyapunov_fp", "lyapunov_srs"])      # the method that solves the Lyapunov equation: JDyn has one, the solution is the same
 # options the code acts on
 const _HONOURED_EST = Set(["datafile", "first_obs", "nobs", "loglinear", "logdata", "prefilter", "presample", "lik_init",
     "diffuse_filter", "kalman_algo", "kalman_tol", "diffuse_kalman_tol", "riccati_tol", "prior_trunc", "mode_compute", "mh_replic",
     "mh_nblck", "mh_jscale", "mh_drop", "mh_init_scale_factor", "order", "use_univariate_filters_if_singularity_is_detected",
     "rescale_prediction_error_covariance", "cova_compute", "mh_conf_sig", "optim_opt", "gstep", "Harvey_scale_factor",
     "lyapunov_complex_threshold", "mode_check.status", "nodiagnostic",
-    "smoother", "filtered_vars", "filter_step_ahead", "filter_covariance", "smoothed_state_uncertainty", "forecast", "forecasts.conf_sig",
+    "smoother", "filtered_vars", "filter_step_ahead", "filter_covariance", "smoothed_state_uncertainty", "filter_decomposition", "forecast", "forecasts.conf_sig",
     "sub_draws", "nodecomposition", "ar", "conditional_variance_decomposition", "contemporaneous_correlation", "moments_varendo",
     "bayesian_irf", "irf", "irf_shocks", "relative_irf", "consider_all_endogenous", "consider_all_endogenous_and_auxiliary",
     "consider_only_observed", "posterior_max_subsample_draws", "heteroskedastic_filter",
     "mode_file", "load_mh_file", "mh_recover", "posterior_sampling_method", "posterior_sampler_options", "mcmc_jumping_covariance",
     "mh_tune_jscale", "mh_tune_guess", "load_results_after_load_mh", "dsge_var", "dsge_varlag", "endogenous_prior",
-    "mh_posterior_mode_estimation"])
+    "mh_posterior_mode_estimation", "selected_variables_only"])
 # preprocessor option names -> the names used here
 const _EST_ALIASES = Dict("posterior_sampler_options.posterior_sampling_method" => "posterior_sampling_method",
     "posterior_sampler_options.sampling_opt" => "posterior_sampler_options", "MCMC_jumping_covariance" => "mcmc_jumping_covariance",
@@ -688,6 +690,20 @@ end
 _num(est::Estimation, s) = s isa Real ? Float64(s) : Float64(_value(est.model, s))
 
 # ------------------------------------------------------------------ parameters and priors
+"""
+For each `estimated_params` block of the file, in order: does it have the `overwrite` option? Read from the text of the .mod
+file (comments removed); `nothing` when the number of keywords found is not `nblocks` (macro directives can hide or repeat blocks).
+"""
+function _estimated_params_overwrite_flags(m::Model, nblocks::Int)
+    f = joinpath(m.mod_dir, m.name * ".mod")
+    isfile(f) || return nothing
+    txt = read(f, String)
+    txt = replace(txt, r"/\*.*?\*/"s => " ")
+    txt = replace(txt, r"(//|%)[^\n]*" => "")
+    hits = [occursin(r"overwrite", something(mt.captures[1], "")) for mt in eachmatch(r"(?<![\w.])estimated_params\s*(\([^)]*\))?\s*;", txt)]
+    length(hits) == nblocks ? hits : nothing
+end
+
 function _setup_parameters!(est::Estimation)
     m = est.model
     blocks = [st for st in m.statements if get(st, "statementName", "") == "estimated_params"]
@@ -696,8 +712,20 @@ function _setup_parameters!(est::Estimation)
         k in ("estimated_params_remove", "prior", "std_prior", "corr_prior") && throw(EstimationError("$k blocks are not supported"))
     end
     isempty(blocks) && throw(EstimationError("the model has no estimated_params block"))
-    # several blocks: the JSON does not say whether a later block has the 'overwrite' option
-    length(blocks) > 1 && throw(EstimationError("several estimated_params blocks are not supported"))
+    # several blocks: the JSON does not say whether a later block has the 'overwrite' option; it is read from the text of the .mod
+    # file (each `estimated_params` keyword, in order). Only the blocks run so far count (the results layer counts them); a
+    # later block with `(overwrite)` replaces the entries so far, any other one adds to them.
+    if length(blocks) > 1
+        upto = min(get(m.options, "estimated_params_executed", length(blocks)), length(blocks))
+        flags = _estimated_params_overwrite_flags(m, length(blocks))
+        flags === nothing && throw(EstimationError("several estimated_params blocks are not supported (the .mod file's `estimated_params(overwrite)` options could not be matched to the blocks)"))
+        entries0 = Any[]
+        for (k, b) in enumerate(blocks[1:upto])
+            flags[k] && empty!(entries0)
+            append!(entries0, collect(get_or(b, "params", [])))
+        end
+        blocks = Any[Dict{String,Any}("params" => entries0)]
+    end
     entries = collect(get_or(blocks[1], "params", []))
     isempty(entries) && throw(EstimationError("the estimated_params block is empty"))
     vx, vn, cx, cn, p = Any[], Any[], Any[], Any[], Any[]
@@ -757,14 +785,14 @@ function _setup_parameters!(est::Estimation)
             end
             for e in get_or(st, "params", [])
                 nm = _entry_name(e)
-                i = findfirst(==(nm), est.names)
+                i = _find_estimated(est, nm)
                 i === nothing && throw(EstimationError("estimated_params_init: $nm is not estimated"))
                 init[i] = _num(est, e["init_val"])
             end
         elseif k == "estimated_params_bounds"
             for e in get_or(st, "params", [])
                 nm = _entry_name(e)
-                i = findfirst(==(nm), est.names)
+                i = _find_estimated(est, nm)
                 i === nothing && throw(EstimationError("estimated_params_bounds: $nm is not estimated"))
                 lb[i] = _num(est, e["lower_bound"])
                 ub[i] = _num(est, e["upper_bound"])
@@ -837,6 +865,14 @@ end
 # MATLAB's max/min skip NaN (max(x, NaN) == x; NaN only when both are NaN).
 _matlab_max(a, b) = isnan(a) ? b : isnan(b) ? a : max(a, b)
 _matlab_min(a, b) = isnan(a) ? b : isnan(b) ? a : min(a, b)
+
+"Position of an estimated parameter; a correlation is symmetric (`corr a, b` is `corr b, a`)."
+function _find_estimated(est, nm::AbstractString)
+    i = findfirst(==(nm), est.names)
+    i === nothing || return i
+    mt = match(r"^corr (.+), (.+)$", nm)
+    mt === nothing ? nothing : findfirst(==("corr $(mt.captures[2]), $(mt.captures[1])"), est.names)
+end
 
 function _entry_name(e)
     haskey(e, "param") ? e["param"] : haskey(e, "var") ? "stderr $(e["var"])" : "corr $(e["var1"]), $(e["var2"])"

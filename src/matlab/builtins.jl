@@ -526,12 +526,18 @@ bi!("norm") do I, a, nout
     merr("norm: unsupported matrix norm")
 end
 bi!("chol") do I, a, nout
-    (nout > 1 || length(a) != 1) && _unsup("chol with options or several outputs")
+    lower = false
+    if length(a) == 2 && a[2] isa AbstractString && lowercase(a[2]) in ("lower", "upper")
+        lower = lowercase(a[2]) == "lower"
+    elseif length(a) != 1
+        _unsup("chol with options other than 'lower' or 'upper'")
+    end
+    nout > 1 && _unsup("chol with several outputs")
     x = _square(farr(a[1]), "chol")
     xs = isapprox(x, permutedims(x); rtol=1e-5, atol=1e-8) ? (x + permutedims(x)) / 2 : x
     C = LinearAlgebra.cholesky(LinearAlgebra.Symmetric(xs); check=false)
     LinearAlgebra.issuccess(C) || merr("chol: matrix must be positive definite")
-    ret(Matrix(C.U))
+    ret(lower ? Matrix(C.L) : Matrix(C.U))
 end
 bi!("dot") do I, a, nout
     x, y = farr(a[1]), farr(a[2])
@@ -983,7 +989,7 @@ lazy!(_plot, PLOT_FUNCS...)
 const FILE_FUNCS = split("fopen fread fwrite fgetl fgets fscanf textscan importdata xlsread xlswrite csvread csvwrite " *
     "dlmread dlmwrite readtable writetable readmatrix writematrix delete copyfile movefile rmdir " *
     "rmpath cd dir ls system unix dos exist_file " *
-    "datatomfile matfile which websave urlread unzip zip tempdir tempname setenv " *
+    "matfile which websave urlread unzip zip tempdir tempname setenv " *
     "open winopen edit type input keyboard dbstack mfilename genpath path userpath")
 _file(I, argnodes, sc, nout) = throw(Unsupported("file-system, shell or interactive functions are not available", "file"))
 lazy!(_file, FILE_FUNCS...)
@@ -1339,7 +1345,7 @@ bi!("eval") do I, a, nout
     end
     run_parsed(I, body, sc, nout)
 end
-bi!("evalin", "assignin", "evalc", "source", "dynare", "inputname", "builtin", "cellfun", "arrayfun", "structfun", "str2num") do I, a, nout
+bi!("evalin", "assignin", "evalc", "source", "dynare", "inputname", "builtin", "structfun", "str2num") do I, a, nout
     throw(Unsupported("this function manipulates workspaces or runs code that cannot be analysed", "eval"))
 end
 
@@ -1368,7 +1374,7 @@ const MUTATORS = Set(["evalin", "assignin", "run", "source", "dynare", "set_shoc
     "set_parameters_locally", "load_params_and_steady_state", "dynare_estimation", "dynare_estimation_1",
     "set_dynare_random_generator_state", "initvalf", "histvalf", "global_initialization", "clearvars",
     "set_local_param_value", "set_shock_stderr_value", "set_param_value", "eval", "evalc", "builtin",
-    "str2num", "cellfun", "arrayfun", "structfun", "feval", "set_measurement_errors", "set_exogenous_variables_for_simulation",
+    "str2num", "structfun", "feval", "set_measurement_errors", "set_exogenous_variables_for_simulation",
     "sur", "surgibbs", "dyn_ols", "olseqs", "pooled_ols", "pooled_fgls", "olsgibbs", "dynare_estimation_init",
     "set_prior", "osr1", "simulated_moments_estimation", "prior_posterior_statistics",
     "discretionary_policy", "draw_init_state_from_smoother", "dsge_conditional_likelihood_1", "dsge_likelihood",

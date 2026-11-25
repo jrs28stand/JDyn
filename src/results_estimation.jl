@@ -9,7 +9,7 @@
 #
 # `dynare()` calls them where the statements stand (`_run_in_place!`).
 
-const _SMOOTHER_OPTS = ("smoother", "filtered_vars", "filter_step_ahead", "filter_covariance", "smoothed_state_uncertainty")
+const _SMOOTHER_OPTS = ("smoother", "filtered_vars", "filter_step_ahead", "filter_covariance", "smoothed_state_uncertainty", "filter_decomposition")
 
 "oo_.gui.ran_<command> = true (Dynare creates the six flags, all false, at the start of a run)."
 function _gui!(oo::MStruct, flag::AbstractString)
@@ -48,21 +48,27 @@ function _date_of(v)
     string2date(String(something(mt.captures[1], mt.captures[2])))
 end
 
-"First date (freq, time) of a data file: INIT__ of a .m or .mat file, the first column of a .csv file; else `nothing`."
+"""
+First date (freq, time) of a data file: INIT__ of a .m or .mat file, the first column of a .csv file.  A file without a date
+starts in year one at annual frequency, as Dynare's load_m_file_data, load_mat_file_data and load_csv_file_data
+(`init = dates(1,1)`); `nothing` only for a file that cannot be read or has another extension.
+"""
 function _data_start_date(path::AbstractString)
     isfile(path) || return nothing
+    year_one() = string2date("1Y")
     ext = lowercase(splitext(path)[2])
     if ext == ".m"
         mt = match(r"^\s*INIT__\s*=\s*['\"]([^'\"]+)['\"]"m, read(path, String))
-        return mt === nothing ? nothing : string2date(String(mt.captures[1]))
+        return mt === nothing ? year_one() : string2date(String(mt.captures[1]))
     elseif ext == ".mat"
         t = try MAT.matread(path) catch; return nothing end
         v = get(t, "INIT__", nothing)
-        return v isa AbstractString ? string2date(v) : nothing
+        return v isa AbstractString ? string2date(v) : year_one()
     elseif ext == ".csv"
         rows = filter(!isempty, strip.(readlines(path)))
         length(rows) > 1 || return nothing
-        return string2date(String(strip(split(rows[2], ',')[1])))
+        first = String(strip(split(rows[2], ',')[1]))
+        return _date_of(first) === nothing ? year_one() : string2date(first)
     end
     nothing
 end
@@ -85,7 +91,8 @@ function _apply_dataset!(ws, kw)
         length(found) == 1 && (p = found[1])
     end
     start = _data_start_date(p)
-    if start === nothing && haskey(ws.state, :set_time)
+    # makedataset.m: a dataset that starts at the default dates(1,1) takes the initial period of set_time
+    if (start === nothing || start == string2date("1Y")) && haskey(ws.state, :set_time)
         start = _date_of(String(ws.state[:set_time]))        # set_time: the first date of the sample
     end
     function index(v, what)
@@ -143,6 +150,7 @@ end
 function _smoother_kwargs(ws; full::Bool)
     kw = Dict{Symbol,Any}(:filtered_vars => _optb(ws, "filtered_vars", false),
                           :filter_covariance => _optb(ws, "filter_covariance", false),
+                          :filter_decomposition => _optb(ws, "filter_decomposition", false),
                           :smoothed_state_uncertainty => _optb(ws, "smoothed_state_uncertainty", false),
                           :filter_step_ahead => _fsa(ws))
     for k in ("replicate_dynare_bugs", "noprint", "use_univariate_smoother_if_singularity_is_detected")
@@ -335,8 +343,11 @@ function _store_smoother_results!(oo::MStruct, m::Model, res::SmootherResult; on
         S.Init_State_uncertainty = res.Init_State_uncertainty
     end
     oo.Smoother = S
-    nk && res.FilteredVariablesKStepAhead !== nothing && (oo.FilteredVariablesKStepAhead = res.FilteredVariablesKStepAhead)
-    nk && res.FilteredVariablesKStepAheadVariances !== nothing && (oo.FilteredVariablesKStepAheadVariances = res.FilteredVariablesKStepAheadVariances)
+    # under selected_variables_only the k-step arrays keep the saved variables only, in declaration order (store_smoother_results.m)
+    scol = only === nothing ? Colon() : [i for i in eachindex(nm) if nm[i] in only]
+    nk && res.FilteredVariablesKStepAhead !== nothing && (oo.FilteredVariablesKStepAhead = res.FilteredVariablesKStepAhead[:, scol, :])
+    nk && res.FilteredVariablesKStepAheadVariances !== nothing && (oo.FilteredVariablesKStepAheadVariances = res.FilteredVariablesKStepAheadVariances[:, scol, scol, :])
+    nk && res.FilteredVariablesShockDecomposition !== nothing && (oo.FilteredVariablesShockDecomposition = res.FilteredVariablesShockDecomposition[:, scol, :, :])
     oo.SmoothedVariables = SV
     nk && (oo.FilteredVariables = FV)
     oo.UpdatedVariables = UV
@@ -431,13 +442,85 @@ function estimation!(ws::DynareWorkspace, var_list=String[]; data=nothing, seed=
     end
 end
 
+"""
+Recursive (`nobs` a vector) or rolling-window (`first_obs` a vector) estimation, as dynare_estimation.m: one estimation per value
+in ascending order (the first with the optimiser, later ones starting from the first's mode file); `oo_recursive_` keeps the `oo_`
+of each (here `ws.state[:oo_recursive]`, keyed by the value) and, for `nobs` with `forecast`, `oo_.RecursiveForecast` collects
+the forecasts of the runs. The returned `oo_` is the last run's.
+"""
+function _estimation_recursive!(ws, st, var_list, data, seed, options, key, vals)
+    O, oo, m = ws.options_, ws.oo_, ws.model
+    other = key == "nobs" ? "first_obs" : "nobs"
+    ov = _optf(ws, other, NaN)
+    (ov isa AbstractMatrix && length(ov) > 1) &&
+        throw(EstimationError("You cannot simultaneously do rolling window and recursive estimation"))
+    opts = Dict{Symbol,Any}(k => v for (k, v) in options if !(Symbol(k) in (:nobs, :first_obs)))
+    sorted = sort(Float64.(vals))
+    mode_file0 = _optf(ws, "mode_file", zeros(0, 0))
+    rec = Dict{Int,Any}()
+    ws.state[:in_recursive] = true
+    try
+        for (i, v) in enumerate(sorted)
+            O[key] = v
+            _estimation!(ws, st, var_list, data, seed, opts)
+            if i == 1 && _optf(ws, "mode_compute", 5.0) != 0
+                O.mode_file = joinpath(m.name, "Output", m.name * "_mode")
+            end
+            rec[Int(v)] = deepcopy(ws.oo_)
+        end
+    finally
+        delete!(ws.state, :in_recursive)
+    end
+    ws.state[:oo_recursive] = rec
+    horizon = _opti(ws, "forecast", 0)
+    if key == "nobs" && horizon > 0
+        vl = isempty(var_list) ? copy(m.endo_names) : String.(collect(var_list))
+        mh = _opti(ws, "mh_replic", 0) > 0
+        src = mh ? (("Mean", "MeanForecast", "Mean"), ("HPDinf", "MeanForecast", "HPDinf"), ("HPDsup", "MeanForecast", "HPDsup"),
+                    ("HPDTotalinf", "PointForecast", "HPDinf"), ("HPDTotalsup", "PointForecast", "HPDsup")) :
+                   (("Mean", "forecast", "Mean"), ("HPDinf", "forecast", "HPDinf"), ("HPDsup", "forecast", "HPDsup"))
+        RF = MStruct()
+        for (fld, parent, sub) in src
+            S = MStruct()
+            for v in vl
+                rows = Vector{Float64}[]
+                for n in sorted
+                    P = get(rec[Int(n)], parent, nothing)
+                    Q = P isa MStruct ? get(P, sub, nothing) : nothing
+                    x = Q isa MStruct ? get(Q, v, nothing) : nothing
+                    x === nothing && throw(EstimationError("recursive estimation: the forecast of $v is missing in the run with $key = $(Int(n))"))
+                    push!(rows, vec(Float64.(x)))
+                end
+                S[v] = permutedims(reduce(hcat, rows))
+            end
+            RF[fld] = S
+        end
+        ws.oo_.RecursiveForecast = RF
+    end
+    O[key] = sorted[end]
+    O.mode_file = mode_file0              # dynare_estimation.m puts back the user's mode_file
+    ws
+end
+
 function _estimation!(ws::DynareWorkspace, st, var_list, data, seed, options)
     m = _sync_model!(ws)
     O, oo = ws.options_, ws.oo_
     _take_options!(ws, options)
+    if !get(ws.state, :in_recursive, false)
+        for key in ("nobs", "first_obs")
+            v = _optf(ws, key, NaN)
+            (v isa AbstractMatrix && length(v) > 1) &&
+                return _estimation_recursive!(ws, st, var_list, data, seed, options, key, vec(Float64.(v)))
+        end
+    end
     stopts = st === nothing ? Dict{String,Any}() : (o = get_or(st, "options", nothing); o isa AbstractDict ? o : Dict{String,Any}())
     # EstimationStatement::writeOutput: options_.order = 1 unless the statement gives an order
     (haskey(stopts, "order") || haskey(options, :order)) || (O.order = 1.0)
+    # no estimated_params block and no optimisation (mode_compute=0): Dynare runs the smoother at the calibrated values, as calib_smoother
+    if !any(s -> get(s, "statementName", "") == "estimated_params", m.statements) && _optf(ws, "mode_compute", 5.0) == 0 &&
+       _optb(ws, "smoother", false)
+        return _calib_smoother!(ws, st, var_list, (;))
+    end
     vl = String.(collect(var_list))
     for v in vl
         haskey(m.ie, v) || throw(EstimationError("estimation: $v is not an endogenous variable"))
@@ -682,8 +765,6 @@ function _calib_smoother!(ws::DynareWorkspace, st, var_list, options)
     (haskey(stopts, "parameter_set") || haskey(options, :parameter_set)) || (O.parameter_set = "calibration")
     O.smoother = true
     O.order = 1.0
-    _optb(ws, "selected_variables_only", false) &&
-        throw(SmootherError("selected_variables_only is not supported by the oo_ writer (oo_.SmoothedVariables would not have Dynare's layout)"))
     for v in String.(collect(var_list))
         haskey(m.ie, v) || throw(SmootherError("calib_smoother: $v is not an endogenous variable"))
     end

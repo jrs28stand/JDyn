@@ -485,8 +485,10 @@ function _pf_replay(m::Model, params=nothing, steady=nothing, extra_learnt_shock
             for d in get_or(st, "deterministic_shocks", [])
                 haskey(ix, d["var"]) || throw(ModelError("shock on $(d["var"]): deterministic exogenous variables are not supported"))
                 for v in d["values"]
-                    push!(ws.det_shocks, (ix[d["var"]], _pf_period(v["period1"], "period", dctx), _pf_period(v["period2"], "period", dctx),
-                                          Float64(_value(m, v["value"])), typ))
+                    p1, p2 = _pf_period(v["period1"], "period", dctx), _pf_period(v["period2"], "period", dctx)
+                    for (q1, q2, val) in _period_values(m, v["value"], p1, p2, "shocks: $(d["var"])")       # `values (a)` with a vector a
+                        push!(ws.det_shocks, (ix[d["var"]], q1, q2, val, typ))
+                    end
                 end
             end
         elseif kind == "perfect_foresight_controlled_paths"
