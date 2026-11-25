@@ -59,16 +59,18 @@ function _id_cosn(H::AbstractMatrix)
 end
 
 "Octave's `A\\B` for a square `A`: LU, also where singular to machine precision; minimum-norm least squares only for an exactly zero pivot."
-function _id_mldivide(A::AbstractMatrix, B::AbstractVecOrMat)
-    isempty(A) && return zeros(size(A, 2), size(B)...)[1:size(A, 2), ntuple(_ -> :, ndims(B) - 1)...]
-    F = lu(Matrix{Float64}(A); check=false)
+function _id_mldivide(A0::AbstractMatrix, B0::AbstractVecOrMat)
+    isempty(A0) && return B0 isa AbstractVector ? zeros(size(A0, 2)) : zeros(size(A0, 2), size(B0, 2))
+    A = Matrix(A0)
+    F = lu(A; check=false)
     if any(iszero, diag(F.factors)) || !all(isfinite, F.factors)
-        Bm = B isa AbstractVector ? reshape(Vector{Float64}(B), :, 1) : Matrix{Float64}(B)
-        sol, _ = LinearAlgebra.LAPACK.gelsd!(Matrix{Float64}(A), copy(Bm), _ID_EPS / 2)
+        Bm = B0 isa AbstractVector ? reshape(Vector(B0), :, 1) : Matrix(B0)
+        T = promote_type(eltype(A), eltype(Bm))
+        sol, _ = LinearAlgebra.LAPACK.gelsd!(Matrix{T}(A), Matrix{T}(Bm), _ID_EPS / 2)
         sol = sol[1:size(A, 2), :]
-        return B isa AbstractVector ? vec(sol) : sol
+        return B0 isa AbstractVector ? vec(sol) : sol
     end
-    F \ B
+    F \ B0
 end
 
 "Octave's `inv`: a singular matrix gives Inf."
@@ -302,32 +304,43 @@ end
 """
 First-order part of `pruned_SS.pruned_state_space_system`: A, B, C, D of the predetermined variables and observables, the
 (auto)covariances of the observables and, with `derivs` (dghx, dghu, dSigma_e, dYss and `nsc`), their Jacobians in all
-parameters (stderr, corr, model).  `indy` are 1-based positions in decision-rule order.
+parameters (stderr, corr, model).  `indy` are 1-based positions in decision-rule order.  With unit roots (`lyapunov_symm` projects
+them out) the moments of the non-stationary observables are NaN, as Dynare's (`stationary_vars`, `schur_vec_tol`).
 """
-function _id_pruned_first_order(ghx, ghu, Sigma, Yss, indy, nlags, useautocorr, nstatic, nspred, derivs=nothing; qz_unit=1 - 1e-6)
+function _id_pruned_first_order(ghx, ghu, Sigma, Yss, indy, nlags, useautocorr, nstatic, nspred, derivs=nothing; schur_vec_tol=1e-11)
     indx = nstatic .+ (1:nspred)
     A, B = ghx[indx, :], ghu[indx, :]
     C, D = ghx[indy, :], ghu[indy, :]
-    ev = isempty(A) ? Float64[] : abs.(eigvals(A))
-    !isempty(ev) && maximum(ev) >= qz_unit && throw(ArgumentError("identification: unit roots (diffuse filter) are not supported"))
     Varinov = Sigma
-    lyap(a, q) = isempty(a) ? zeros(0, 0) : lyapunov_symm(a, q)[1]
-    Var_z = lyap(A, B * Varinov * B')
+    Var_z, Schur_u = isempty(A) ? (zeros(0, 0), zeros(0, 0)) : lyapunov_symm(A, B * Varinov * B')
     ny = length(indy)
+    s = collect(1:ny)
+    if !isempty(Schur_u)
+        s = findall(r -> all(<(schur_vec_tol), abs.(C[r, :]' * Schur_u)), 1:ny)
+    end
+    Cs, Ds = C[s, :], D[s, :]
     out = Dict{Symbol,Any}(:indx => collect(indx), :indy => indy, :A => A, :B => B, :C => C, :D => D, :Varinov => Varinov)
-    Var_y = C * Var_z * C' + D * Varinov * D'
+    Var_y = fill(NaN, ny, ny)
+    Var_y[s, s] = Cs * Var_z * Cs' + Ds * Varinov * Ds'
     Var_y[abs.(Var_y).<1e-12] .= 0
     sdy = _id_sqrt.(diag(Var_y))
-    sy = sdy * sdy'
-    tmp = A * Var_z * C' + B * Varinov * D'
-    Var_yi = zeros(ny, ny, nlags)
+    sdys = sdy[s]
+    sy = sdys * sdys'
+    tmp = A * Var_z * Cs' + B * Varinov * Ds'
+    Var_yi = fill(NaN, ny, ny, nlags)
     Ai = Matrix{Float64}(I, size(A, 1), size(A, 1))
     for i in 1:nlags
-        Var_yi[:, :, i] = C * Ai * tmp
+        Var_yi[s, s, i] = Cs * Ai * tmp
         Ai = Ai * A
     end
     out[:Var_y], out[:Var_yi], out[:E_y] = Var_y, Var_yi, Yss[indy]
-    useautocorr && (out[:Corr_yi] = Var_yi ./ sy)
+    if useautocorr
+        Corr_yi = fill(NaN, ny, ny, nlags)
+        for i in 1:nlags
+            Corr_yi[s, s, i] = Var_yi[s, s, i] ./ sy
+        end
+        out[:Corr_yi] = Corr_yi
+    end
     derivs === nothing && return out
     dA, dB = derivs[:dghx][indx, :, :], derivs[:dghu][indx, :, :]
     dC, dD = derivs[:dghx][indy, :, :], derivs[:dghu][indy, :, :]
@@ -335,6 +348,7 @@ function _id_pruned_first_order(ghx, ghu, Sigma, Yss, indy, nlags, useautocorr, 
     nsc = derivs[:nsc]
     tot = size(dA, 3)
     dVar_z = zeros(size(A, 1), size(A, 1), tot)
+    lyap(a, q) = isempty(a) ? zeros(0, 0) : lyapunov_symm(a, q)[1]
     for j in 1:tot
         if j <= nsc
             Q = B * dS[:, :, j] * B'
@@ -344,26 +358,28 @@ function _id_pruned_first_order(ghx, ghu, Sigma, Yss, indy, nlags, useautocorr, 
         end
         dVar_z[:, :, j] = lyap(A, Q)
     end
-    dVar_y = zeros(ny, ny, tot)
+    dVar_y = fill(NaN, ny, ny, tot)
     for j in 1:tot
-        t = dC[:, :, j] * Var_z * C' + C * dVar_z[:, :, j] * C' + C * Var_z * dC[:, :, j]' +
-            dD[:, :, j] * Varinov * D' + D * dS[:, :, j] * D' + D * Varinov * dD[:, :, j]'
+        dCs, dDs = dC[s, :, j], dD[s, :, j]
+        t = dCs * Var_z * Cs' + Cs * dVar_z[:, :, j] * Cs' + Cs * Var_z * dCs' +
+            dDs * Varinov * Ds' + Ds * dS[:, :, j] * Ds' + Ds * Varinov * dDs'
         t[abs.(t).<1e-12] .= 0
-        dVar_y[:, :, j] = t
+        dVar_y[s, s, j] = t
     end
-    dVar_yi = zeros(ny, ny, nlags, tot)
-    dCorr_yi = useautocorr ? zeros(ny, ny, nlags, tot) : nothing
+    dVar_yi = fill(NaN, ny, ny, nlags, tot)
+    dCorr_yi = useautocorr ? fill(NaN, ny, ny, nlags, tot) : nothing
     for j in 1:tot
         Ai = Matrix{Float64}(I, size(A, 1), size(A, 1))
         dAi = zeros(size(A))
-        dtmp = dA[:, :, j] * Var_z * C' + A * dVar_z[:, :, j] * C' + A * Var_z * dC[:, :, j]' +
-               dB[:, :, j] * Varinov * D' + B * dS[:, :, j] * D' + B * Varinov * dD[:, :, j]'
+        dCs, dDs = dC[s, :, j], dD[s, :, j]
+        dtmp = dA[:, :, j] * Var_z * Cs' + A * dVar_z[:, :, j] * Cs' + A * Var_z * dCs' +
+               dB[:, :, j] * Varinov * Ds' + B * dS[:, :, j] * Ds' + B * Varinov * dDs'
         for i in 1:nlags
-            dVar_yi[:, :, i, j] = dC[:, :, j] * Ai * tmp + C * dAi * tmp + C * Ai * dtmp
+            dVar_yi[s, s, i, j] = dCs * Ai * tmp + Cs * dAi * tmp + Cs * Ai * dtmp
             if useautocorr
-                dv = 0.5 ./ sdy .* diag(dVar_y[:, :, j])
-                dsy = dv * sdy' + sdy * dv'
-                dCorr_yi[:, :, i, j] = (dVar_yi[:, :, i, j] .* sy - dsy .* Var_yi[:, :, i]) ./ (sy .* sy)
+                dv = (0.5 ./ sdy .* diag(dVar_y[:, :, j]))[s]
+                dsy = dv * sdys' + sdys * dv'
+                dCorr_yi[s, s, i, j] = (dVar_yi[s, s, i, j] .* sy - dsy .* Var_yi[s, s, i]) ./ (sy .* sy)
             end
             dAi = dAi * A + Ai * dA[:, :, j]
             Ai = Ai * A
@@ -1030,10 +1046,10 @@ function _id_get_jacobians(m::Model, ghx, ghu, ys, pp, Sigma, derivs, indvobs, n
         for (ig, w) in enumerate(freqs)
             z = exp(-1im * w)
             zIA = z * IA - A
-            zIAinv = zIA \ IA
+            zIAinv = _id_mldivide(zIA, IA)
             Tf = D + C * zIAinv * B
             dzIA = -dA
-            dzIAinv = kron(-(transpose(zIA) \ IA), zIAinv) * dzIA
+            dzIAinv = kron(-_id_mldivide(transpose(zIA), IA), zIAinv) * dzIA
             dTf = dD + deriv_abcd(C, dC, zIAinv, dzIAinv, B, dB)
             dTf_conjt = K_obs_exo * conj(dTf)
             dO = (1 / (2π)) * deriv_abcd(Tf, dTf, Sig, dVarinov, Tf', dTf_conjt)
@@ -1050,7 +1066,7 @@ function _id_get_jacobians(m::Model, ghx, ghu, ys, pp, Sigma, derivs, indvobs, n
         Sig, dSig = pr[:Varinov], pr[:dVarinov]
         for (ig, fr) in enumerate(freqs)
             z = exp(1im * fr)
-            inv_ = (z * IA - A) \ IA
+            inv_ = _id_mldivide(z * IA - A, IA)
             T = D + C * inv_ * B
             Th = T'
             dO = zeros(ComplexF64, obs_nbr^2, totparam)
@@ -1154,9 +1170,12 @@ function _id_options(raw::AbstractDict, totparam_nbr::Int, prior_exist::Bool, de
     end
     (o["gsa_sample_file"] != 0 || o["load_ident_files"] != 0) && throw(IdentificationError("identification: gsa_sample_file and load_ident_files are not supported"))
     get!(o, "lik_init", 1)
-    (haskey(raw, "diffuse_filter") && raw["diffuse_filter"] != false && raw["diffuse_filter"] != 0) &&
-        throw(IdentificationError("identification: the diffuse filter (unit roots) is not supported"))
     get!(o, "analytic_derivation", 1)
+    # run.m: the diffuse filter (lik_init = 3) is not compatible with analytic derivation of the likelihood
+    if haskey(raw, "diffuse_filter") && raw["diffuse_filter"] != false && raw["diffuse_filter"] != 0
+        o["lik_init"] = 3
+        o["analytic_derivation"] = 0
+    end
     o["order"] = _id_int(get(o, "order", 1))
     o["analytic_derivation_mode"] = _id_int(get(o, "analytic_derivation_mode", default_mode))
     if !prior_exist
@@ -1445,7 +1464,7 @@ end
 "`find(max(abs(M'),[],1) > tol)`: rows of M with an element above tol."
 function _id_rows_above(M::AbstractMatrix, tol)
     isempty(M) && return Int[]
-    findall(r -> maximum(abs, view(M, r, :)) > tol, 1:size(M, 1))
+    findall(r -> any(x -> !isnan(x) && abs(x) > tol, view(M, r, :)), 1:size(M, 1))     # MATLAB's max skips NaN
 end
 
 function _id_norm_rows(M::AbstractMatrix)
@@ -1493,11 +1512,28 @@ function _id_analysis(c::_IdCtx, theta; init::Bool=true)
     end
     if init
         if o["no_identification_moments"] == 0
-            any(isnan, MOMENTS) && throw(IdentificationError("There are NaN's in the theoretical moments."))
+            if any(isnan, MOMENTS)
+                throw(IdentificationError(o["lik_init"] == 3 ?
+                    "There are NaN's in the theoretical moments. Make sure that for non-stationary models stationary transformations of non-stationary observables are used for checking identification. [TIP: use first differences]." :
+                    "There are NaN's in the theoretical moments. Please check whether your model has units roots, and you forgot to set diffuse_filter=1."))
+            end
             ind_dMOMENTS = _id_rows_above(dMOMENTS, tol_deriv)
+            (isempty(ind_dMOMENTS) && any(isnan, dMOMENTS)) && throw(IdentificationError("There are NaN in the dMOMENTS matrix."))
         end
-        o["no_identification_spectrum"] == 0 && (ind_dSPECTRUM = _id_rows_above(dSPECTRUM, tol_deriv))
-        (o["no_identification_minimal"] == 0 && dMINIMAL !== nothing) && (ind_dMINIMAL = _id_rows_above(dMINIMAL, tol_deriv))
+        if o["no_identification_spectrum"] == 0
+            ind_dSPECTRUM = _id_rows_above(dSPECTRUM, tol_deriv)
+            if any(isnan, dSPECTRUM)
+                push!(messages, "WARNING: There are NaN in the dSPECTRUM matrix. Note that identification based on spectrum does not support non-stationary models (yet).\n         Skip identification analysis based on spectrum.\n")
+                err["identification_spectrum"] = 1
+            end
+        end
+        if o["no_identification_minimal"] == 0 && dMINIMAL !== nothing
+            ind_dMINIMAL = _id_rows_above(dMINIMAL, tol_deriv)
+            if any(isnan, dMINIMAL)
+                push!(messages, "WARNING: There are NaN in the dMINIMAL matrix. Note that identification based on minimal system does not support non-stationary models (yet).\n         Skip identification analysis based on minimal system.\n")
+                err["identification_minimal"] = 1
+            end
+        end
         if err["identification_moments"] != 0 && err["identification_minimal"] != 0 && err["identification_spectrum"] != 0
             throw(IdentificationError("identification_analyis: Stationarity condition(s) failed"))
         end
@@ -1649,8 +1685,19 @@ function _id_simulate_data(c::_IdCtx, sol, periods)
         R = Matrix(cholesky(Symmetric(Sigma[active, active])).U)
         shocks[:, active] = permutedims(randn(c.rng, length(active), n_sim)) * R
     end
-    y = simulate(_id_dr(c, sol), shocks; order=1, pruning=false, y0=sol[:ys])
+    y = _id_simulate(c, sol, shocks)
     y[101:end, Int[m.ie[v] for v in m.varobs]]
+end
+
+"""
+`simult` followed by dropping the initial value. When the model has no state variable (`isempty(dr.ghx)`), Dynare's
+`simult_` fills `y_ = ghu*ex_'` with the first period in column 1, and `simult` then discards that column as if it were
+the initial value: the first period's draw is lost. The same is done here (a Dynare quirk, kept because it changes the
+simulated moments and so the strength measure).
+"""
+function _id_simulate(c::_IdCtx, sol, shocks)
+    y = simulate(_id_dr(c, sol), shocks; order=1, pruning=false, y0=sol[:ys])
+    size(sol[:derivs][:ghx], 2) == 0 ? y[2:end, :] : y
 end
 
 "`identification.simulated_moment_uncertainty`: covariance matrix of the selected moments over `replic` simulations."
@@ -1665,7 +1712,7 @@ function _id_simulated_moment_uncertainty(c::_IdCtx, sol, indx, periods, replic,
     for j in 1:replic
         shocks = zeros(periods, m.n_exo)
         shocks[:, active] = permutedims(randn(c.rng, length(active), periods)) * R
-        y = simulate(dr, shocks; order=1, pruning=false, y0=sol[:ys])[101:end, ivar]
+        y = _id_simulate(c, sol, shocks)[101:end, ivar]
         N = size(y, 1)
         mean_ = vec(sum(y; dims=1)) ./ N
         y = y .- mean_'
@@ -1692,6 +1739,7 @@ function _id_try_asymptotic_hessian(c::_IdCtx, theta, sol, data)
     m = c.m
     o = c.opts
     c.prior_exist || return nothing
+    o["lik_init"] == 3 && return nothing           # the diffuse filter has no analytic Hessian here: analysis.m falls back to simulation
     est = c.est
     is_bayesian(est.prior) || return nothing
     lb, ub = prior_bounds(est.prior, Float64(_id_num(get(c.raw, "prior_trunc", 1e-10))))
