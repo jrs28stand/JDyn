@@ -587,7 +587,7 @@ function Estimation(m::Model; data=nothing, allow_unsupported::Bool=false, state
                        "all_endogenous_and_auxiliary_variables" => "consider_all_endogenous_and_auxiliary",
                        "only_observed_variables" => "consider_only_observed")
             haskey(sel, string(v)) || throw(EstimationError("Unknown option: endo_vars_for_moment_computations_in_estimation = $(repr(v))"))
-            opts[sel[string(v)]] = true
+            string(v) == "only_observed_variables" || (opts[sel[string(v)]] = true)     # the preprocessor always writes the default
             continue
         end
         if k == "analytic_derivation" || k == "analytic_Hessian"
