@@ -280,7 +280,7 @@ function _store_params!(ws, p)
 end
 
 # ---------------------------------------------------------------------- oo_
-function _store_dr!(oo::MStruct, dr::AbstractDict, n::Int)
+function _store_dr!(oo::MStruct, dr::AbstractDict, n::Int; sol=nothing, kos::Bool=false)
     D = MStruct()
     old = get(oo, "dr", nothing)
     old isa MStruct && haskey(old, "eigval") && (D.eigval = old.eigval)
@@ -293,11 +293,87 @@ function _store_dr!(oo::MStruct, dr::AbstractDict, n::Int)
         haskey(dr, k) && (D[k] = Matrix{Float64}(dr[k]))
     end
     haskey(dr, "ghs2") && (D.ghs2 = _col(dr["ghs2"]))
-    if haskey(dr, "ghx") && haskey(dr, "state_var")      # dr.Gy (dyn_first_order_solver): the transition matrix of the predetermined variables
+    ex = sol === nothing ? (;) : sol.extra
+    if haskey(ex, :gx) && !kos
+        # dyn_first_order_solver.m / stochastic_solvers.m: gx, Gy (= hx, the transition matrix of the states, in levels also under
+        # loglinear, where Dynare converts only ghx and ghu), sdim and edim; the simplified purely backward branch sets no gx or Gy
+        # but full_rank = 1
+        if ex.backward
+            D.full_rank = 1.0
+        else
+            D.gx = ex.gx
+            D.Gy = ex.hx
+        end
+        D.sdim = Float64(ex.sdim); D.edim = Float64(ex.edim)
+    elseif haskey(dr, "ghx") && haskey(dr, "state_var")      # dr.Gy: the transition matrix of the predetermined variables
         rows = findall(v -> Int(v) in Int.(dr["state_var"]), Int.(dr["order_var"]))
         length(rows) == size(dr["ghx"], 2) && (D.Gy = Matrix{Float64}(dr["ghx"])[rows, :])
     end
+    if kos       # k_order_pert.m copies Dynare++'s folded tensors, and with pruning the pruned ones
+        for i in 0:Int(get(dr, "order", 1))
+            g = get(dr, "g_$i", nothing)
+            g === nothing || (D["g_$i"] = Matrix{Float64}(g))
+        end
+        if get(dr, "pruning", false) === true
+            P = MStruct()
+            for i in 0:Int(get(dr, "order", 1))
+                g = get(dr, "pruning_g_$i", nothing)
+                g === nothing || (P["g_$i"] = Matrix{Float64}(g))
+            end
+            D.pruning = P
+        end
+    end
     oo.dr = D
+end
+
+"""
+`dr.fuu` of dyn_second_order_solver.m: the (equation-ordered) vector `g1(:,lead)*ghuu(lead,:)*vec(Sigma_e) + g2(:,lead,lead)*kron(ghu(lead,:),ghu(lead,:))*vec(Sigma_e)`,
+the second-order terms of the forward-looking variables that enter the `ghs2` equation.
+"""
+function _dr_fuu(m::Model, dr::AbstractDict, J::AbstractMatrix)
+    n = m.n_endo
+    ys = Vector{Float64}(dr["ys"])
+    params = haskey(dr, "params") ? Vector{Float64}(dr["params"]) : copy(m.params)
+    ov = Int.(dr["order_var"]); inv = invperm(ov)
+    ghu = Matrix{Float64}(dr["ghu"])[inv, :]                   # declaration order
+    ghuu = Matrix{Float64}(dr["ghuu"])[inv, :]
+    Sig = Matrix{Float64}(m.Sigma_e)
+    vecS = vec(Sig)
+    lead = findall(>(0), m.lead_lag_incidence[:, 3])
+    fuu = zeros(n)
+    for j in lead
+        fuu .+= J[:, 2n+j] .* dot(ghuu[j, :], vecS)
+    end
+    r, c, v = dynamic_sparse_derivs(m, 2, vcat(ys, ys, ys), exo_steady(m), params, ys)
+    for k in eachindex(r)
+        c1, c2 = c[k, 1], c[k, 2]
+        (2n < c1 <= 3n && 2n < c2 <= 3n) || continue
+        a, b = c1 - 2n, c2 - 2n
+        w = dot(ghu[a, :], Sig * ghu[b, :])
+        fuu[r[k]] += v[k] * w * (a == b ? 1.0 : 2.0)
+    end
+    fuu
+end
+
+"The `varexo_det` terms of stochastic_solvers.m (dr.exo_det_length, ghud, and at order 2 ghxud, ghudud, ghuud) as Dynare stores them."
+function _store_exo_det_dr!(D::MStruct, m::Model, dr::AbstractDict)
+    ed = try
+        exo_det_decision_rules(m, dr)
+    catch e
+        e isa ModelError || rethrow()
+        warn_once(m, "varexo_det: the deterministic-exogenous decision rules are not stored in oo_.dr ($(e.msg))")
+        return D
+    end
+    L = Int(ed["exo_det_length"])
+    D.exo_det_length = Float64(L)
+    D.ghud = Cell(Any[Matrix{Float64}(x) for x in ed["ghud"]], (L, 1))
+    if haskey(ed, "ghxud")
+        D.ghxud = Cell(Any[Matrix{Float64}(x) for x in ed["ghxud"]], (L, 1))
+        D.ghuud = Cell(Any[Matrix{Float64}(x) for x in ed["ghuud"]], (L, 1))
+        items = Any[haskey(ed["ghudud"], (j, k)) ? Matrix{Float64}(ed["ghudud"][(j, k)]) : zeros(0, 0) for k in 1:L for j in 1:L]
+        D.ghudud = Cell(items, (L, L))
+    end
+    D
 end
 
 _shock_list(v, m) = v isa AbstractVector{<:AbstractString} ? String.(v) : v isa Cell ? String.(collect(v)) :
@@ -324,15 +400,27 @@ function _stoch_simul(ws, m, oo, var_list, shocks, rng)
     pruning = _optb(ws, "pruning", false)
     order > 1 && m.max_deriv_order < order && throw(ModelError("stoch_simul(order=$order) needs derivatives of order $order: run dynare(...; output=\"$(order == 2 ? "second" : "third")\")"))
     solved = pop!(ws.state, :solved_dr, nothing)        # discretionary_policy: the rules are not the perturbation solution
+    # stoch_simul.m: oo_.exo_simul is filled with the exogenous steady state over max(periods,1) + lags + leads before anything is solved
+    if m.n_exo > 0
+        nper = max(_opti(ws, "periods", 0), 1) + Int(m.raw["model_info"]["maximum_lag"]) + Int(m.raw["model_info"]["maximum_lead"])
+        oo.exo_simul = repeat(permutedims(Float64.(exo_steady(m))), nper, 1)
+    end
+    kos = _optb(ws, "k_order_solver", false) || order >= 3       # Dynare solves with the k-order library (g_0 ... g_k, no gx or Gy)
+    sol = nothing
     if solved !== nothing
         dr, p, eigv = solved
     else
         sol = first_order(m)                      # also gives dr.eigval, which Dynare's resol stores at every order
-        dr, p = order == 1 ? (as_dr(sol), sol.params) : (d = k_order(m; order=order, pruning=pruning); (d, d["params"]))
+        dr, p = (order == 1 && !kos) ? (as_dr(sol), sol.params) :
+                (d = k_order(m; order=order, pruning=pruning); (d, d["params"]))
         eigv = sol.eigenvalues
     end
     _store_params!(ws, p)
-    _store_dr!(oo, dr, m.n_endo)
+    _store_dr!(oo, dr, m.n_endo; sol=sol, kos=kos && solved === nothing)
+    if solved === nothing && !kos
+        order == 2 && (oo.dr.fuu = _col(_dr_fuu(m, dr, sol.jacobian)))
+        n_exo_det(m) > 0 && _store_exo_det_dr!(oo.dr, m, dr)
+    end
     oo.dr.eigval = _eigcol(eigv)
     oo.steady_state = _col(dr["ys"])
     oo.exo_steady_state = _col(exo_steady(m))

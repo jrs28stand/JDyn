@@ -260,8 +260,19 @@ function _store_dr_estimation!(oo::MStruct, m::Model, sol=nothing)
         D.ghx = gh
         D.ghu = Matrix{Float64}(ghu(sol))
         D.state_var = _row(sol.state_var)
-        D.sdim = Float64(nspred)
-        D.edim = Float64(cnt.nboth + cnt.nfwrd)
+        ex = hasproperty(sol, :extra) ? sol.extra : (;)
+        if haskey(ex, :gx)                        # the resolution's own QZ results (levels, as Dynare's dr)
+            D.eigval = _eigcol(sol.eigenvalues)
+            D.sdim = Float64(ex.sdim); D.edim = Float64(ex.edim)
+            if ex.backward
+                D.full_rank = 1.0
+            else
+                D.gx = ex.gx; D.Gy = ex.hx
+            end
+        else
+            D.sdim = Float64(nspred)
+            D.edim = Float64(cnt.nboth + cnt.nfwrd)
+        end
     end
     oo.dr = D
 end
