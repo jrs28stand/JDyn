@@ -612,6 +612,7 @@ function _run_statements!(m::Model; on_command=nothing)
     sess = ModSession(m)
     m.session = sess
     sess.on_command = on_command === nothing ? nothing : on_command(m)
+    on_command === nothing && warn_refused_options(m)         # src/option_policy.jl (dynare() refuses the statements instead)
     run!(sess, m.statements)
     m.n_surprise > 1 && @warn "several shocks(surprise) blocks: they are merged; Dynare's 'overwrite' option is not visible in the preprocessor output"
     isempty(m.unhandled_statements) || @warn "statements not handled: $(sort(unique(m.unhandled_statements)))"

@@ -804,7 +804,7 @@ function _cf_eval(ws::DynareWorkspace, text)
     for mt in eachmatch(r"[A-Za-z_]\w*", s)
         name = mt.match
         if haskey(m.ie, name)
-            ss === nothing && return _eval_with_vars(m, s)
+            ss === nothing && return _value(m, s; vector=true)
             locals[name] = Float64(ss[m.ie[name]])
         end
     end

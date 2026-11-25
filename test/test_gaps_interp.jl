@@ -15,14 +15,14 @@ function _gsame(got, want)
     all(i -> (isnan(g[i]) && isnan(w[i])) || g[i] == w[i] || abs(g[i] - w[i]) <= 1e-12 + 1e-9 * abs(w[i]), eachindex(g))
 end
 
-function _grun(name; rng=nothing)
+function _grun(name; rng=nothing, directory=nothing)
     cases = split(read(joinpath(_GDIR, name * "_cases.txt"), String), "\n%%\n")
     exp = vec(matread(joinpath(_GDIR, name * ".mat"))["results"])
     match = 0; refused = Int[]; differ = Int[]
     for k in eachindex(cases)
         want = exp[k]; wante = want isa AbstractString && startswith(want, "ERROR")
         status = try
-            got = mrun(String(cases[k]); rng=rng)["r"]
+            got = mrun(String(cases[k]); rng=rng, directory=directory)["r"]
             wante ? :differ : (try _gsame(got, want) ? :match : :differ catch; :differ end)
         catch e
             e isa Unsupported ? :refused : e isa MatlabError ? (wante ? :match : :differ) : :differ
@@ -35,8 +35,14 @@ end
 @testset "interpreter parity case sets" begin
     for (name, rng, maxref, known) in (("matlab_extra", nothing, 70, Int[]), ("pydyn_extra", nothing, 20, Int[]),
                                        ("pydyn_nd", nothing, 10, Int[]), ("pydyn_blk1", nothing, 30, [187]),
-                                       ("pydyn_rng", :octave, 10, Int[]))
-        r = _grun(name; rng)
+                                       ("pydyn_rng", :octave, 10, Int[]),
+                                       # parity4: pydyn's regexp/intersect/cell2mat, model-folder file queries, chol/sparse/cellfun sets
+                                       ("pydyn_fn", nothing, 9, Int[]), ("pydyn_files", nothing, 4, Int[]), ("pydyn_mi", nothing, 0, Int[]))
+        dir = nothing
+        if name == "pydyn_files"       # the Octave reference ran in a folder with f.txt and sub/g.mat (r_pydyn_files.m)
+            dir = mktempdir(); mkpath(joinpath(dir, "sub")); write(joinpath(dir, "f.txt"), "x\n"); write(joinpath(dir, "sub", "g.mat"), "y\n")
+        end
+        r = _grun(name; rng, directory=dir)
         @test sort(r.differ) == known
         @test length(r.refused) <= maxref
         @test r.match >= r.n - maxref - length(known)
