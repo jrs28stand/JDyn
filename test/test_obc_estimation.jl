@@ -15,7 +15,12 @@ const IVF = Dict("likelihood_inversion_filter" => true)
 
 odata(r) = (d = r["data"]; d isa AbstractVector ? reshape(Float64.(d), :, 1) : Matrix{Float64}(d))
 opoints(r, n) = (X = r["X"]; X isa AbstractVector ? reshape(X, n, :) : (size(X, 1) == n ? X : Matrix(X')))
+# NKM and NKMS have a constraint of the approximate complementarity class: the default obc_formulation (auto) is the regime formulation there. The tests of this
+# file that check the LCP solver (`LCPFilterSolver`, its statistics, selection) ask for it explicitly; the default is tested in test_obc_formulation.jl.
 function mkest(m, data; occbin=IVF, kw...)
+    if (m === NKM || m === NKMS) && haskey(kw, :obc_method) && !haskey(kw, :obc_formulation)
+        kw = (; kw..., obc_formulation="lcp")
+    end
     with_logger(NullLogger()) do
         JDyn.Estimation(m; data=data, nobs=size(data, 1), first_obs=1, mode_compute=0, mh_replic=0, allow_unsupported=true, occbin=occbin, kw...)
     end

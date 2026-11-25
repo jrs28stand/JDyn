@@ -552,7 +552,7 @@ default the `datafile` option. Options the code does not act on raise an `Estima
 `allow_unsupported=true`, which turns the error into one warning.
 """
 function Estimation(m::Model; data=nothing, allow_unsupported::Bool=false, statement=nothing, occbin=nothing,
-                    obc_method=nothing, obc_horizon=nothing, obc_selection=nothing, obc_milp_time_limit=nothing, obc_horizon_max=nothing, options...)
+                    obc_method=nothing, obc_horizon=nothing, obc_selection=nothing, obc_milp_time_limit=nothing, obc_horizon_max=nothing, obc_formulation=nothing, options...)
     raw = Dict{String,Any}()
     ests = [st for st in m.statements if get(st, "statementName", "") == "estimation"]
     if statement === nothing
@@ -657,7 +657,7 @@ function Estimation(m::Model; data=nothing, allow_unsupported::Bool=false, state
     _setup_trends!(est)
     _setup_data!(est, data)
     nlraw === nothing || return _setup_nonlinear!(est, nlraw)
-    _setup_occbin!(est, occbin; obc=(method=obc_method, horizon=obc_horizon, selection=obc_selection, milp_time_limit=obc_milp_time_limit, horizon_max=obc_horizon_max))                  # OccBin models: piecewise Kalman or inversion filter (src/occbin_estimation.jl)
+    _setup_occbin!(est, occbin; obc=(method=obc_method, horizon=obc_horizon, selection=obc_selection, milp_time_limit=obc_milp_time_limit, horizon_max=obc_horizon_max, formulation=obc_formulation))                  # OccBin models: piecewise Kalman or inversion filter (src/occbin_estimation.jl)
     if opts["prefilter"] != 0
         centred = try
             check_prefilter(est)

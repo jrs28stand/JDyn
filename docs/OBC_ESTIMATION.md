@@ -25,6 +25,7 @@ Plan (written before coding):
 Also (Task 1): the higher-order options `obc_order`, `obc_cubature`, ... from the mod file, workspace and keywords.
 
 ## Progress and results
+**Superseded for the NKM examples (see "obc_formulation" at the end): the numbers in this section and the next (news vs OccBin differing at knife-edge periods, 0.02-0.12 and more) are those of the LCP formulation, which was the news solver of these models until `obc_formulation = auto` (default) became the regime formulation for approximate-class constraints. With the default the NKM log posterior equals OccBin's to rounding at every vector tried.**
 
 Steps a-d are implemented in `src/obc_filter.jl` (new), with small wiring in `src/estimation.jl`, `src/occbin_estimation.jl`, `src/occbin_filter.jl`
 (`inversion_filter(...; solver=)`), `src/obc.jl`, `src/obc_regime.jl` (`milp` keyword), `src/occbin.jl`, `src/results.jl`. Tests: `test/test_obc_estimation.jl`
@@ -98,3 +99,22 @@ Details, numbers and the reproducer: docs/OBC_HO_PROGRESS.md, "Horizon too short
 
 Note on the knife-edge size: "0.12" in the paragraphs above is what JDyn's own runs showed, not a bound. pydyn's soak test (8,279 finite OccBin/news pairs on NKM) found 195 differing by more than 1e-8 relative,
 60 by more than 0.12, 9 by more than 0.4, the largest 1.54; `bf` none. Tests that compare at visited vectors (`< 0.13`) pass at their vectors; they do not assert a general bound.
+
+
+## obc_formulation: LCP or regime formulation (approximate-class constraints use the regime formulation by default)
+Decision (the user's, from pydyn's study, docs/OBC_ESTIMATION.md "Approx-class constraints" there: 13 models, ~5,900 log-posterior pairs: LCP differs from OccBin in 3-100% of evaluations on approximate-class models,
+the regime formulation in 0, with exactly OccBin's failure set; exact-class models identical under every method). `obc_formulation` = `auto` (default), `lcp`, `regime`; `hybrid` (pydyn) is refused with a message (never better than regime).
+- `auto`: every constraint exactly one complementary pair (classifier `approx == 0`, i.e. the relative residual of the two linearised tests is at most `OBC_FIT_TOL` = 1e-6, pydyn's `tol`) -> LCP; any approximate-class constraint
+  (residual between 1e-6 and `OBC_APPROX_TOL` = 5%) -> regime; multi-equation / tied / shared classes -> regime as before. `lcp` on a model that is not all complementarity is an `ArgumentError`. `regime` forces it.
+  `obc_selection` other than `occbin` exists for the LCP (and, one constraint, in the regime filter solver): with `auto` and an approximate constraint the LCP is kept and a warning says so.
+- Where: `simulate(...; obc_method=:news, obc_formulation=)` (IRFs pass it through), `Estimation(...; obc_formulation=)`, `occbin=Dict("obc_formulation" => ...)`, native `options_.occbin.obc_formulation = 'regime';` (simulation from the mod file and
+  estimation), `set_obc!(est; formulation=)`; refusals: unknown value, `hybrid`, a formulation with `obc_method` other than news, `lcp` for a model that is not all complementarity (checked at set-up where the model solves).
+- Higher order and cubature use the LCP: with `auto`/`lcp` on an approximate-class model they run and `warn_once` that the LCP can differ from OccBin at knife-edge periods; `regime` is refused there.
+- Record: `result.news.formulation` and `result.news.note` (and `oo_.occbin.news.formulation_note`), `solver.stats.formulation`/`.note`; one `@info` per model naming the constraint and discrepancy (NKM: 'zlb', 0.0057).
+- Evidence in JDyn: pydyn's 81 logged NKM vectors (`test/obc/est/nkm_knife_edge.csv`): the LCP differs from JDyn's OccBin at 81 of 81 (largest 1.54), `auto`/regime at 0 (to 1e-8 relative; max absolute 0.0); JDyn's OccBin vs pydyn's OccBin max 6.6e-9.
+  Stored NKM and small-NKM vectors: regime = OccBin to rounding (same regime histories). Two constraints (pydyn's zlb2m, d = 0.0100): LCP differs from OccBin at 8 of 8, regime at 0. Small-NKM mode search: regime 99 evaluations as OccBin (LCP 118),
+  mode 1.8e-7 from OccBin's (LCP 5.6e-6); chains 2 x 300 and 2 x 150: draws identical to OccBin's for all three. Exact class: `auto` bit for bit the LCP (hex of log posteriors at zlb2m_0, simulation hashes of obc_zlb, nk_zlb, nk_zlb2,
+  obc_zlb2 equal to the commit before this change).
+- Regime needs more horizon than the LCP at pydyn's extreme vector (A#75): `obc_horizon_max = 80` is not enough (`horizon_too_short` at period 92), 160 recovers OccBin's value (1.4e-6 absolute, 7e-12 relative), as in pydyn.
+- Speed-up found while profiling the regime solver (src/obc_regime.jl `_regime_flags!`): one condition evaluation per period instead of two, and a function barrier so that the compiled bind/relax functions are specialised.
+  Results unchanged (bit for bit: chains, likelihoods), regime formulation 2.5-4x faster. Cost table: docs/OBC_HO_PROGRESS.md, "Cost of the regime formulation".

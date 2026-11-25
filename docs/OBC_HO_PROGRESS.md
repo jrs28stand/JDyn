@@ -210,4 +210,22 @@ Tests after the merge (each file alone, `julia --project=. test/<file>.jl`, or `
 and (runtests.jl) test_matlab, first_order, examples, loop, moments, auxiliary, loglinear, review, korder, moments_order2, estimation, perfect_foresight, smoother, shock_decomposition, results, review_findings, review2_findings, results_estimation, perf_seeds,
 forecast, optimizers, acceptance_smoke (0 tests), nonlinear_estimation. test_plotting.jl: environment error (opens /root/jl/src/Dynare.jl/test/models/example1/example1.mod, absent here), not a test failure. NOT run: the files that came with main
 (test_pac, optimal_policy, dseries, posterior, samplers, parity_*, dsge_var, plots, plots_auto).
-State: all three jobs done and pushed; nothing open.
+State: all three jobs done and pushed. TASK 2 (obc_formulation, step 0-4): done, see "Cost of the regime formulation" below and docs/OBC_ESTIMATION.md; nothing open.
+
+
+## obc_formulation (task 2): cost of the regime formulation
+Machine: 2 cores shared, load average 0.8-1.1 during the measurements. Min of 7-9 evaluations; scripts /tmp/ho/cost.jl, cost2.jl (not in the repository). Likelihood evaluation, ms:
+| model | OccBin | LCP | regime before profiling | regime after | regime / LCP | OccBin / regime |
+|---|---|---|---|---|---|---|
+| NKM (full, 9 parameters), stored vectors 1-3 | 65.3 / 67.2 / 57.6 | 4.4 / 3.6 / 3.6 | 11.9 / 9.6 / 10.0 | 4.3 / 4.1 / 4.0 | 1.2x | 15x |
+| small NKM, vectors 1-3 | 58.7 / 70.3 / 66.7 | 2.8 / 2.9 / 2.7 | 12.2 / 12.6 / 12.4 | 3.7 / 3.5 / 3.5 | 1.3x | 19x |
+| zlb2m_0 (two constraints, exact, d = 0; auto = LCP) | 48.7 | 2.3 | 10.5 | 3.7 | 1.6x | 13x |
+| zlb2m_1e-2 (two constraints, zlb approximate d = 0.0100; auto = regime) | 107.8 | 2.3 | 19.1 | 4.9 | 2.1x | 22x |
+(pydyn: regime ~1.3x LCP, 2x with two constraints, 3-4x faster than OccBin.) Small-NKM mode search (mode_compute = 4): OccBin 9.8 s (99 evaluations), LCP 0.5 s (118), regime 0.5 s (99; before profiling 1.2-1.5 s).
+Chains 2 x 300: OccBin 49 s, LCP 2.7 s, regime 3.0 s (before profiling 7-8.7 s); draws and acceptance (0.367, 0.373) identical in all three. bf (regime solver) chains 2 x 150 now 3.6 s (5.6 s before). Simulation, NKM, 300 periods, 3 shocks: OccBin 64 us per
+period, LCP 7.5, regime 5.0 (before profiling 23.6) us.
+What was slow: the regime iteration evaluated OccBin's bind and relax conditions (compiled functions held in an untyped field, called through dynamic dispatch) for every period of the horizon and check-ahead, both tests where one is needed. Fix: one test per
+(period, constraint) (bind where the guess is slack, relax where it binds) and a function barrier. The flags, hence all results, are unchanged.
+
+Tests (task 2): test/test_obc_formulation.jl (new, registered; about 1.5 min), test/test_obc_estimation.jl (mkest asks for the LCP explicitly on NKM/NKMS where a test is about the LCP solver: `LCPFilterSolver`, its statistics, selection, 2.8 s chains), test/test_obc_news.jl (NKM_0_std_shocks:
+LCP pinned for the forced-integer-programme variant, which is slow in the regime formulation; default run asserted regime = OccBin), test/test_obc_horizon.jl (NKM tests pin the LCP; new testset for the regime behaviour at the extreme vector).

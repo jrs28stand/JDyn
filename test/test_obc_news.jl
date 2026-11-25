@@ -123,10 +123,18 @@ const NEWS_MODELS = [
     has_surprise = any(st -> get(st, "surprise", false) == true, get(m.options, "shock_paths", Any[]))
     @test all(c -> c.class == :complementarity, obc_constraints(ob))
     is_nkm = occursin("NKM", basename(path))             # the approximate class: a knife-edge regime difference is a known property
+    # this test is about the LCP formulation (the default, auto, is the regime formulation for the NKM's approximate-class constraint: test_obc_formulation.jl);
+    # the integer programme of the regime formulation over 80 periods is slow, so the forced-MILP variant is an LCP one
+    form = is_nkm ? (obc_formulation=:lcp,) : (;)
+    if is_nkm
+        shr = randn(MersenneTwister(20261124), 200, ob.n_exo) .* shock_sd(m, scale)'
+        ar, br = simulate(ob, shr; periods=200), simulate(ob, shr; periods=200, obc_method=:news)
+        @test br.news.formulation == :regime && maximum(abs.(br.piecewise - ar.piecewise)) <= NEWS_TOL && br.regime_history == ar.regime_history
+    end
     for fast in (true, false)                            # with the active-set fast path, and forced through the integer programme
         if has_surprise
             a = simulate(ob)
-            b = simulate(ob; obc_method=:news, obc_fast_path=fast)
+            b = simulate(ob; obc_method=:news, obc_fast_path=fast, form...)
             @test isapprox(b.piecewise, a.piecewise; atol=NEWS_TOL, rtol=0) && b.regime_history == a.regime_history
             @test b.news.method == :news && b.news.formulation == :lcp && all(==(:ok), b.news.status)
             @test b.news.diagnostics.is_s isa Bool
@@ -134,7 +142,7 @@ const NEWS_MODELS = [
         end
         sh = randn(MersenneTwister(20261124), 200, ob.n_exo) .* shock_sd(m, scale)'
         a = simulate(ob, sh; periods=200)
-        b = simulate(ob, sh; periods=200, obc_method=:news, obc_fast_path=fast)
+        b = simulate(ob, sh; periods=200, obc_method=:news, obc_fast_path=fast, form...)
         @test nbinding(a) > 0
         d = maximum(abs.(b.piecewise - a.piecewise))
         diffp = [t for t in eachindex(a.regime_history) if a.regime_history[t] != b.regime_history[t]]

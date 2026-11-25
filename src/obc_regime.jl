@@ -347,21 +347,23 @@ function _regime_violations(rg::RegimeOBC, z::_ZMat, pcv::AbstractMatrix)
 end
 function _regime_flags!(vb, vr, rg::RegimeOBC, z, pcv)
     ob, zr, cv = rg.ob, rg.zbuf, rg.cv
-    for t in 1:rg.N
+    for (j, cn) in enumerate(ob.cons)
+        _regime_flags_one!(vb, vr, j, cn.bind, cn.relax, z, pcv, zr, cv, ob.ys, ob.params, rg.N)    # function barrier: the conditions are specialised on
+    end
+    nothing
+end
+@inline _truth(b) = b === true || (b isa Number && !isnan(b) && b != 0)
+function _regime_flags_one!(vb, vr, j::Int, bind::F, relax::G, z, pcv, zr, cv, ys, params, N::Int) where {F,G}
+    for t in 1:N
         for (c, i) in enumerate(cv)
-            zr[i] = pcv[c, t] + ob.ys[i]
+            zr[i] = pcv[c, t] + ys[i]
         end
-        for (j, cn) in enumerate(ob.cons)
-            b = _call_now(cn.bind, zr, ob.params, ob.ys)
-            bound = b === true || (b isa Number && !isnan(b) && b != 0)
-            rel = if cn.relax === nothing
-                !bound
-            else
-                r = _call_now(cn.relax, zr, ob.params, ob.ys)
-                r === true || (r isa Number && !isnan(r) && r != 0)
-            end
-            vb[t, j] = bound && !z[t, j]
-            vr[t, j] = rel && z[t, j]
+        # vb needs the bind test only where the guess is slack, vr the relax test only where it binds: one evaluation per (period, constraint), not two
+        # (the flags are the same as with both evaluated)
+        if z[t, j]
+            vr[t, j] = relax === nothing ? !_truth(_call_now(bind, zr, params, ys)) : _truth(_call_now(relax, zr, params, ys))
+        else
+            vb[t, j] = _truth(_call_now(bind, zr, params, ys))
         end
     end
     nothing
@@ -908,7 +910,7 @@ function _simulate_regime(ob::Occbin, shocks_in::AbstractMatrix; method::Symbol,
     catch err
         err isa Union{ModelError,SingularException,DomainError} || rethrow()
     end
-    news = ObcNews(method, T, String[c["name"] for c in m.occbin_constraints], wedges, status, infos, :regime, dg)
+    news = ObcNews(method, T, String[c["name"] for c in m.occbin_constraints], wedges, status, infos, :regime, dg, String(get(solver_options, :formulation_note, "")))
     OccbinResult(piecewise .+ ob.ys', linear .+ ob.ys', Matrix{Float64}(shocks_in), history, ob.ys, iters, exo_idx, falses(S),
                  diag, m.endo_names, m.exo_names, ss_out, news)
 end

@@ -10,7 +10,9 @@ oref(name) = matread(joinpath(OREF, name * ".mat"))
 odata(r) = (d = r["data"]; d isa AbstractVector ? reshape(Float64.(d), :, 1) : Matrix{Float64}(d))
 opoints(r, n) = (X = r["X"]; X isa AbstractVector ? reshape(X, n, :) : (size(X, 1) == n ? X : Matrix(X')))
 const IVF = Dict("likelihood_inversion_filter" => true)
+# NKM / NKMS: the LCP formulation explicitly (the default, auto, is the regime formulation for their approximate-class constraint; see test_obc_formulation.jl)
 mkest(m, data; occbin=IVF, kw...) = with_logger(NullLogger()) do
+    kw = haskey(kw, :obc_method) && !haskey(kw, :obc_formulation) && m !== nothing && m.name in ("occest_nkm", "occest_nkms") ? (; kw..., obc_formulation="lcp") : kw
     JDyn.Estimation(m; data=data, nobs=size(data, 1), first_obs=1, mode_compute=0, mh_replic=0, allow_unsupported=true, occbin=occbin, kw...)
 end
 function load_dir2(path)
@@ -170,4 +172,27 @@ end
     JDyn.begin_period!(sv, 7)
     f = JDyn.failure_info(sv)
     @test f.primary == :root_search && f.period == 7 && isempty(f.counts)
+end
+
+@testset "the regime formulation (default for the NKM's approximate-class constraint) needs more horizon than the LCP at the extreme vector" begin
+    r = oref("occest_nkm_lik"); data = odata(r)
+    eo = mkest(NKM, data); lpo = JDyn.log_posterior(eo, TH)
+    # auto = regime here; pydyn: horizon 80 is not enough for the regime formulation (horizon_too_short at period 92), 160 is
+    e80 = with_logger(NullLogger()) do
+        JDyn.Estimation(NKM; data=data, nobs=size(data, 1), first_obs=1, mode_compute=0, mh_replic=0, allow_unsupported=true, occbin=IVF, obc_method="news", obc_horizon_max=80)
+    end
+    lp80 = JDyn.log_posterior(e80, TH)
+    @test JDyn.obc_settings(e80).last_solver isa JDyn.RegimeFilterSolver
+    f = JDyn.obc_failure(e80)
+    println("  regime, obc_horizon_max = 80: lp = ", lp80, ", failure: ", f)
+    e160 = with_logger(NullLogger()) do
+        JDyn.Estimation(NKM; data=data, nobs=size(data, 1), first_obs=1, mode_compute=0, mh_replic=0, allow_unsupported=true, occbin=IVF, obc_method="news", obc_horizon_max=160)
+    end
+    lp160 = JDyn.log_posterior(e160, TH)
+    st = JDyn.obc_settings(e160).last_solver.stats
+    println("  regime, obc_horizon_max = 160: lp = ", lp160, ", OccBin ", lpo, ", |diff| = ", abs(lp160 - lpo), "; retries ", st.retries, ", solved ", st.retried_ok, ", ", round(st.retry_seconds, digits=2), " s")
+    @test e160.last_info_code == 0 && abs(lp160 - lpo) < 1e-5 * 1e-4 * abs(lpo) + 1e-8
+    if lp80 == -Inf
+        @test e80.last_info_code == 304 && f !== nothing && f.primary == :horizon_too_short && f.horizon_max == 80
+    end
 end

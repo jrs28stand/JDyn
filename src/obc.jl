@@ -44,6 +44,54 @@ Base.showerror(io::IO, e::ObcError) = print(io, "ObcError (", e.status, ", perio
 
 const OBC_METHODS = (:occbin, :minnorm, :news)
 
+# ---------------------------------------------------------------------- obc_formulation
+# `obc_method = news` has two formulations: the LCP (Holden's complementarity problem, constraints that are one complementary pair each: fast) and
+# the regime formulation (src/obc_regime.jl: one wedge per switched equation, accepted by OccBin's own bind/relax test in levels). For a constraint of the
+# APPROXIMATE complementarity class (the two versions of the switched equation differ by a term the condition lacks; relative discrepancy above
+# `OBC_FIT_TOL` = 1e-6, accepted up to 5%) the LCP can land on a different regime sequence than OccBin at knife-edge periods, the regime formulation does
+# not (pydyn, docs/OBC_ESTIMATION.md "Approx-class constraints": 0 of ~5,900 pairs differ). `auto` (default): LCP when every constraint is exactly
+# complementary, else regime.
+const OBC_FORMULATIONS = (:auto, :lcp, :regime)
+
+"The `obc_formulation` value as a Symbol (`auto`, `lcp`, `regime`). pydyn's `hybrid` is not implemented (it is never better than `regime`) and refused."
+function _obc_formulation(x)
+    s = Symbol(lowercase(strip(string(x isa AbstractArray && length(x) == 1 ? x[1] : x))))
+    s == :hybrid && throw(ArgumentError("obc_formulation = hybrid (pydyn's LCP-then-levels-test formulation) is not implemented in JDyn: it is never better than regime; use auto, lcp or regime"))
+    s in OBC_FORMULATIONS || throw(ArgumentError("unknown obc_formulation '$x': use one of $(join(OBC_FORMULATIONS, ", "))"))
+    s
+end
+
+"""
+    _resolve_formulation(ob, requested; selection=:occbin) -> (formulation::Symbol, note::String)
+
+`:lcp` or `:regime` for `requested` (`:auto`, `:lcp`, `:regime`). `lcp` on a model with a constraint that is not one complementary pair is an error.
+`note` is non-empty when `auto` meant the regime formulation because of an approximate-class constraint (it names the constraint and its discrepancy), or, with
+`obc_selection` other than `occbin` (implemented for the LCP only), when `auto` kept the LCP although a constraint is approximate.
+"""
+function _resolve_formulation(ob::Occbin, requested::Symbol; selection::Symbol=:occbin)
+    cons = get!(() -> obc_constraints(ob), _OBC_CONS_CACHE, ob)
+    allc = all(c -> c.class == :complementarity, cons)
+    if requested == :lcp
+        allc || throw(ArgumentError("obc_formulation = lcp needs every constraint to be one complementary pair; " *
+                                    join(["$(c.name): $(c.class)" for c in cons if c.class != :complementarity], "; ") * " (use auto or regime)"))
+        return :lcp, ""
+    end
+    requested == :regime && return :regime, ""
+    allc || return :regime, ""
+    ap = [c for c in cons if c.approx > 0]
+    isempty(ap) && return :lcp, ""
+    desc = join(["'$(c.name)' (relative discrepancy $(@sprintf("%.2g", c.approx)))" for c in ap], ", ")
+    if selection != :occbin
+        return :lcp, "obc_formulation = auto: approximate complementarity constraint $desc, but obc_selection = $selection is implemented for the LCP formulation only; " *
+                     "using the LCP, which can differ from OccBin at knife-edge periods"
+    end
+    :regime, "obc_formulation = auto: approximate complementarity constraint $desc; using the regime formulation, which follows OccBin's own bind/relax test " *
+             "(the LCP can pick a different regime sequence at knife-edge periods). obc_formulation = lcp selects the faster LCP."
+end
+
+"One informational message per model and text (like `warn_once`)."
+info_once(m::Model, msg::AbstractString) = (msg in m.warned) || (push!(m.warned, msg); @info msg)
+
 "The `obc_method` value as a Symbol (`occbin`, `minnorm`, `news`); anything else is an error."
 function _obc_method(x)
     s = Symbol(lowercase(strip(string(x isa AbstractArray && length(x) == 1 ? x[1] : x))))
@@ -588,8 +636,10 @@ struct ObcNews
     info::Vector{Any}
     formulation::Symbol
     diagnostics::Any
+    note::String                 # why `auto` chose this formulation (approximate-class constraint), "" otherwise
 end
-ObcNews(a1, a2, a3, a4, a5, a6) = ObcNews(a1, a2, a3, a4, a5, a6, :lcp, nothing)
+ObcNews(a1, a2, a3, a4, a5, a6) = ObcNews(a1, a2, a3, a4, a5, a6, :lcp, nothing, "")
+ObcNews(a1, a2, a3, a4, a5, a6, a7, a8) = ObcNews(a1, a2, a3, a4, a5, a6, a7, a8, "")
 
 # OccBin options that do not apply to the LCP methods (guesses and iteration controls of the regime iteration)
 const _OBC_IGNORED_DEFAULTS = (maxit=30, curb_retrench=false, periodic_solution=false, periodic_solution_threshold=1,
@@ -753,6 +803,7 @@ function _news_struct(nw::ObcNews)
     s.wedges = Matrix{Float64}(nw.wedges)
     s.status = Cell(Any[String(x) for x in nw.status], (length(nw.status), 1))
     s.formulation = String(nw.formulation)
+    isempty(nw.note) || (s.formulation_note = nw.note)
     d = nw.diagnostics
     if d !== nothing
         ds = MStruct()

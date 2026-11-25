@@ -38,6 +38,7 @@ function _setup_occbin!(est::Estimation, overrides; obc=NamedTuple())
     o["occbin"] = oc
     o["obc"] = _obc_est_settings(m, live_obc; obc...)
     o["obc"].method == :news && !ivf && throw(EstimationError(_PKF_NEWS_MSG))
+    o["obc"].formulation == :lcp && _check_lcp_model(m)                # an error unless every constraint is one complementary pair
     est
 end
 
@@ -231,7 +232,7 @@ function _occbin_smooth(m::Model, data=nothing; occbin=nothing, estimation=nothi
             _obc_solver(est, ob)
         else                                           # no estimation object: the native options_.occbin.obc_* lines
             s = _obc_est_settings(m, live_obc)
-            s.method == :occbin ? nothing : news_filter_solver(ob; horizon=s.horizon, selection=s.selection, horizon_max=s.horizon_max)
+            s.method == :occbin ? nothing : news_filter_solver(ob; horizon=s.horizon, selection=s.selection, horizon_max=s.horizon_max, formulation=s.formulation)
         end
         ivf = inversion_filter(ob, lin.data .+ ob.ys[obs]', obs, err, oc; rng=_ivf_rng(m), solver=sol)
         sm = inversion_filter_smoother(ivf, ob.ys, err, ob.n_exo; endo_names=m.endo_names, exo_names=m.exo_names)
@@ -302,7 +303,7 @@ function _occbin_overrides(ws)
         out[k] = v
     end
     for (k, v) in _flat_options(oc)                               # obc_method, obc_horizon, obc_selection (src/obc_filter.jl)
-        k in ("obc_method", "obc_horizon", "obc_selection", "obc_horizon_max") || continue
+        k in ("obc_method", "obc_horizon", "obc_selection", "obc_horizon_max", "obc_formulation") || continue
         v isa AbstractArray && length(v) == 1 && (v = first(v))
         out[k] = v
     end

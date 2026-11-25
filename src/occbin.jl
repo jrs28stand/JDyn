@@ -463,13 +463,22 @@ function simulate(ob::Occbin, shocks_in::AbstractMatrix; periods::Integer=100, c
                   obc_raise::Bool=true, obc_solver_options=NamedTuple(), obc_fast_path::Bool=true,
                   obc_order=1, obc_cubature::Bool=false, obc_periods_of_uncertainty=16, obc_qmc_level=11, obc_cubature_regions="all",
                   obc_check_ahead=nothing, obc_selection=:occbin, obc_m_diagnostic=:s, obc_cubature_milp_time_limit=1.0,
-                  obc_cubature_failure_tolerance=0.0)
+                  obc_cubature_failure_tolerance=0.0, obc_formulation=:auto)
     method = _obc_method(obc_method)
     selection = _obc_selection(obc_selection)
+    formulation = _obc_formulation(obc_formulation)
+    formulation != :auto && method != :news && throw(ArgumentError("obc_formulation = $formulation needs obc_method = news"))
     selection != :occbin && method != :news && throw(ArgumentError("obc_selection = $selection needs obc_method = news"))
     _obc_regions(obc_cubature_regions)                  # validates (1 or all)
     if _obc_order(obc_order) != 1 || obc_cubature       # src/obc_ho.jl: order 2 and / or cubature (news only)
         method == :news || throw(ArgumentError("obc_order = 2 and obc_cubature need obc_method = news"))
+        formulation == :regime && throw(ArgumentError("obc_formulation = regime is not available with obc_order = 2 or obc_cubature (they use the LCP formulation)"))
+        let cons = get!(() -> obc_constraints(ob), _OBC_CONS_CACHE, ob), ap = [c for c in cons if c.class == :complementarity && c.approx > 0]
+            # the higher-order loop needs the LCP: it is kept (not refused) but the approximate class is flagged
+            isempty(ap) || formulation == :lcp || warn_once(ob.model, "obc_order = 2 / obc_cubature use the LCP formulation, but constraint " *
+                join(["'$(c.name)' (relative discrepancy $(@sprintf("%.2g", c.approx)))" for c in ap], ", ") *
+                " is of the approximate complementarity class: the LCP can pick a different regime sequence than OccBin at knife-edge periods")
+        end
         # what the loop does not support is refused, not ignored
         obc_raise || throw(ArgumentError("obc_raise = false is not supported with obc_order = 2 or obc_cubature (a failing period raises an ObcError)"))
         obc_fast_path || throw(ArgumentError("obc_fast_path = false is not supported with obc_order = 2 or obc_cubature"))
@@ -490,6 +499,13 @@ function simulate(ob::Occbin, shocks_in::AbstractMatrix; periods::Integer=100, c
                                          init_regime=init_regime, init_binding_indicator=init_binding_indicator,
                                          reset_check_ahead_periods_in_new_period=reset_check_ahead_periods_in_new_period,
                                          reset_regime_in_new_period=reset_regime_in_new_period, algo_truncation=algo_truncation))
+    end
+    if method == :news                              # LCP or regime formulation (obc_formulation; src/obc.jl)
+        form, note = _resolve_formulation(ob, formulation; selection=selection)
+        if form == :regime
+            obc_solver_options = merge(obc_solver_options, (formulation=:regime, formulation_note=note))
+        end
+        isempty(note) || (form == :regime ? info_once(ob.model, note) : warn_once(ob.model, note))
     end
     if method != :occbin                            # src/obc.jl: the same loop with an LCP solver instead of the regime iteration
         return _simulate_obc(ob, shocks_in; method=method, horizon=_obc_horizon(obc_horizon), tol=obc_tol, raise=obc_raise,

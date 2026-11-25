@@ -30,6 +30,7 @@ function _obc_flat_options(flat::AbstractDict)
     haskey(flat, "obc_method") && (out[:obc_method] = _obc_method(flat["obc_method"]))
     haskey(flat, "obc_horizon") && (out[:obc_horizon] = _obc_horizon(flat["obc_horizon"]))
     haskey(flat, "obc_selection") && (out[:obc_selection] = _obc_selection(flat["obc_selection"]))
+    haskey(flat, "obc_formulation") && (out[:obc_formulation] = _obc_formulation(flat["obc_formulation"]))
     haskey(flat, "obc_order") && (out[:obc_order] = _obc_order(flat["obc_order"]))
     haskey(flat, "obc_cubature") && (out[:obc_cubature] = _obc_flag(flat["obc_cubature"]))
     haskey(flat, "obc_periods_of_uncertainty") &&
@@ -145,8 +146,10 @@ mutable struct _SolverStats
     retry_seconds::Float64            # time spent in retries, including building the larger solvers
     period::Int
     last_cause::Symbol                # cause of the last failed trial point (`:none` after a success)
+    formulation::Symbol               # `:lcp` or `:regime` (set by `news_filter_solver`)
+    note::String                      # why `auto` chose it (approximate-class constraint), "" otherwise
 end
-_SolverStats() = _SolverStats(0, 0, 0, 0, 0, 0, Dict{Int,Int}(), Dict{Symbol,Int}(), Dict{Symbol,Int}(), 0, 0, 0.0, 0, :none)
+_SolverStats() = _SolverStats(0, 0, 0, 0, 0, 0, Dict{Int,Int}(), Dict{Symbol,Int}(), Dict{Symbol,Int}(), 0, 0, 0.0, 0, :none, :lcp, "")
 function _fail!(st::_SolverStats, code::Int, cause::Symbol=:undecided)
     st.errors[code] = get(st.errors, code, 0) + 1
     st.causes[cause] = get(st.causes, cause, 0) + 1
@@ -417,14 +420,20 @@ function _solve_once(sv::RegimeFilterSolver, shocks, init, exo_pos)
 end
 
 """
-    news_filter_solver(ob; horizon=40, check_ahead=40, selection=:occbin, milp_time_limit=0) -> LCPFilterSolver | RegimeFilterSolver
+    news_filter_solver(ob; formulation=:auto, horizon=40, check_ahead=40, selection=:occbin, milp_time_limit=0) -> LCPFilterSolver | RegimeFilterSolver
 
-The solver of the inversion filter for `obc_method = news`: the LCP one when every constraint is one complementary pair, the regime one otherwise
-(the choice `simulate` makes).
+The solver of the inversion filter for `obc_method = news`. `formulation = :auto` (default): the LCP one when every constraint is exactly one complementary pair, the regime
+one otherwise, and also when a constraint is of the approximate complementarity class (the LCP can pick another regime sequence than OccBin at knife-edge periods; the regime
+solver follows OccBin's own test; `solver.stats.formulation`, `solver.stats.note`); `:lcp` (an error unless every constraint is one complementary pair) and `:regime`
+force one (the choice `simulate` makes).
 """
-function news_filter_solver(ob::Occbin; kw...)
-    cons = get!(() -> obc_constraints(ob), _OBC_CONS_CACHE, ob)
-    all(c -> c.class == :complementarity, cons) ? LCPFilterSolver(ob; kw...) : RegimeFilterSolver(ob; kw...)
+function news_filter_solver(ob::Occbin; formulation::Symbol=:auto, kw...)
+    sel = get(kw, :selection, :occbin)
+    form, note = _resolve_formulation(ob, formulation; selection=sel)
+    sv = form == :lcp ? LCPFilterSolver(ob; kw...) : RegimeFilterSolver(ob; kw...)
+    sv.stats.formulation, sv.stats.note = form, note
+    isempty(note) || (form == :regime ? info_once(ob.model, note) : warn_once(ob.model, note))
+    sv
 end
 
 "Start of period `t` of the inversion filter (the per-period failure causes restart)."
@@ -475,9 +484,10 @@ mutable struct ObcEstSettings
     last_solver::Any
     horizon_max::Int            # 0: off
     last_failure::Any           # `ObcFailure` of the last failed news filter run, else `nothing`
+    formulation::Symbol         # `obc_formulation`: :auto, :lcp, :regime
 end
 Base.show(io::IO, s::ObcEstSettings) = print(io, "ObcEstSettings(", s.method, ", horizon = ", s.horizon, ", selection = ", s.selection, ", milp_time_limit = ", s.milp_time_limit,
-                                              ", horizon_max = ", s.horizon_max, ")")
+                                              ", horizon_max = ", s.horizon_max, ", formulation = ", s.formulation, ")")
 
 """
 `obc_horizon_max` as an Int: a positive integer, or 0 (also `nothing`, `false`) for off. `max < horizon` is checked where the horizon is known.
@@ -510,11 +520,11 @@ function _split_obc_overrides(overrides)
 end
 
 "Settings from keywords, the live overrides and the native `options_.occbin.obc_*` lines of the .mod file (in that order of precedence)."
-function _obc_est_settings(m::Model, live::Dict{String,Any}; method=nothing, horizon=nothing, selection=nothing, milp_time_limit=nothing, horizon_max=nothing)
+function _obc_est_settings(m::Model, live::Dict{String,Any}; method=nothing, horizon=nothing, selection=nothing, milp_time_limit=nothing, horizon_max=nothing, formulation=nothing)
     native = Dict{String,Any}()
     o = get(m.matlab_options, "occbin", nothing)
     if o isa MStruct
-        for k in ("obc_method", "obc_horizon", "obc_selection", "obc_horizon_max")
+        for k in ("obc_method", "obc_horizon", "obc_selection", "obc_horizon_max", "obc_formulation")
             haskey(o, k) && (native[k] = o[k])
         end
     end
@@ -528,7 +538,18 @@ function _obc_est_settings(m::Model, live::Dict{String,Any}; method=nothing, hor
     meth, sel = _obc_canonical(meth, sel)
     hor = hor === nothing ? 40 : _obc_horizon(hor)
     hmax = _check_horizon_max(_obc_horizon_max(pick("obc_horizon_max", horizon_max)), hor)
-    ObcEstSettings(meth, hor, sel, milp_time_limit === nothing ? 0.0 : Float64(milp_time_limit), nothing, hmax, nothing)
+    form = pick("obc_formulation", formulation)
+    ObcEstSettings(meth, hor, sel, milp_time_limit === nothing ? 0.0 : Float64(milp_time_limit), nothing, hmax, nothing, form === nothing ? :auto : _obc_formulation(form))
+end
+
+"`obc_formulation = lcp` is an error for a model with a constraint that is not one complementary pair (checked at the model's own parameters when they solve)."
+function _check_lcp_model(m::Model)
+    try
+        _resolve_formulation(Occbin(m), :lcp)
+    catch e
+        e isa ArgumentError && rethrow()
+    end
+    nothing
 end
 
 "The settings of an OccBin estimation (`nothing` for a model without constraints)."
@@ -541,7 +562,7 @@ Change the `obc_*` options of an OccBin estimation (pydyn: `est.obc_method = 'ne
 filter is refused; `minnorm` is `news` with `obc_selection = min_wedge` (a conflicting `selection` is an error). `horizon_max` (`obc_horizon_max`, 0 = off):
 a trial point of the news filter that fails for lack of horizon is solved again with the horizon doubled up to this maximum (must be at least the horizon).
 """
-function set_obc!(est::Estimation; method=nothing, horizon=nothing, selection=nothing, milp_time_limit=nothing, horizon_max=nothing)
+function set_obc!(est::Estimation; method=nothing, horizon=nothing, selection=nothing, milp_time_limit=nothing, horizon_max=nothing, formulation=nothing)
     s = obc_settings(est)
     s === nothing && throw(EstimationError("the model has no occbin_constraints block"))
     meth = method === nothing ? s.method : _obc_method(method)
@@ -551,7 +572,9 @@ function set_obc!(est::Estimation; method=nothing, horizon=nothing, selection=no
     hmax = horizon_max === nothing ? s.horizon_max : _obc_horizon_max(horizon_max)
     _check_horizon_max(hmax, hor)
     meth == :news && !Bool(occbin_options(est)["likelihood.inversion_filter"]) && throw(EstimationError(_PKF_NEWS_MSG))
-    s.method, s.selection, s.horizon, s.horizon_max = meth, sel, hor, hmax
+    form = formulation === nothing ? s.formulation : _obc_formulation(formulation)
+    form == :lcp && _check_lcp_model(est.model)
+    s.method, s.selection, s.horizon, s.horizon_max, s.formulation = meth, sel, hor, hmax, form
     milp_time_limit === nothing || (s.milp_time_limit = Float64(milp_time_limit))
     est
 end
@@ -563,7 +586,7 @@ function _obc_solver(est::Estimation, ob::Occbin)
         s.selection != :occbin && throw(EstimationError("obc_selection other than occbin needs obc_method = news"))
         return nothing
     end
-    s.last_solver = news_filter_solver(ob; horizon=s.horizon, selection=s.selection, milp_time_limit=s.milp_time_limit, horizon_max=s.horizon_max)
+    s.last_solver = news_filter_solver(ob; horizon=s.horizon, selection=s.selection, milp_time_limit=s.milp_time_limit, horizon_max=s.horizon_max, formulation=s.formulation)
 end
 
 """
