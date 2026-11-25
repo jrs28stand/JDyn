@@ -62,8 +62,8 @@ function _p2_occbin_forecast(I, a, nout)
             pos = last(surprise_shocks(ob))           # options_.occbin.simul.exo_pos as occbin.setup sets it
         end
         if !_p2_empty(pos) && length(pos) != m.n_exo
-            throw(Unsupported("occbin.forecast: with replic = 0 Dynare's solver uses options_.occbin.simul.exo_pos left by occbin.setup ($(length(pos)) of " *
-                              "$(m.n_exo) shocks) and stops with a size mismatch (a defect of +occbin/forecast.m)", "feature"))
+            merr("occbin.forecast: with replic = 0 Dynare's solver uses options_.occbin.simul.exo_pos left by occbin.setup ($(length(pos)) of " *
+                 "$(m.n_exo) shocks) and stops with a size mismatch (a defect of +occbin/forecast.m)")
         end
     end
     fr = _getpath(opts, "occbin.forecast.frcst_regimes", nothing)
