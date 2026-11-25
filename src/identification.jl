@@ -3,6 +3,23 @@
 
 const _ID_EPS = eps(Float64)
 
+"Sample standard deviation (n-1) along `dims` (Statistics is not a dependency)."
+function _id_std(A::AbstractMatrix; dims::Int)
+    n = size(A, dims)
+    mu = sum(A; dims=dims) ./ n
+    _id_sqrt.(sum(abs2, A .- mu; dims=dims) ./ (n - 1))
+end
+
+"`cov(X; dims=2)`: covariance of the rows of `X` over its columns (n-1)."
+function _id_cov_rows(X::AbstractMatrix)
+    n = size(X, 2)
+    Xc = X .- sum(X; dims=2) ./ n
+    Xc * Xc' / (n - 1)
+end
+
+"sqrt of a real number; NaN for a negative one (numpy semantics, which the references reproduce)."
+_id_sqrt(x::Real) = x < 0 ? NaN : sqrt(x)
+
 "`dyn_vech`: the upper triangle of a square matrix, column after column (rows 1..col of column col)."
 _id_vech(M::AbstractMatrix) = isempty(M) ? Float64[] : reduce(vcat, [M[1:c, c] for c in 1:size(M, 1)])
 
@@ -24,7 +41,7 @@ function _id_cond(X::AbstractMatrix)
 end
 
 "`identification.vnorm`: 2-norm of the columns of a matrix with more than one row."
-_id_vnorm(A::AbstractMatrix) = vec(sqrt.(sum(abs2, A; dims=1)))
+_id_vnorm(A::AbstractMatrix) = vec(_id_sqrt.(sum(abs2, A; dims=1)))
 
 "Multiple cosine of the first column of `H` with the span of the others (`cosn.m`; dgelsd with rcond = eps/2 as Octave's `\\`)."
 function _id_cosn(H::AbstractMatrix)
@@ -117,19 +134,19 @@ function _id_checks(X0::AbstractMatrix, test_flag::Int, tol_rank, tol_sv, param_
     if test_flag == 0 || test_flag == 3
         Mco = test_flag == 3 ? fill(NaN, param_nbr) : zeros(isempty(ind1) ? 0 : maximum(ind1))
         Xs = X[ind1, ind1]
-        deltaX = sqrt.(diag(Xs))
+        deltaX = _id_sqrt.(diag(Xs))
         tildaX = Xs ./ (deltaX * deltaX')
         Mco[ind1] = 1 .- 1 ./ diag(_id_inv(tildaX))
         Pco = fill(NaN, param_nbr, param_nbr)
         Pco[ind1, ind1] = _id_inv(Xs)
-        sd = sqrt.(diag(Pco))
+        sd = _id_sqrt.(diag(Pco))
         Pco = abs.(Pco ./ (sd * sd'))
     else
         Mco = fill(NaN, param_nbr)
         nc = size(Xn, 2)
         for ii in 1:nc
             others = [k for k in 1:nc if k != ii]
-            Mco[ind1[ii]] = _id_cosn(hcat(Xn[:, [ii]], Xn[:, others], Xrest))
+            Mco[ind1[ii]] = _id_cosn(nrest == 0 ? hcat(Xn[:, [ii]], Xn[:, others]) : hcat(Xn[:, [ii]], Xn[:, others], Xrest))
         end
     end
     ixno = 0
@@ -162,7 +179,7 @@ function _id_checks(X0::AbstractMatrix, test_flag::Int, tol_rank, tol_sv, param_
         for ii in 1:nc
             Pco[ind1[ii], ind1[ii]] = 1
             for jj in ii+1:nc
-                v = _id_cosn(hcat(Xn[:, [ii]], Xn[:, [jj]], Xrest))
+                v = _id_cosn(nrest == 0 ? hcat(Xn[:, [ii]], Xn[:, [jj]]) : hcat(Xn[:, [ii]], Xn[:, [jj]], Xrest))
                 Pco[ind1[ii], ind1[jj]] = v
                 Pco[ind1[jj], ind1[ii]] = v
             end
@@ -300,7 +317,7 @@ function _id_pruned_first_order(ghx, ghu, Sigma, Yss, indy, nlags, useautocorr, 
     out = Dict{Symbol,Any}(:indx => collect(indx), :indy => indy, :A => A, :B => B, :C => C, :D => D, :Varinov => Varinov)
     Var_y = C * Var_z * C' + D * Varinov * D'
     Var_y[abs.(Var_y).<1e-12] .= 0
-    sdy = sqrt.(diag(Var_y))
+    sdy = _id_sqrt.(diag(Var_y))
     sy = sdy * sdy'
     tmp = A * Var_z * C' + B * Varinov * D'
     Var_yi = zeros(ny, ny, nlags)
@@ -515,7 +532,7 @@ function _id_asymptotic_hessian(Y, T, R, Q, Z, DT, DYss, DOm, Pstar; kalman_tol=
         rescale = false
         sig = nothing
         if _id_rcond(F) < kalman_tol
-            sig = sqrt.(diag(F))
+            sig = _id_sqrt.(diag(F))
             (any(<(kalman_tol), diag(F)) || _id_rcond(F ./ (sig * sig')) < kalman_tol) && throw(_IdSingularF())
             rescale = true
         end
@@ -635,6 +652,8 @@ function Base.:^(a::_IdDual, b::_IdDual)
     da = a.d == 0 ? 0.0 : b.v * a.v^(b.v - 1) * a.d
     _IdDual(val, da + val * log(a.v) * b.d)
 end
+Base.:^(a::_IdDual, p::Integer) = a ^ _IdDual(Float64(p), 0.0)
+Base.:^(a::_IdDual, p::Rational) = a ^ _IdDual(Float64(p), 0.0)
 for f in (:sign, :round, :floor, :ceil, :trunc)
     @eval Base.$f(::_IdDual) = throw(IdentificationError("the model uses " * $(string(f)) * ", which has no analytic derivative here"))
 end
@@ -886,7 +905,7 @@ function _id_params_derivs(m::Model, indpmodel, indpstderr, indpcorr, Sigma, ys,
         dH[:, :, jj] = -(A \ (dfu + dA * H))
     end
     kron_sol !== nothing && ((dG, dH) = kron_sol)
-    sd = sqrt.(diag(Sigma))
+    sd = _id_sqrt.(diag(Sigma))
     corr = Sigma ./ (sd * sd')
     corr[.!isfinite.(corr)] .= 0.0
     corr[diagind(corr)] .= 1.0
@@ -1248,7 +1267,7 @@ end
 
 function _id_calibration(c::_IdCtx)
     m = c.m
-    sd = sqrt.(diag(m.Sigma_e))
+    sd = _id_sqrt.(diag(m.Sigma_e))
     if !c.prior_exist
         return vcat(sd, m.params)
     end
@@ -1310,11 +1329,11 @@ function _id_fd_point(c::_IdCtx, theta)
     else
         n_exo = m.n_exo
         S0 = m.Sigma_e
-        sd0 = sqrt.(diag(S0))
+        sd0 = _id_sqrt.(diag(S0))
         corr = S0 ./ (sd0 * sd0')
         corr[.!isfinite.(corr)] .= 0.0
         corr[diagind(corr)] .= 1.0
-        sd = sqrt.(theta[1:n_exo] .^ 2)
+        sd = _id_sqrt.(theta[1:n_exo] .^ 2)
         Sigma = Diagonal(sd) * corr * Diagonal(sd)
         pvec = Vector{Float64}(theta[n_exo+1:end])
     end
@@ -1574,7 +1593,7 @@ function _id_analysis(c::_IdCtx, theta; init::Bool=true)
             ind_dSPECTRUM = _id_rows_above(dSPECTRUM, tol_deriv)
             tilda = zeros(size(dSPECTRUM))
             sub = dSPECTRUM[ind_dSPECTRUM, ind_dSPECTRUM]
-            delta = sqrt.(diag(sub))
+            delta = _id_sqrt.(diag(sub))
             tilda[ind_dSPECTRUM, ind_dSPECTRUM] = sub ./ (delta * delta')
             norm_dSPEC = _id_norm_rows(dSPECTRUM[ind_dSPECTRUM, :])
         else
@@ -1651,22 +1670,22 @@ function _id_simulated_moment_uncertainty(c::_IdCtx, sol, indx, periods, replic,
         mean_ = vec(sum(y; dims=1)) ./ N
         y = y .- mean_'
         var = y' * y / N
-        s = vec(sqrt.(sum(abs2, y; dims=1) ./ N))
+        s = vec(_id_sqrt.(sum(abs2, y; dims=1) ./ N))
         zero_ = abs.(s) .< 1e-10
         var[zero_, :] .= 0
         var[:, zero_] .= 0
         dum = Any[mean_, _id_vech(var)]
-        sdv = sqrt.(diag(var))
+        sdv = _id_sqrt.(diag(var))
         for i in 1:nlags
             a0, a1 = y[nlags+1:end, :], y[nlags-i+1:N-i, :]
-            ac = a0' * a1 ./ ((N - nlags) .* (vec(std(a0; dims=1)) * vec(std(a1; dims=1))'))
+            ac = a0' * a1 ./ ((N - nlags) .* (vec(_id_std(a0; dims=1)) * vec(_id_std(a1; dims=1))'))
             ac[zero_, :] .= NaN
             ac[:, zero_] .= NaN
             push!(dum, vec(ac .* (sdv * sdv')))
         end
         mm[:, j] = reduce(vcat, dum)[indx]
     end
-    cov(mm; dims=2)
+    _id_cov_rows(mm)
 end
 
 function _id_try_asymptotic_hessian(c::_IdCtx, theta, sol, data)
@@ -1731,7 +1750,7 @@ function _id_strength(c::_IdCtx, theta, sol, J, si_dMOMENTS, si_dREDUCEDFORM, si
     if AHess !== nothing
         flag_score = 1
         ide_hess["AHess"] = AHess
-        deltaM = sqrt.(diag(AHess))
+        deltaM = _id_sqrt.(diag(AHess))
         iflag = any(deltaM .* deltaM .== 0)
         tildaM = AHess ./ (deltaM * deltaM')
         use = (iflag || _id_rank(AHess) > _id_rank(tildaM)) ? AHess : tildaM
@@ -1740,7 +1759,7 @@ function _id_strength(c::_IdCtx, theta, sol, J, si_dMOMENTS, si_dREDUCEDFORM, si
             ide_hess[string(k)] = ch[k]
         end
         indok = findall(==(0), vec(maximum(ch[:indno]; dims=1)))
-        uncert[indok] = sqrt.(diag(_id_inv(AHess[indok, indok])))
+        uncert[indok] = _id_sqrt.(diag(_id_inv(AHess[indok, indok])))
         ind1 = findall(!iszero, ch[:ind0])
         sol_ = _id_mldivide(AHess[ind1, ind1], si_dMOMENTS[:, ind1]')
         cmm = si_dMOMENTS[:, ind1] * sol_
@@ -1753,14 +1772,14 @@ function _id_strength(c::_IdCtx, theta, sol, J, si_dMOMENTS, si_dREDUCEDFORM, si
         flag_score = 0
         replic = max(Int(o["replic"]), length(ind_dMOMENTS) * 3)
         cmm = _id_simulated_moment_uncertainty(c, sol, ind_dMOMENTS, o["periods"], replic, nlags)
-        sd = sqrt.(diag(cmm))
+        sd = _id_sqrt.(diag(cmm))
         cc = cmm ./ (sd * sd')
         DD, VV = eigen(Symmetric((cc + cc') / 2))
         idd = findall(>(tol_deriv), DD)
         siTMP = si_dMOMENTS ./ sd
         MIM = (siTMP' * VV[:, idd]) * Diagonal(1 ./ DD[idd]) * (VV[:, idd]' * siTMP)
         ide_hess["AHess"] = MIM
-        deltaM = sqrt.(diag(MIM))
+        deltaM = _id_sqrt.(diag(MIM))
         iflag = any(deltaM .* deltaM .== 0)
         tildaM = MIM ./ (deltaM * deltaM')
         use = (iflag || _id_rank(MIM) > _id_rank(tildaM)) ? MIM : tildaM
@@ -1775,7 +1794,7 @@ function _id_strength(c::_IdCtx, theta, sol, J, si_dMOMENTS, si_dREDUCEDFORM, si
         ind1 = filter(>(sc), ind1)
         sd_ = si_dDYNAMIC[:, ind1 .- sc]
         cdynamic = sd_ * _id_mldivide(MIM[ind1, ind1], sd_')
-        isempty(indok) || (uncert[indok] = sqrt.(diag(_id_inv(tildaM[indok, indok]))) ./ deltaM[indok])
+        isempty(indok) || (uncert[indok] = _id_sqrt.(diag(_id_inv(tildaM[indok, indok]))) ./ deltaM[indok])
     end
     strength = fill(NaN, tot)
     strength_prior = fill(NaN, tot)
@@ -1784,13 +1803,13 @@ function _id_strength(c::_IdCtx, theta, sol, J, si_dMOMENTS, si_dREDUCEDFORM, si
     sens_zero = findall(isinf, deltaM)
     deltaM_prior = deltaM .* abs.(normaliz_prior_std)
     deltaM = deltaM .* abs.(params)
-    quant = si_dMOMENTS ./ sqrt.(diag(cmm))
+    quant = si_dMOMENTS ./ _id_sqrt.(diag(cmm))
     si_dMOMENTSnorm = size(quant, 1) == 1 ? abs.(quant) .* normaliz_prior_std' : (_id_vnorm(quant) .* normaliz_prior_std)'
     iy = findall(!iszero, diag_chh)
     ind_dREDUCEDFORM = ind_dREDUCEDFORM[iy]
     si_dREDUCEDFORM = si_dREDUCEDFORM[iy, :]
     if !isempty(iy)
-        quant = si_dREDUCEDFORM ./ sqrt.(diag_chh[iy])
+        quant = si_dREDUCEDFORM ./ _id_sqrt.(diag_chh[iy])
         si_dREDUCEDFORMnorm = size(quant, 1) == 1 ? abs.(quant) .* normaliz_prior_std' : (_id_vnorm(quant) .* normaliz_prior_std)'
     else
         si_dREDUCEDFORMnorm = zeros(0, 0)
@@ -1800,7 +1819,7 @@ function _id_strength(c::_IdCtx, theta, sol, J, si_dMOMENTS, si_dREDUCEDFORM, si
     ind_dDYNAMIC = ind_dDYNAMIC[iy]
     si_dDYNAMIC = si_dDYNAMIC[iy, :]
     if !isempty(iy)
-        quant = si_dDYNAMIC ./ sqrt.(diag_cd[iy])
+        quant = si_dDYNAMIC ./ _id_sqrt.(diag_cd[iy])
         nps = normaliz_prior_std[sc+1:end]
         si_dDYNAMICnorm = size(quant, 1) == 1 ? abs.(quant) .* nps' : (_id_vnorm(quant) .* nps)'
     else
@@ -2042,7 +2061,7 @@ function _id_vnorm_matlab(A::AbstractMatrix)
 end
 
 function _id_std0(a, dims)
-    size(a, dims) > 1 ? vec(std(a; dims=dims)) : zeros(size(a, 3 - dims))
+    size(a, dims) > 1 ? vec(_id_std(a; dims=dims)) : zeros(size(a, 3 - dims))
 end
 
 function _id_monte_carlo!(c::_IdCtx, out, point_res)
@@ -2312,4 +2331,20 @@ function _identification_run!(m::Model, st; rng=nothing, warn=nothing)
         _id_write_mat(dir, "$(name)_identif_$k.mat", f)
     end
     out
+end
+
+"""
+The `identification` statement of a .mod file (run.m): changes none of `M_`, `oo_` and `options_` (except `options_.nodisplay` and
+`options_.nograph` when the statement gives them) and writes `<fname>/identification/<fname>_identif.mat` and
+`<fname>_<parameter set>_identif.mat`.
+"""
+function _identification_statement!(ws, st, rng)
+    m = ws.model
+    opts = get_or(st, "options", Dict{String,Any}())
+    for k in ("nodisplay", "nograph")
+        haskey(opts, k) && (ws.options_[k] = _mval(opts[k]))
+    end
+    r = rng === nothing ? dynare_rng(ws) : rng
+    _identification_run!(m, st; rng=r, warn=msg -> warn_once(m, "identification: " * msg))
+    nothing
 end

@@ -979,6 +979,8 @@ function _run_in_place!(ws, st, nss, shocks, rng)
         _calib_smoother!(ws, st, String.(get_or(st, "symbol_list", String[])), (;))
     elseif kind in ("forecast", "conditional_forecast", "plot_conditional_forecast")
         _forecast_statement!(ws, kind, st, rng)          # src/forecast.jl
+    elseif kind == "identification"
+        _identification_statement!(ws, st, rng)          # src/identification.jl
     elseif kind in _P2_KINDS
         _p2_statement!(ws, kind, st)                    # src/results_parity2.jl
     elseif !(kind in _QUIET_KINDS)
