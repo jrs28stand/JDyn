@@ -1251,7 +1251,7 @@ function _id_context(m::Model, raw::AbstractDict; rng=nothing, no_priors::Bool=f
                Dict{Symbol,Any}(), nothing, false, String[])
     _id_set_derivation_mode!(c, haskey(raw, "analytic_derivation_mode"))
     (prior_exist && !is_bayesian(est.prior)) && (c.opts["prior_mc"] = 1)
-    c.opts["order"] == 1 || throw(IdentificationError("identification: orders 2 and 3 are not ported (order=1 only)"))
+    c.opts["order"] == 1 || throw(IdentificationError("identification: orders 2 and 3 are not supported (not ported; order=1 only)"))
     c.opts["analytic_derivation_mode"] in (0, 1, -1, -2) || throw(IdentificationError("identification: analytic_derivation_mode must be 0, 1, -1 or -2"))
     c
 end
@@ -1301,7 +1301,7 @@ function _id_point(c::_IdCtx)
     is_bayesian(e.prior) || return copy(e.x0), "ML_Starting_value"
     ps == "calibration" && return _id_calibration(c), "calibration"
     ps == "prior_mean" && return copy(e.prior.p1), "prior_mean"
-    throw(IdentificationError("identification: parameter_set=$ps is not ported (calibration and prior_mean are)"))
+    throw(IdentificationError("identification: parameter_set=$ps is not supported (not ported; calibration and prior_mean are)"))
 end
 
 # ------------------------------------------------------------------------------------------------ solution at a point
@@ -1770,7 +1770,7 @@ function _id_try_asymptotic_hessian(c::_IdCtx, theta, sol, data)
     catch e
         e isa _IdSingularF || rethrow()
         uf = get(c.raw, "use_univariate_filters_if_singularity_is_detected", 1)
-        (uf == false || uf == 0) && throw(IdentificationError("identification: singular prediction error covariance with use_univariate_filters_if_singularity_is_detected=0 (not ported)"))
+        (uf == false || uf == 0) && throw(IdentificationError("identification: singular prediction error covariance with use_univariate_filters_if_singularity_is_detected=0 is not supported (not ported)"))
         try
             Hess = _id_univariate_asymptotic_hessian(Y, T, R, Sigma, Z, DT, DYss, DOm, Pstar)
         catch e2
@@ -2276,7 +2276,7 @@ function _id_monte_carlo!(c::_IdCtx, out, point_res)
                     c.opts = opts_ident
                 end
             else
-                throw(IdentificationError("identification: advanced=1 with rank deficient draws in the Monte Carlo sample (struct arrays of the analyses) is not ported"))
+                throw(IdentificationError("identification: advanced=1 with rank deficient draws in the Monte Carlo sample (struct arrays of the analyses) is not supported (not ported)"))
             end
         end
     end
