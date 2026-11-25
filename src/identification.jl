@@ -2365,6 +2365,7 @@ function _id_no_priors(m::Model)
     m.session === nothing && return false
     v = get(m.session.sc.vars, "estim_params_", nothing)
     v === nothing && return false
+    v isa DynareOpaque && return false          # the global as dynare() puts it in the workspace (src/estimation_internals.jl): not assigned
     (v isa AbstractArray && isempty(v)) && return true
     throw(IdentificationError("identification: estim_params_ was assigned in the .mod file; only [] is supported"))
 end
