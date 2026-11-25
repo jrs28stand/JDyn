@@ -823,7 +823,9 @@ function _setup_parameters!(est::Estimation)
     est.x0 = init
     if is_bayesian(est.prior)
         plb, pub = prior_bounds(est.prior, est.options["prior_trunc"])
-        est.lb, est.ub = max.(plb, lb), min.(pub, ub)
+        # dynare_estimation_init.m: bounds.lb = max(bounds.lb, lb). MATLAB's max/min ignore NaN, so a bound left blank in
+        # estimated_params (`p,,,,normal_pdf,...` gives NaN) falls back to the prior's; Julia's max/min would propagate it.
+        est.lb, est.ub = _matlab_max.(plb, lb), _matlab_min.(pub, ub)
     else
         est.lb, est.ub = lb, ub
     end
@@ -831,6 +833,10 @@ function _setup_parameters!(est::Estimation)
     isempty(bad) || throw(EstimationError("initial value(s) of $(join(est.names[bad], ", ")) outside the parameter bounds [$(join(["$(est.lb[i]), $(est.ub[i])" for i in bad], "; "))]"))
     est
 end
+
+# MATLAB's max/min skip NaN (max(x, NaN) == x; NaN only when both are NaN).
+_matlab_max(a, b) = isnan(a) ? b : isnan(b) ? a : max(a, b)
+_matlab_min(a, b) = isnan(a) ? b : isnan(b) ? a : min(a, b)
 
 function _entry_name(e)
     haskey(e, "param") ? e["param"] : haskey(e, "var") ? "stderr $(e["var"])" : "corr $(e["var1"]), $(e["var2"])"
