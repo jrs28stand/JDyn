@@ -438,26 +438,6 @@ function _stoch_simul(ws, m, oo, var_list, shocks, rng)
     var_list = isempty(var_list) ? orig_endo_names(m) : String.(collect(var_list))
     oo.var_list = _cellcol(var_list)
     ivar = [m.ie[v] for v in var_list]
-    nirf = _opti(ws, "irf", 40)
-    if nirf > 0
-        irfs = get(oo, "irfs", MStruct())
-        cs = get_lower_cholesky_covariance(m.Sigma_e)
-        relative = _optb(ws, "relative_irf", false)
-        for sname in _shock_list(_getpath(ws.options_, "irf_shocks", nothing), m)
-            i = m.ix[sname]
-            cs[i, i] > 5e-7 || continue                           # stoch_simul.m: no IRF for (near) zero variance
-            impulse = order > 1 && relative ? cs[:, i] ./ cs[i, i] ./ 100 : cs[:, i]   # GIRFs: shock normalised to 0.01
-            y = order == 1 ? irf(dr, impulse; periods=nirf) :
-                irf(dr, impulse; Sigma_e=m.Sigma_e, periods=nirf, order=order, pruning=pruning,
-                    drop=_opti(ws, "drop", 100), replic=_opti(ws, "replic", 50),
-                    rng=rng === nothing ? dynare_rng(ws) : rng)
-            relative && order == 1 && (y = 100 .* y ./ cs[i, i])
-            for j in ivar
-                irfs[string(m.endo_names[j], "_", sname)] = _row(y[:, j])
-            end
-        end
-        oo.irfs = irfs
-    end
     periods = _opti(ws, "periods", 0)
     if periods > 0
         ex = if shocks !== nothing
@@ -480,8 +460,8 @@ function _stoch_simul(ws, m, oo, var_list, shocks, rng)
     end
     if !_optb(ws, "nomoments", false) && (order <= 2 || (order == 3 && pruning && periods == 0))
         mom = try
-            periods > 0 ? simulated_moments(permutedims(oo.endo_simul); ivar=ivar, shocks=oo.exo_simul, dr=dr, model=m) :
-                          theoretical_moments(m, dr; var_list=var_list)
+            periods > 0 ? simulated_moments(permutedims(oo.endo_simul); ivar=ivar, shocks=oo.exo_simul, dr=dr, model=m, order=order) :
+                          theoretical_moments(m, dr; var_list=var_list, order=order, pruning=pruning)
         catch e
             e isa Union{ArgumentError,ModelError} || rethrow()
             warn_once(m, "stoch_simul: moments not computed ($(sprint(showerror, e)))")
@@ -501,6 +481,27 @@ function _stoch_simul(ws, m, oo, var_list, shocks, rng)
                 mom.kurtosis === nothing || (oo.kurtosis = _col(mom.kurtosis))
             end
         end
+    end
+    # stoch_simul.m draws the simulation first, then the (generalised) IRFs: one random stream, in that order
+    nirf = _opti(ws, "irf", 40)
+    if nirf > 0
+        irfs = get(oo, "irfs", MStruct())
+        cs = get_lower_cholesky_covariance(m.Sigma_e)
+        relative = _optb(ws, "relative_irf", false)
+        for sname in _shock_list(_getpath(ws.options_, "irf_shocks", nothing), m)
+            i = m.ix[sname]
+            cs[i, i] > 5e-7 || continue                           # stoch_simul.m: no IRF for (near) zero variance
+            impulse = order > 1 && relative ? cs[:, i] ./ cs[i, i] ./ 100 : cs[:, i]   # GIRFs: shock normalised to 0.01
+            y = order == 1 ? irf(dr, impulse; periods=nirf) :
+                irf(dr, impulse; Sigma_e=m.Sigma_e, periods=nirf, order=order, pruning=pruning,
+                    drop=_opti(ws, "drop", 100), replic=_opti(ws, "replic", 50),
+                    rng=rng === nothing ? dynare_rng(ws) : rng)
+            relative && order == 1 && (y = 100 .* y ./ cs[i, i])
+            for j in ivar
+                irfs[string(m.endo_names[j], "_", sname)] = _row(y[:, j])
+            end
+        end
+        oo.irfs = irfs
     end
     oo
 end

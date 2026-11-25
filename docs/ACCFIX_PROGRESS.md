@@ -18,3 +18,16 @@ then the comparator), commit.
 | 3 port-error fields | todo | |
 | 4 numerical | todo | |
 | 5 interpreter | todo | |
+
+## Log
+- Baseline re-run with the newer comparator (pydyn 0471ce9, end-point rule): totals unchanged (90/210/176/201/55).
+- Findings that explain many verdicts: (1) stoch_simul.m never writes oo_.steady_state (initval values or the last `steady` stay; zeros
+  initially): JDyn overwrote it with the solved one (71 "steady_state wrong"); now kept, loglinear logs it once (small piece, overlaps
+  the parity2 agent's "logged steady state in the results layer": reconcile at merge). (2) Dynare's default order is 2, so the default IRFs are
+  GIRFs that draw random numbers after the simulation: JDyn drew them before; moments were computed at order 1 inside the workspace
+  because `_flat_options` drops default-valued options (order 2): `order=` is now passed explicitly (order-2 mean: burnside_1, neo_growth).
+  (3) simult.m draws `randn(nxs, periods)'` (period by period): JDyn drew `randn(periods, nxs)`. (4) compute_variance_decomposition.m returns
+  `ones(size(ghu,1),1)` for one shock (all endo_nbr rows): gamma_y{nar+2}/variance_decomposition for Ramsey and one-shock models.
+- With JDYN_ACCEPT_RNG=octave (worker now uses random=:octave and writes "rng":"octave") exo_simul/endo_simul/irfs/moments of simulated runs
+  are compared and match for arima/mod1, stochastic_simulations/example1, burnside_1, neo_growth, multi_leads.
+- Dev flow: edits in /tmp/devsrc, tested via JDYN_PATCH overlays (worker loads patch files after `using JDyn`), merged to src at milestones.
