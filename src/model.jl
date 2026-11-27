@@ -8,12 +8,65 @@ end
 ModelError(msg::AbstractString) = ModelError(String(msg), nothing)
 Base.showerror(io::IO, e::ModelError) = print(io, "ModelError: ", e.msg)
 
-"Locate the Dynare 7.2 preprocessor: explicit path, \$DYNARE_PREPROCESSOR, or `dynare-preprocessor` on the PATH."
+_prefs_file() = joinpath(first(DEPOT_PATH), "prefs", "JDyn.toml")
+
+"Preprocessor path saved by `set_preprocessor`, or `nothing`."
+function _saved_preprocessor()
+    f = _prefs_file()
+    isfile(f) || return nothing
+    d = try; TOML.parsefile(f); catch; return nothing; end
+    get(d, "preprocessor", nothing)
+end
+
+"""
+    set_preprocessor(path)
+
+Remember the Dynare 7.2 preprocessor (`dynare-preprocessor`, or `dynare-preprocessor.exe` in a Windows Dynare
+install) for this and later Julia sessions. Saved in `~/.julia/prefs/JDyn.toml`.
+"""
+function set_preprocessor(path::AbstractString)
+    isfile(path) || throw(ArgumentError("no file at $path"))
+    f = _prefs_file()
+    mkpath(dirname(f))
+    d = isfile(f) ? TOML.parsefile(f) : Dict{String,Any}()
+    d["preprocessor"] = abspath(path)
+    open(io -> TOML.print(io, d), f, "w")
+    return abspath(path)
+end
+
+# Dynare's Windows installer puts each version under C:\dynare\<version>; prefer 7.2, then the newest.
+function _windows_dynare_preprocessor()
+    Sys.iswindows() || return nothing
+    for root in ("C:\\dynare", joinpath(get(ENV, "ProgramFiles", "C:\\Program Files"), "Dynare"))
+        isdir(root) || continue
+        vers = sort(filter(v -> isdir(joinpath(root, v)), readdir(root)); by=v -> (startswith(v, "7.2") ? 1 : 0, v), rev=true)
+        for v in vers, sub in ("preprocessor", joinpath("matlab", "preprocessor64"), "bin", "")
+            f = joinpath(root, v, sub, "dynare-preprocessor.exe")
+            isfile(f) && return f
+        end
+    end
+    return nothing
+end
+
+"""
+Locate the Dynare 7.2 preprocessor: explicit path, \$DYNARE_PREPROCESSOR, the path saved by `set_preprocessor`,
+`dynare-preprocessor` on the PATH, or (Windows) a Dynare install under `C:\\dynare`. In an interactive session it
+asks for the path once if none is found, and saves the answer.
+"""
 function find_preprocessor(explicit=nothing)
-    for cand in (explicit, get(ENV, "DYNARE_PREPROCESSOR", nothing), Sys.which("dynare-preprocessor"))
+    for cand in (explicit, get(ENV, "DYNARE_PREPROCESSOR", nothing), _saved_preprocessor(),
+                 Sys.which("dynare-preprocessor"), _windows_dynare_preprocessor())
         (cand !== nothing && isfile(cand)) && return String(cand)
     end
-    throw(ArgumentError("dynare-preprocessor not found; pass its path or set DYNARE_PREPROCESSOR"))
+    if isinteractive() && stdin isa Base.TTY
+        println("JDyn needs Dynare 7.2's preprocessor (dynare-preprocessor", Sys.iswindows() ? ".exe" : "",
+                "), which comes with a Dynare install.")
+        print("Path to it (saved for later sessions; empty to cancel): ")
+        ans = strip(strip(readline()), ['"', '\''])
+        !isempty(ans) && isfile(ans) && return set_preprocessor(ans)
+    end
+    throw(ArgumentError("dynare-preprocessor not found. Point JDyn at the one in your Dynare 7.2 install once with " *
+                        "`JDyn.set_preprocessor(path)` (saved for later sessions), or set DYNARE_PREPROCESSOR."))
 end
 
 """

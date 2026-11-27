@@ -1,0 +1,17 @@
+[[korder]]
+arch = "x86_64"
+git-tree-sha1 = "d67b59155f4f2911a49c9f700d67f4573c80f06b"
+libc = "glibc"
+os = "linux"
+
+    [[korder.download]]
+    sha256 = "944c7551fa61d204cabbe3ec4a15a55e030985f30f1686a156cfbc445c4d11c8"
+    url = "https://github.com/jrs28stand/JDyn/raw/binaries/korder-7.2-1-x86_64-linux-gnu.tar.gz"
+[[korder]]
+arch = "x86_64"
+git-tree-sha1 = "f7599c5b975c1366c442742695ef8cc073a544fd"
+os = "windows"
+
+    [[korder.download]]
+    sha256 = "d9d3b08635314125000944f8b098a1b6425728ffa25dde59bfeaae054210d3c9"
+    url = "https://github.com/jrs28stand/JDyn/raw/binaries/korder-7.2-1-x86_64-w64-mingw32.tar.gz"

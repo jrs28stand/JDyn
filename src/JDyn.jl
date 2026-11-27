@@ -16,6 +16,8 @@ using Logging
 using Random
 import JSON
 import MAT
+import TOML
+import Artifacts
 import NLsolve
 import SpecialFunctions
 
@@ -103,7 +105,7 @@ export posterior_irf_dsgevar, dsge_var_posterior, endogenous_log_prior, sample_m
        posterior_smoother_statistics,
        run_preprocessor, load, Model, ModelError, steady_state, SteadyStateError, first_order, FirstOrderSolution,
        BlanchardKahnError, ghx, ghu, irf, simulate, set_param!, set_params!, get_param, set_shock_stderr!,
-       stoch_simul_moments, theoretical_moments, k_order, KOrderError, korder_library, plot_irfs, irf_figures, Figure, Panel, Curve, figure_table, save_figures, arrange_figures, graphs_dir, to_figure,
+       stoch_simul_moments, theoretical_moments, k_order, KOrderError, korder_library, set_preprocessor, plot_irfs, irf_figures, Figure, Panel, Curve, figure_table, save_figures, arrange_figures, graphs_dir, to_figure,
        occbin_irf_figures, occbin_graph_figures, decomposition_figures, plot_shock_decomposition, prior_density, prior_figures, mode_check_data, mode_check_figures,
        prior_posterior_figures, trace_figures, brooks_gelman_figures, bayesian_irf_figures, posterior_series_figures, smoother_figures, forecast_figures, conditional_forecast_figures, rplot_figures, dynare_parameter_name, irf_table, write_csv, pltorg, IRFResult, IRFFigure,
        Occbin, OccbinResult, OccbinIRF, OccbinError, OccbinPeriodicError, OccbinMaxitError, OccbinHorizonError, OccbinLoopError,

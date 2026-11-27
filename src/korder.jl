@@ -20,12 +20,37 @@ const _korder_lock = ReentrantLock()      # the C++ library keeps process-wide s
 "Default location of the library: `deps/korder/libjdyn_korder.so` in the package folder."
 default_korder_library() = joinpath(dirname(@__DIR__), "deps", "korder", "libjdyn_korder." * Libdl.dlext)
 
+const _ARTIFACTS_TOML = joinpath(dirname(@__DIR__), "Artifacts.toml")
+
+"""
+Path of the prebuilt k-order library that `Pkg` downloaded with JDyn (artifact `korder` in `Artifacts.toml`;
+x86_64 Linux and Windows), or `nothing` if there is no build for this platform or it was not downloaded.
+"""
+function artifact_korder_library()
+    isfile(_ARTIFACTS_TOML) || return nothing
+    meta = Artifacts.artifact_meta("korder", _ARTIFACTS_TOML)
+    meta === nothing && return nothing
+    h = Base.SHA1(meta["git-tree-sha1"])
+    Artifacts.artifact_exists(h) || return nothing
+    joinpath(Artifacts.artifact_path(h), "libjdyn_korder." * Libdl.dlext)
+end
+
+# On Windows, load the BLAS/runtime DLLs that sit beside the library first, so the loader finds them by name.
+function _preload_dependencies(lib)
+    Sys.iswindows() || return
+    for d in ("vcruntime140.dll", "openblas.dll", "libopenblas.dll")
+        f = joinpath(dirname(lib), d)
+        isfile(f) && Libdl.dlopen(f; throw_error=false)
+    end
+end
+
 """
     korder_library(path=nothing) -> String
 
 Path of Dynare's k-order library that JDyn uses: `path`, else the environment variable `JDYN_KORDER_LIB`, else
-`deps/korder/libjdyn_korder.so` in the package folder (build it with `deps/korder/build.sh`). Loads it on first
-use; throws `KOrderError` with build instructions if it is missing.
+`deps/korder/libjdyn_korder.so` (`.dll` on Windows) in the package folder (built with `deps/korder/build.sh` or
+`build_windows.sh`), else the prebuilt library `Pkg` downloads with JDyn on x86_64 Linux and Windows. Loads it on
+first use; throws `KOrderError` with build instructions if none is found.
 """
 function korder_library(path=nothing)
     lock(_korder_lock) do
@@ -37,19 +62,23 @@ function korder_library(path=nothing)
         path !== nothing && push!(cands, String(path))
         haskey(ENV, "JDYN_KORDER_LIB") && push!(cands, ENV["JDYN_KORDER_LIB"])
         push!(cands, default_korder_library())
+        art = artifact_korder_library()
+        art === nothing || push!(cands, art)
         for c in cands
             if isfile(c)
                 if _korder_lib[] != C_NULL && _korder_path[] == abspath(c)
                     return _korder_path[]
                 end
+                _preload_dependencies(c)
                 _korder_lib[] = Libdl.dlopen(c, Libdl.RTLD_LAZY | Libdl.RTLD_LOCAL)
                 _korder_path[] = abspath(c)
                 return _korder_path[]
             end
         end
-        throw(KOrderError("Dynare's k-order library was not found (looked for $(join(cands, ", "))). Build it with " *
-                          "`deps/korder/build.sh /path/to/dynare-7.2` (needs g++ >= 13, BLAS and LAPACK) or set the " *
-                          "environment variable JDYN_KORDER_LIB to the built libjdyn_korder.so."))
+        throw(KOrderError("Dynare's k-order library was not found (looked for $(join(cands, ", "))). JDyn ships a " *
+                          "prebuilt one for x86_64 Linux (glibc >= 2.38) and Windows, downloaded by Pkg; otherwise build " *
+                          "it with `deps/korder/build.sh /path/to/dynare-7.2` (needs g++ >= 13, BLAS and LAPACK; " *
+                          "`build_windows.sh` on Windows) or set the environment variable JDYN_KORDER_LIB to the built library."))
     end
 end
 
