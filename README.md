@@ -43,24 +43,25 @@ export DYNARE_PREPROCESSOR=$PWD/../../pp/src/dynare-preprocessor
 ### Higher order (optional): Dynare's k-order library
 
 Decision rules at orders 2 and 3 are computed by Dynare's own C++ library (`libkorder`, the code behind
-`k_order_solver`), through a small C API in `deps/korder/` that is called with `ccall`. Build it once from the
-Dynare 7.2 source tree (the same one as for the preprocessor), without MATLAB or Octave:
+`k_order_solver`), through a small C API in `deps/korder/` that is called with `ccall`.
+
+**On x86_64 Windows and Linux (glibc 2.38 or newer) nothing needs building:** `Pkg.add` downloads a prebuilt copy
+with its own OpenBLAS (artifact `korder` in `Artifacts.toml`; tarballs on the repository's `binaries` branch).
+Elsewhere, or to use your own build, build it once from the Dynare 7.2 source tree, without MATLAB or Octave:
 
 ```sh
-deps/korder/build.sh /path/to/dynare-7.2      # needs g++ >= 13 (C++20, OpenMP), BLAS and LAPACK; about 1-2 minutes
+deps/korder/build.sh /path/to/dynare-7.2           # Linux/macOS: needs g++ >= 13 (C++20, OpenMP), BLAS and LAPACK
+deps/korder/build_windows.sh /path/to/dynare-7.2   # Windows (MSYS2 MINGW64 shell), or cross-compiled; see the script
 ```
 
-This writes `deps/korder/libjdyn_korder.so`. JDyn looks for it there, or at the path in the environment
-variable `JDYN_KORDER_LIB` (or the `library=` keyword of `k_order`), and raises a `KOrderError` with these
-instructions if it is missing. Order 1 needs no library.
+JDyn looks for the library at the `library=` keyword of `k_order`, then the environment variable `JDYN_KORDER_LIB`,
+then `deps/korder/`, then the downloaded copy, and raises a `KOrderError` with these instructions if none is found.
+Order 1 needs no library. To publish a new prebuilt version: `tools/make_korder_artifacts.jl`.
 
-**Windows.** `deps/korder/build_windows.sh` builds `deps/korder/libjdyn_korder.dll` instead, either in an MSYS2
-MINGW64 shell (`pacman -S mingw-w64-x86_64-gcc mingw-w64-x86_64-openblas`, then
-`deps/korder/build_windows.sh /c/path/to/dynare-7.2`) or cross-compiled on Linux with MinGW-w64 against a Windows
-OpenBLAS DLL (`JDYN_WIN_BLAS=.../openblas.dll`; see the script's header). The DLLs it needs (OpenBLAS, and for the
-cross build `vcruntime140.dll`) are copied beside it in `deps/korder/`; JDyn finds the DLL there by itself. If Windows
-cannot find a DLL that `libjdyn_korder.dll` needs, add `deps\korder` to `PATH`. The Windows build has been
-cross-compiled and its imports and exports checked, but not yet run on Windows.
+**The preprocessor.** JDyn uses the `dynare-preprocessor` from your Dynare 7.2 install. It looks at
+`DYNARE_PREPROCESSOR`, then a path saved with `JDyn.set_preprocessor(path)` (kept in `~/.julia/prefs/JDyn.toml`),
+then the PATH, then (Windows) a Dynare install under `C:\dynare`. If none is found in an interactive session, it
+asks for the path once and saves it.
 
 ```julia
 m = JDyn.load("model.mod"; output="third")     # derivatives up to order 3 (the .mod file's `order` is used otherwise)
