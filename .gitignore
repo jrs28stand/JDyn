@@ -4,4 +4,6 @@ Manifest.toml
 /test/work/
 deps/korder/build/
 deps/korder/*.so
+deps/korder/build-windows/
+deps/korder/*.dll
 /test/acceptance/partial/

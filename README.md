@@ -54,6 +54,14 @@ This writes `deps/korder/libjdyn_korder.so`. JDyn looks for it there, or at the 
 variable `JDYN_KORDER_LIB` (or the `library=` keyword of `k_order`), and raises a `KOrderError` with these
 instructions if it is missing. Order 1 needs no library.
 
+**Windows.** `deps/korder/build_windows.sh` builds `deps/korder/libjdyn_korder.dll` instead, either in an MSYS2
+MINGW64 shell (`pacman -S mingw-w64-x86_64-gcc mingw-w64-x86_64-openblas`, then
+`deps/korder/build_windows.sh /c/path/to/dynare-7.2`) or cross-compiled on Linux with MinGW-w64 against a Windows
+OpenBLAS DLL (`JDYN_WIN_BLAS=.../openblas.dll`; see the script's header). The DLLs it needs (OpenBLAS, and for the
+cross build `vcruntime140.dll`) are copied beside it in `deps/korder/`; JDyn finds the DLL there by itself. If Windows
+cannot find a DLL that `libjdyn_korder.dll` needs, add `deps\korder` to `PATH`. The Windows build has been
+cross-compiled and its imports and exports checked, but not yet run on Windows.
+
 ```julia
 m = JDyn.load("model.mod"; output="third")     # derivatives up to order 3 (the .mod file's `order` is used otherwise)
 dr = k_order(m; order=3)                        # Dict of oo_.dr fields: ghx ghu ghxx ghxu ghuu ghs2 ghxxx ghxxu ghxuu ghuuu ghxss ghuss
