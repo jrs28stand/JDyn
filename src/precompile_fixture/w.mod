@@ -13,5 +13,4 @@ check;
 shocks; var e; stderr sigma; end;
 stoch_simul(order=1, irf=10, periods=300, hp_filter=1600, nograph);
 stoch_simul(order=1, irf=10, nograph);
-stoch_simul(order=2, irf=10, periods=300, nograph);
 x = oo_.dr.ghx;

@@ -4,14 +4,21 @@
 # statements run under `jl_generating_output`, i.e. only while the image is built. The model is a small RBC whose
 # preprocessor output (Dynare 7.2) is kept in src/precompile_fixture/, so no preprocessor is needed at that time;
 # its generated functions are loaded into the package's own modules (_WorkloadModel, see model.jl).
+#
+# The environment variable JDYN_PRECOMPILE_WORKLOAD chooses how much runs (read when the package image is built):
+#   "order1" (default): load, steady state, first-order solution, IRFs and simulation;
+#   "full": also order 2, which loads Dynare's k-order library (native code) while precompiling;
+#   "none": nothing; installs are quickest, the first dynare() of each session slowest.
 function _precompile_workload()
+    level = lowercase(get(ENV, "JDYN_PRECOMPILE_WORKLOAD", "order1"))
+    level in ("none", "0", "false", "off") && return nothing
     fx = joinpath(@__DIR__, "precompile_fixture")      # w.mod preprocessed once (Dynare 7.2, output=second): no preprocessor needed
     try
         Logging.with_logger(Logging.NullLogger()) do
             ws = dynare(joinpath(fx, "w.mod"); output="second", _json_dir=joinpath(fx, "w", "model", "json"))
             set_param_value!(ws, "rho", 0.8)
-            stoch_simul!(ws; order=1, irf=10, periods=0)
-            stoch_simul!(ws; order=2, irf=5, periods=300)
+            stoch_simul!(ws; order=1, irf=10, periods=300)
+            level == "full" && stoch_simul!(ws; order=2, irf=5, periods=300)
             steady!(ws)
             first_order(ws.model)
         end
