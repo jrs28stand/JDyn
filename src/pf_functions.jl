@@ -22,6 +22,12 @@ const _PF_HOST_WS = WeakKeyDict{Any,Any}()
 _pf_register_host!(ws) = (ws.model.session === nothing || (_PF_HOST_WS[ws.model.session.host] = ws); nothing)
 
 function _pfo_ws(I)
+    if I.host === nothing && _DRIVER_KW[] !== nothing && CURRENT[] !== nothing      # a run_matlab driver script (src/matlab_driver.jl)
+        ws = CURRENT[]
+        _driver_sync_in!(I, ws)
+        _driver_sync_out!(I, ws)
+        return ws
+    end
     h = _need_host(I)
     ws = get(_PF_HOST_WS, h, nothing)
     ws === nothing && throw(Unsupported("perfect-foresight functions need the workspace of a running dynare() session", "function"))

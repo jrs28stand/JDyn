@@ -39,6 +39,18 @@ function _driver_dir()
     stoch_simul('y');
     g3 = oo_.dr.ghx;
     """)
+    write(joinpath(d, "commands.m"), """
+    rho_val = 0.5;
+    dynare ar1 noclearall
+    [eig, ok, info] = check(M_, options_, oo_);
+    fc = forecasts.run({'y'}, M_, options_, oo_, 'simul');
+    has_mean = isfield(fc, 'Mean');
+    options_.periods = 10;
+    oo_ = perfect_foresight_setup(M_, options_, oo_);
+    oo_.exo_simul(2) = 1;
+    oo_ = perfect_foresight_solver(M_, options_, oo_);
+    path = oo_.endo_simul;
+    """)
     write(joinpath(d, "clears.m"), """
     rho_val = 0.8;
     dynare ar1
@@ -77,4 +89,16 @@ end
     @test r.vars["g"] ≈ [0.2 0.6]
     @test r.vars["g3"][1] ≈ 0.3
     @test r.workspaces[1].M_.params[1] ≈ 0.3
+end
+
+@testset "run_matlab: check, forecasts.run and perfect foresight from the script" begin
+    d = _driver_dir()
+    r = with_logger(NullLogger()) do
+        run_matlab(joinpath(d, "commands.m"))
+    end
+    v = r.vars
+    @test v["eig"][1] ≈ 0.5 && v["ok"] == 1.0 && v["info"] == 0.0
+    @test v["has_mean"] == true
+    p = vec(v["path"])
+    @test length(p) == 11 && p[2] ≈ 1.0 && p[3] ≈ 0.5 && p[4] ≈ 0.25
 end

@@ -222,3 +222,79 @@ bi!("steady_") do I, a, nout
     _driver_sync_out!(I, ws)
     Any[ws.oo_.steady_state, ws.M_.params, 0.0][1:min(max(nout, 1), 3)]
 end
+
+# The other Dynare commands, under the names and signatures Dynare 7.2's generated driver uses for them
+# (preprocessor/src/ComputingTasks.cc). The perfect-foresight, backward-model, extended-path and send_*_to_workspace
+# functions already exist as builtins; they find the driver's workspace through `_pfo_ws` (pf_functions.jl).
+
+# A builtin (or package function) that runs in a driver script and keeps whatever was registered before otherwise.
+function _driver_cmd!(f, table::Dict, name)
+    f0 = get(table, name, nothing)
+    table[name] = function (I, a, nout)
+        if !_in_driver(I)
+            f0 === nothing && throw(Unsupported("unknown function or variable '$name'", "function"))
+            return f0(I, a, nout)
+        end
+        ws = CURRENT[]
+        _driver_sync_in!(I, ws)
+        out = f(I, ws, a, nout)
+        _driver_sync_out!(I, ws)
+        out
+    end
+end
+_plots_kw() = get(_DRIVER_KW[], :plots, nothing)
+_firstn(v, nout) = v[1:min(max(nout, 1), length(v))]
+
+# oo_recursive_ = dynare_estimation(var_list_)           (estimation; options from options_ and the .mod file)
+_driver_cmd!(BUILTINS, "dynare_estimation") do I, ws, a, nout
+    estimation!(ws, isempty(a) ? String[] : _driver_varlist(a[1]); plots=_plots_kw())
+    Any[get(ws.vars, "oo_recursive_", Cell(Any[], (0, 0)))]
+end
+
+# [oo_, M_, options_, bayestopt_] = evaluate_smoother('calibration', var_list_, M_, oo_, options_, bayestopt_, estim_params_)
+_driver_cmd!(BUILTINS, "evaluate_smoother") do I, ws, a, nout
+    isempty(a) && merr("evaluate_smoother: not enough input arguments")
+    p = a[1]
+    p isa AbstractString && p == "calibration" ||
+        throw(Unsupported("evaluate_smoother at '$(p isa AbstractString ? p : "a parameter vector")' from a driver script (only 'calibration')", "function"))
+    calib_smoother!(ws, length(a) >= 2 ? _driver_varlist(a[2]) : String[]; plots=_plots_kw())
+    nout > 4 && throw(Unsupported("evaluate_smoother with more than 4 outputs from a driver script", "function"))
+    _firstn(Any[ws.oo_, ws.M_, ws.options_, get(ws.vars, "bayestopt_", MStruct())], nout)
+end
+
+# oo_.forecast = forecasts.run(var_list_, M_, options_, oo_, 'simul')
+_driver_cmd!(PKG_FUNCS, "forecasts.run") do I, ws, a, nout
+    length(a) >= 5 && a[5] isa AbstractString && a[5] != "simul" &&
+        throw(Unsupported("forecasts.run with task '$(a[5])' from a driver script (only 'simul')", "function"))
+    forecast!(ws, isempty(a) ? String[] : _driver_varlist(a[1]); plots=_plots_kw())
+    Any[ws.oo_.forecast]
+end
+
+# [eigenvalues_, result, info] = check(M_, options_, oo_)
+_driver_cmd!(BUILTINS, "check") do I, ws, a, nout
+    ok = try
+        check!(ws); true
+    catch e
+        e isa BlanchardKahnError || rethrow()
+        false
+    end
+    _firstn(Any[ws.oo_.dr.eigval, ok ? 1.0 : 0.0, ok ? 0.0 : 1.0], nout)
+end
+
+# oo_.planner_objective_value = evaluate_planner_objective(M_, options_, oo_)
+_driver_cmd!(BUILTINS, "evaluate_planner_objective") do I, ws, a, nout
+    evaluate_planner_objective!(ws)
+    Any[ws.oo_.planner_objective_value]
+end
+
+# [info, oo_, options_, M_] = discretionary_policy(M_, options_, oo_, var_list_)
+_driver_cmd!(BUILTINS, "discretionary_policy") do I, ws, a, nout
+    discretionary_policy!(ws, length(a) >= 4 ? _driver_varlist(a[4]) : String[])
+    _firstn(Any[0.0, ws.oo_, ws.options_, ws.M_], nout)
+end
+
+# [oo_.dr, oo_.occbin.simul] = occbin.solver(M_, options_, oo_.dr, oo_.steady_state, oo_.exo_steady_state, oo_.exo_det_steady_state)
+_driver_cmd!(PKG_FUNCS, "occbin.solver") do I, ws, a, nout
+    occbin_solver!(ws)
+    _firstn(Any[ws.oo_.dr, ws.oo_.occbin.simul], nout)
+end

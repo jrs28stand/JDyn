@@ -97,8 +97,14 @@ variables are cleared first unless `noclearall` is given; with it, the `.mod` fi
 `set_param_value('rho', rho_val);`). Afterwards the script's variables are defined in your session. After `dynare`, the
 script can change parameters and re-solve without re-running the file: `set_param_value('rho', x)`, edits such as
 `M_.params(3) = x`, `[info, oo_, options_, M_] = stoch_simul(M_, options_, oo_, var_list)` (or `stoch_simul(var_list)`),
-`steady` and `steady_` act on the last model run. MATLAB code the interpreter cannot follow stops with an error
-naming it.
+`steady` and `steady_` act on the last model run. So do Dynare's other commands, under the names and signatures
+Dynare 7.2's own driver uses: `oo_recursive_ = dynare_estimation(var_list)`, `evaluate_smoother('calibration', ...)`,
+`oo_.forecast = forecasts.run(var_list, M_, options_, oo_, 'simul')`, `[eigenvalues_, result, info] = check(M_,
+options_, oo_)`, `oo_ = perfect_foresight_setup(M_, options_, oo_)` / `perfect_foresight_solver` (and the
+expectation-errors variants), `[oo_.dr, oo_.occbin.simul] = occbin.solver(...)`, `discretionary_policy`,
+`evaluate_planner_objective`, the backward-model and extended-path functions and `send_*_to_workspace`. Options the
+script sets in `options_` (e.g. `options_.mh_replic = 2000;`) are used. MATLAB code the interpreter cannot follow
+stops with an error naming it.
 
 Figures: `plots=true` writes Dynare's figures to `<fname>/graphs/` in the statement's `graph_format`. With
 `using Plots` loaded they are drawn by Plots.jl (svg, png, pdf or eps); without it by a built-in SVG writer.
