@@ -85,6 +85,19 @@ ws = dynare("model.mod")               # the same, returning the workspace witho
 to_workspace(ws)                       # ...and defining them later
 ```
 
+**MATLAB driver scripts.** A script that calibrates, calls Dynare and post-processes the results runs as it is:
+
+```julia
+@run_matlab "driver.m"                 # or r = run_matlab("driver.m"; plots=true): r.vars, r.workspaces
+```
+
+Inside the script, `dynare model [noclearall] [-Dname=value ...]` (command or function syntax) runs the `.mod` file
+and leaves `M_`, `options_`, `oo_` and the file's variables in the script's workspace. As in Dynare, the script's
+variables are cleared first unless `noclearall` is given; with it, the `.mod` file's MATLAB lines can use them (e.g.
+`set_param_value('rho', rho_val);`). Afterwards the script's variables are defined in your session. MATLAB code
+the interpreter cannot follow stops with an error naming it. Calling Dynare commands such as `stoch_simul` from the
+script itself, after `dynare`, is not supported yet.
+
 Figures: `plots=true` writes Dynare's figures to `<fname>/graphs/` in the statement's `graph_format`. With
 `using Plots` loaded they are drawn by Plots.jl (svg, png, pdf or eps); without it by a built-in SVG writer.
 `plots_backend=:svg` or `:plots` forces one.

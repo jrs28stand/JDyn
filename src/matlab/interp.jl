@@ -793,6 +793,14 @@ function command(I::Interp, s, sc)
             pop!(I.scope_stack)
         end
     end
+    if name == "dynare" && haskey(BUILTINS, "dynare")        # `dynare model noclearall` in a driver script (src/matlab_driver.jl)
+        push!(I.scope_stack, sc)
+        try
+            return BUILTINS["dynare"](I, Any[String(a) for a in args], 0)
+        finally
+            pop!(I.scope_stack)
+        end
+    end
     if name == "run"
         push!(I.scope_stack, sc)
         try

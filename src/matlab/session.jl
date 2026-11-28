@@ -368,6 +368,8 @@ function ModSession(model)
     I.session = s
     I.load_hook = _mod_load
     host.oo.session = s
+    pre = _PRESET_VARS[]                             # variables of a driver script that ran `dynare ... noclearall`
+    pre === nothing || merge!(I.base.vars, pre)
     s
 end
 
