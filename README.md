@@ -73,6 +73,24 @@ stoch_simul_moments(m)                          # at the .mod file's order (Dyna
 
 ## Use
 
+**As in MATLAB.** `@dynare` runs a `.mod` file the way `dynare model` does in MATLAB and leaves `M_`, `options_`,
+`oo_` and the file's MATLAB variables in your session:
+
+```julia
+using JDyn
+@dynare "model.mod"                    # or @dynare "model.mod" plots=true extra_args=["-Dx=1"]
+oo_.dr.ghx, oo_.steady_state, oo_.irfs.y_e, M_.params
+
+ws = dynare("model.mod")               # the same, returning the workspace without defining globals
+to_workspace(ws)                       # ...and defining them later
+```
+
+Figures: `plots=true` writes Dynare's figures to `<fname>/graphs/` in the statement's `graph_format`. With
+`using Plots` loaded they are drawn by Plots.jl (svg, png, pdf or eps); without it by a built-in SVG writer.
+`plots_backend=:svg` or `:plots` forces one.
+
+**Model API.**
+
 ```julia
 using JDyn
 m = JDyn.load("model.mod")            # preprocess and run the statements of the file
@@ -84,7 +102,7 @@ mom = stoch_simul_moments(m)           # what stoch_simul reports (order 1)
 
 res = JDyn.irf_figures(m, sol)         # Dynare's IRF figures as data (shocks, variables, threshold rules)
 JDyn.write_csv("irfs.csv", JDyn.irf_table(res))   # tidy: shock,variable,period,value,order (for ggplot2)
-plot_irfs(m, sol; nograph=false)       # SVG files; PNG/PDF with `using Plots` (optional extension)
+plot_irfs(m, sol; nograph=false)       # SVG files; with `using Plots` loaded, also PNG/PDF/EPS
 
 res = perfect_foresight(m)             # perfect_foresight_setup + _solver of the .mod file; Dynare's oo_.endo_simul layout
 res.endo_simul, res.exo_simul, res.iterations, res.max_residual

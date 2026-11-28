@@ -115,3 +115,28 @@ end
     # stoch_simul leaves oo_.steady_state alone (Dynare); the re-solved steady state is oo_.dr.ys
     @test maximum(abs, JDyn.static_resid(m, vec(oo_.dr.ys), nothing, vec(M_.params))) < 1e-10
 end
+
+@testset "@dynare / to_workspace: M_, options_, oo_ and MATLAB variables in the caller's scope" begin
+    d = mktempdir()
+    write(joinpath(d, "tw.mod"), """
+    var y; varexo e; parameters rho;
+    rho = 0.5;
+    my_note = 7;
+    model; y = rho*y(-1) + e; end;
+    shocks; var e; stderr 1; end;
+    stoch_simul(order=1, irf=5, nograph);
+    """)
+    m = Module(:TWTest)
+    Core.eval(m, :(using JDyn))
+    Core.eval(m, :(sum = 1))                 # a module-local binding is replaced; functions/constants are not
+    ws = with_logger(NullLogger()) do
+        Core.eval(m, :(@dynare $(joinpath(d, "tw.mod"))))
+    end
+    @test Core.eval(m, :(oo_.dr.ghx)) == ws.oo_.dr.ghx
+    @test Core.eval(m, :(M_.params)) == ws.M_.params
+    @test Core.eval(m, :(options_)) === ws.options_
+    @test Core.eval(m, :(my_note)) == 7
+    @test JDyn.CURRENT[] === ws
+    names = to_workspace(ws; mod=m, vars=false)
+    @test names == [:M_, :options_, :oo_]
+end

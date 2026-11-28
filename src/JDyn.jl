@@ -119,7 +119,7 @@ export posterior_irf_dsgevar, dsge_var_posterior, endogenous_log_prior, sample_m
        squeeze_shock_decomposition, realtime_shock_decomposition, RealtimeDecomposition, select_vintage, decomposition_plot_data,
        DecompositionPlotData, decomposition_table, stack_bars,
        perfect_foresight, PerfectForesightResult, PerfectForesightError, unanticipated_shocks,
-       dynare, @dynare, DynareWorkspace, build_M, build_options, MStruct, Cell,
+       dynare, @dynare, to_workspace, DynareWorkspace, build_M, build_options, MStruct, Cell,
        stoch_simul!, ramsey_policy!, discretionary_policy!, evaluate_planner_objective!, osr!, steady!, check!, perfect_foresight_setup!, perfect_foresight_solver!, occbin_solver!, set_param_value!,
        estimation!, calib_smoother!, set_dynare_seed!,
        simul_backward_model, simul_static_model, backward_model_irf, backward_model_forecast, set_historical_values, model_inversion, BackwardError,

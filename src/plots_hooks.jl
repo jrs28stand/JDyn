@@ -1,6 +1,6 @@
 # Figures written by the statements of a .mod file, as Dynare does: `dynare(file; plots=true)` writes `<fname>/graphs/<stem>.<fmt>` for stoch_simul (IRFs),
-# forecast, plot_conditional_forecast and rplot, unless the statement says `nograph`; `graph_format` is honoured ("svg" built in; "png"/"pdf"/"eps" need
-# `using Plots` and the `plots_backend=:plots` keyword). Off by default: the package does not draw anything unless asked. The files written are listed in
+# forecast, plot_conditional_forecast and rplot, unless the statement says `nograph`; `graph_format` is honoured. Drawn with Plots.jl when `using Plots`
+# has loaded it (any format: svg/png/pdf/eps), otherwise by the built-in SVG writer (svg only); `plots_backend=:svg` or `:plots` forces one. Off by default: the package does not draw anything unless asked. The files written are listed in
 # `ws.state[:figure_files]`.
 
 function _statement_figures!(ws::DynareWorkspace, kind::AbstractString, st)
@@ -46,14 +46,13 @@ function _graph_format_option(ws)
 end
 
 """
-The writer for the statement's `graph_format`: `plots_backend` as given, but with the default `:svg` the Plots.jl writer is used when `using Plots` has loaded it and a
-format other than SVG is asked for.
+The writer for the statement's `graph_format`: `plots_backend` as given (`:svg` or `:plots`); with the default `:auto`,
+Plots.jl when `using Plots` has loaded it, otherwise the built-in SVG writer.
 """
 function _hook_backend(ws, fmt)
-    b = get(ws.state, :plots_backend, :svg)
-    fl = [lowercase(String(x)) for x in (fmt isa AbstractString ? [fmt] : fmt)]
-    b == :svg && any(f -> f != "svg" && f != "none", fl) && hasmethod(_render_figure_plots, Tuple{Figure,String,String}) && return :plots
-    b
+    b = get(ws.state, :plots_backend, :auto)
+    b == :auto || return b
+    hasmethod(_render_figure_plots, Tuple{Figure,String,String}) ? :plots : :svg
 end
 
 "Write figures into `<fname>/graphs` (or `sub`), honouring `nograph` and `graph_format`; the paths go to `ws.state[:figure_files]`."

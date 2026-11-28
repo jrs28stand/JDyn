@@ -888,7 +888,7 @@ otherwise shocks are drawn from the workspace's random stream (`seed=n` seeds it
 seed 0 like Dynare's 'default'; `set_dynare_seed(...)` lines of the file act as in Dynare; an explicit `rng` replaces
 the stream). The draws are Julia's, reproducible run to run but not MATLAB's: see docs/RESULTS.md, "Random draws".
 """
-function dynare(modfile::AbstractString; output=nothing, shocks=Dict{Int,Any}(), rng=nothing, seed=nothing, particle_rng=nothing, mcmc_rng=nothing, _json_dir=nothing, plots::Bool=false, plots_backend::Symbol=:svg, random::Symbol=:julia, kw...)
+function dynare(modfile::AbstractString; output=nothing, shocks=Dict{Int,Any}(), rng=nothing, seed=nothing, particle_rng=nothing, mcmc_rng=nothing, _json_dir=nothing, plots::Bool=false, plots_backend::Symbol=:auto, random::Symbol=:julia, kw...)
     random in (:julia, :octave) || throw(ArgumentError("random must be :julia (default) or :octave"))
     if output === nothing
         # derivatives up to the highest order a stoch_simul statement asks for (Dynare's default is 2)
@@ -1137,17 +1137,49 @@ end
 """
     @dynare "model.mod" [kw...]
 
-Run the file like MATLAB's `dynare model` and define `M_`, `options_` and `oo_` (and return the
-DynareWorkspace).
+Run the file like MATLAB's `dynare model`: afterwards `M_`, `options_` and `oo_`, and the other variables Dynare
+leaves in MATLAB's base workspace (variables set by MATLAB lines in the `.mod` file, `send_*_to_workspace` series,
+...), are plain variables in your session, as after `dynare` in MATLAB. Returns the DynareWorkspace. Keywords as
+for [`dynare`](@ref), e.g. `@dynare "model.mod" plots=true extra_args=["-Dx=1"]`. To do the same for a workspace
+made with `dynare(...)`, call [`to_workspace`](@ref).
 """
 macro dynare(file, kws...)
     kwargs = [Expr(:kw, k.args[1], k.args[2]) for k in kws if k isa Expr && k.head == :(=)]
     esc(quote
         local ws = $JDyn.dynare($file; $(kwargs...))
-        $JDyn.CURRENT[] = ws
-        global M_ = ws.M_
-        global options_ = ws.options_
-        global oo_ = ws.oo_
+        $JDyn.to_workspace(ws; mod=$__module__)
         ws
     end)
+end
+
+"""
+    to_workspace(ws=current workspace; mod=Main, vars=true) -> Vector{Symbol}
+
+Define `M_`, `options_` and `oo_` as global variables in module `mod` (your session by default), as MATLAB's
+`dynare` leaves them in the base workspace, and make `ws` the workspace that Dynare-named commands act on. With
+`vars=true` the workspace's other MATLAB variables are defined too (names that are not valid Julia identifiers, or
+that would replace a function or constant, are skipped). Returns the names defined. `@dynare` calls this for you.
+"""
+function to_workspace(ws::DynareWorkspace=_current(); mod::Module=Main, vars::Bool=true)
+    CURRENT[] = ws
+    done = Symbol[]
+    function def!(name::Symbol, v)
+        if isdefined(mod, name) && !(name in (:M_, :options_, :oo_))
+            old = getfield(mod, name)
+            (old isa Function || old isa Type || old isa Module || isconst(mod, name)) && return
+        end
+        try
+            Core.eval(mod, Expr(:global, Expr(:(=), name, QuoteNode(v))))
+            push!(done, name)
+        catch
+        end
+    end
+    def!(:M_, ws.M_); def!(:options_, ws.options_); def!(:oo_, ws.oo_)
+    if vars
+        for (k, v) in ws.vars
+            (Base.isidentifier(k) && !(k in ("M_", "options_", "oo_", "ans"))) || continue
+            def!(Symbol(k), v)
+        end
+    end
+    done
 end
