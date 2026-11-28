@@ -48,6 +48,7 @@ function _driver_dynare(I, a, nout)
         _PRESET_VARS[] = Dict{String,Any}(k => v for (k, v) in base if !(k in _DYNARE_GLOBALS))
     else
         empty!(base)                                    # Dynare's `clear all` before running the file
+        empty!(I.globals)
         _PRESET_VARS[] = nothing
     end
     ws = try
@@ -57,9 +58,9 @@ function _driver_dynare(I, a, nout)
     end
     CURRENT[] = ws
     for (k, v) in ws.vars
-        base[k] = v
+        k in HOST_GLOBALS || (base[k] = v)
     end
-    base["M_"] = ws.M_; base["options_"] = ws.options_; base["oo_"] = ws.oo_
+    _driver_sync_out!(I, ws)
     push!(get!(() -> Any[], kw, :_workspaces), ws)
     nout > 0 && merr("dynare does not return a value")
     Any[]
@@ -88,7 +89,20 @@ function run_matlab(script::AbstractString; variables=Dict{String,Any}(), mod::U
     _DRIVER_KW[] = kwd
     vars = try
         cd(dirname(path)) do
-            mrun(read(path, String); variables=Dict{String,Any}(variables), directory=dirname(path))
+            I = Interp(dirname(path))
+            merge!(I.base.vars, Dict{String,Any}(variables))
+            body, funcs = mparse(read(path, String))
+            I.base.funcs = funcs
+            try
+                exec_block(I, body, I.base)
+            catch e
+                e isa ReturnSig || rethrow()
+            end
+            out = copy(I.base.vars)
+            for nm in HOST_GLOBALS
+                haskey(I.globals, nm) && (out[nm] = I.globals[nm])
+            end
+            out
         end
     finally
         _DRIVER_KW[] = old
@@ -124,4 +138,87 @@ macro run_matlab(file, kws...)
     esc(quote
         $JDyn.run_matlab($file; mod=$__module__, $(kwargs...))
     end)
+end
+
+# ------------------------------------------------------------------------------------------------------------------
+# Dynare commands called from the driver script after `dynare`: they act on the last workspace (CURRENT[]), after
+# taking in edits the script made to M_ / options_ / oo_ (e.g. `M_.params(3) = 0.9;`), and hand the results back.
+
+_in_driver(I) = I.session === nothing && _DRIVER_KW[] !== nothing && CURRENT[] !== nothing
+
+function _driver_sync_in!(I, ws)
+    for (nm, field) in (("M_", ws.M_), ("options_", ws.options_), ("oo_", ws.oo_))
+        v = get(I.globals, nm, nothing)             # M_, options_, oo_ are globals of the base workspace (interp.jl)
+        (v isa MStruct && v !== field) || continue
+        for k in keys(v)
+            x = v[k]
+            # MATLAB scalars are 1x1 matrices: the interpreter hands back a Float64 for a one-element M_.params etc.
+            (x isa Real && k in ("params", "Sigma_e", "H", "steady_state", "exo_steady_state")) && (x = fill(Float64(x), 1, 1))
+            field[k] = x
+        end
+    end
+end
+
+function _driver_sync_out!(I, ws)
+    for (nm, v) in (("M_", ws.M_), ("options_", ws.options_), ("oo_", ws.oo_))
+        I.globals[nm] = v
+        delete!(I.base.vars, nm)
+    end
+end
+
+_driver_varlist(x) = x isa AbstractString ? (isempty(x) ? String[] : [String(x)]) :
+                     x isa Cell ? String[String(s) for s in x.items] :
+                     x isa AbstractArray ? String[String(s) for s in vec(x)] : String[]
+
+let f0 = BUILTINS["set_param_value"]
+    bi!("set_param_value") do I, a, nout
+        _in_driver(I) || return f0(I, a, nout)
+        _nargs(a, 2, 2, "set_param_value")
+        ws = CURRENT[]
+        _driver_sync_in!(I, ws)
+        set_param_value!(ws, _str(a[1], "set_param_value"), Float64(only(a[2])))
+        _driver_sync_out!(I, ws)
+        I.base.vars[a[1]] = a[2]
+        Any[]
+    end
+end
+
+# [info, oo_, options_, M_] = stoch_simul(M_, options_, oo_, var_list) or stoch_simul(var_list)
+bi!("stoch_simul") do I, a, nout
+    _in_driver(I) || throw(Unsupported("unknown function or variable 'stoch_simul'", "function"))
+    ws = CURRENT[]
+    _driver_sync_in!(I, ws)
+    if length(a) == 4
+        for (x, field) in zip(a[1:3], (ws.M_, ws.options_, ws.oo_))
+            x isa MStruct && x !== field && foreach(k -> (field[k] = x[k]), keys(x))
+        end
+        vl = _driver_varlist(a[4])
+    elseif length(a) <= 1
+        vl = isempty(a) ? String[] : _driver_varlist(a[1])
+    else
+        merr("stoch_simul: expected stoch_simul(var_list) or stoch_simul(M_, options_, oo_, var_list)")
+    end
+    kw = _DRIVER_KW[]
+    stoch_simul!(ws, vl; plots=get(kw, :plots, nothing))
+    _driver_sync_out!(I, ws)
+    out = Any[0.0, ws.oo_, ws.options_, ws.M_]
+    out[1:min(max(nout, 1), 4)]
+end
+
+# steady; (command) or [ys, params, info] = steady_(M_, options_, oo_)
+bi!("steady") do I, a, nout
+    _in_driver(I) || throw(Unsupported("unknown function or variable 'steady'", "function"))
+    ws = CURRENT[]
+    _driver_sync_in!(I, ws)
+    steady!(ws)
+    _driver_sync_out!(I, ws)
+    Any[]
+end
+bi!("steady_") do I, a, nout
+    _in_driver(I) || throw(Unsupported("unknown function or variable 'steady_'", "function"))
+    ws = CURRENT[]
+    _driver_sync_in!(I, ws)
+    steady!(ws)
+    _driver_sync_out!(I, ws)
+    Any[ws.oo_.steady_state, ws.M_.params, 0.0][1:min(max(nout, 1), 3)]
 end

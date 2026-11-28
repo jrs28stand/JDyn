@@ -94,9 +94,11 @@ to_workspace(ws)                       # ...and defining them later
 Inside the script, `dynare model [noclearall] [-Dname=value ...]` (command or function syntax) runs the `.mod` file
 and leaves `M_`, `options_`, `oo_` and the file's variables in the script's workspace. As in Dynare, the script's
 variables are cleared first unless `noclearall` is given; with it, the `.mod` file's MATLAB lines can use them (e.g.
-`set_param_value('rho', rho_val);`). Afterwards the script's variables are defined in your session. MATLAB code
-the interpreter cannot follow stops with an error naming it. Calling Dynare commands such as `stoch_simul` from the
-script itself, after `dynare`, is not supported yet.
+`set_param_value('rho', rho_val);`). Afterwards the script's variables are defined in your session. After `dynare`, the
+script can change parameters and re-solve without re-running the file: `set_param_value('rho', x)`, edits such as
+`M_.params(3) = x`, `[info, oo_, options_, M_] = stoch_simul(M_, options_, oo_, var_list)` (or `stoch_simul(var_list)`),
+`steady` and `steady_` act on the last model run. MATLAB code the interpreter cannot follow stops with an error
+naming it.
 
 Figures: `plots=true` writes Dynare's figures to `<fname>/graphs/` in the statement's `graph_format`. With
 `using Plots` loaded they are drawn by Plots.jl (svg, png, pdf or eps); without it by a built-in SVG writer.

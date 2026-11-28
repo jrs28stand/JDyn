@@ -25,6 +25,20 @@ function _driver_dir()
     n2 = length(oo_.irfs.y_e);
     ratio = g1 / g2;
     """)
+    write(joinpath(d, "loop.m"), """
+    rho_val = 0.8;
+    dynare ar1 noclearall
+    vals = [0.2 0.6];
+    g = zeros(1, 2);
+    for i = 1:2
+        set_param_value('rho', vals(i));
+        [info, oo_, options_, M_] = stoch_simul(M_, options_, oo_, {'y'});
+        g(i) = oo_.dr.ghx;
+    end
+    M_.params(1) = 0.3;
+    stoch_simul('y');
+    g3 = oo_.dr.ghx;
+    """)
     write(joinpath(d, "clears.m"), """
     rho_val = 0.8;
     dynare ar1
@@ -53,4 +67,14 @@ end
         Core.eval(m, :(@run_matlab $(joinpath(d, "driver.m"))))
     end
     @test Core.eval(m, :(ratio))[1] ≈ 2.0 && Core.eval(m, :(oo_.dr.ghx))[1] ≈ 0.4
+end
+
+@testset "run_matlab: Dynare commands from the script (set_param_value, stoch_simul, M_ edits)" begin
+    d = _driver_dir()
+    r = with_logger(NullLogger()) do
+        run_matlab(joinpath(d, "loop.m"))
+    end
+    @test r.vars["g"] ≈ [0.2 0.6]
+    @test r.vars["g3"][1] ≈ 0.3
+    @test r.workspaces[1].M_.params[1] ≈ 0.3
 end
